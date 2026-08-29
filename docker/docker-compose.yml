@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  dam:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - DAM_DB_DRIVER=sqlite 
+      - DAM_DB_DSN=/data/dam.db
+      - DAM_STORAGE_DRIVER=local
+      - DAM_STORAGE_LOCAL_PATH=/data/storage
+      - DAM_IMGPROXY_URL=http://localhost:8081
+      - DAM_IMGPROXY_KEY=your_hex_key
+      - DAM_IMGPROXY_SALT=your_hex_salt
+    volumes:
+      - dam_data:/data
+
+  imgproxy:
+    image: darthsim/imgproxy:latest
+    ports:
+      - "8081:8080"
+    environment:
+      - IMGPROXY_KEY=your_hex_key
+      - IMGPROXY_SALT=your_hex_salt
+      - IMGPROXY_LOCAL_FILESYSTEM_ROOT=/data/storage
+    volumes:
+      - dam_data:/data:ro
+
+volumes:
+  dam_data:
