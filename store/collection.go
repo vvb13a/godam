@@ -12,6 +12,7 @@ type Collection struct {
 	ID          string    `gorm:"column:id;primaryKey;type:text"`
 	Name        string    `gorm:"column:name;type:text;not null;uniqueIndex"`
 	Description string    `gorm:"column:description;type:text"`
+	Icon        string    `gorm:"column:icon;type:text;not null;default:''"`
 	CreatedAt   time.Time `gorm:"column:created_at"`
 	UpdatedAt   time.Time `gorm:"column:updated_at"`
 
@@ -25,6 +26,7 @@ func CollectionModel(c *domain.Collection) *Collection {
 		ID:          c.ID,
 		Name:        c.Name,
 		Description: c.Description,
+		Icon:        c.Icon,
 		CreatedAt:   c.CreatedAt,
 		UpdatedAt:   c.UpdatedAt,
 	}
@@ -35,6 +37,7 @@ func (m *Collection) ToDomain() *domain.Collection {
 		ID:          m.ID,
 		Name:        m.Name,
 		Description: m.Description,
+		Icon:        m.Icon,
 		CreatedAt:   m.CreatedAt,
 		UpdatedAt:   m.UpdatedAt,
 	}

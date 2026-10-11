@@ -84,7 +84,7 @@ func NewAssetService(
 
 func (s *AssetService) GetByID(ctx context.Context, id string) (*domain.Asset, error) {
 	var m store.Asset
-	err := s.db.WithContext(ctx).Preload("Tags").First(&m, "id = ?", id).Error
+	err := s.db.WithContext(ctx).Preload("Tags").Preload("Collections").First(&m, "id = ?", id).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, domain.ErrNotFound
 	}
@@ -95,7 +95,7 @@ func (s *AssetService) GetByID(ctx context.Context, id string) (*domain.Asset, e
 }
 
 func (s *AssetService) List(ctx context.Context, collectionID *string) ([]domain.Asset, error) {
-	query := s.db.WithContext(ctx).Preload("Tags").Order("created_at DESC")
+	query := s.db.WithContext(ctx).Preload("Tags").Preload("Collections").Order("created_at DESC")
 	if collectionID != nil {
 		query = query.
 			Joins("JOIN asset_collections ON asset_collections.asset_id = assets.id").

@@ -24,6 +24,8 @@ type Asset struct {
 	CreatedAt     time.Time `gorm:"column:created_at"`
 
 	Tags []Tag `gorm:"many2many:asset_tags;"`
+
+	Collections []Collection `gorm:"many2many:asset_collections;"`
 }
 
 func (Asset) TableName() string { return "assets" }
@@ -51,6 +53,10 @@ func (m *Asset) ToDomain() *domain.Asset {
 	for i := range m.Tags {
 		tags = append(tags, *m.Tags[i].ToDomain())
 	}
+	collections := make([]domain.Collection, 0, len(m.Collections))
+	for i := range m.Collections {
+		collections = append(collections, *m.Collections[i].ToDomain())
+	}
 	return &domain.Asset{
 		ID:            m.ID,
 		Filename:      m.Filename,
@@ -65,7 +71,8 @@ func (m *Asset) ToDomain() *domain.Asset {
 			PageCount:   m.PageCount,
 			RawJSON:     m.RawMetadata,
 		},
-		Tags:      tags,
-		CreatedAt: m.CreatedAt,
+		Tags:        tags,
+		Collections: collections,
+		CreatedAt:   m.CreatedAt,
 	}
 }
