@@ -94,12 +94,24 @@ func (s *AssetService) GetByID(ctx context.Context, id string) (*domain.Asset, e
 	return m.ToDomain(), nil
 }
 
-func (s *AssetService) List(ctx context.Context, collectionID *string) ([]domain.Asset, error) {
+func (s *AssetService) List(ctx context.Context, filter domain.AssetFilter) ([]domain.Asset, error) {
 	query := s.db.WithContext(ctx).Preload("Tags").Preload("Collections").Order("created_at DESC")
-	if collectionID != nil {
+	if filter.CollectionID != nil {
 		query = query.
 			Joins("JOIN asset_collections ON asset_collections.asset_id = assets.id").
-			Where("asset_collections.collection_id = ?", *collectionID)
+			Where("asset_collections.collection_id = ?", *filter.CollectionID)
+	}
+	if filter.Uncategorized {
+		query = query.Where("assets.id NOT IN (SELECT asset_id FROM asset_collections)")
+	}
+	if len(filter.TagIDs) > 0 {
+		query = query.Where(
+			"assets.id IN (SELECT asset_id FROM asset_tags WHERE tag_id IN ?)",
+			filter.TagIDs,
+		)
+	}
+	if filter.Untagged {
+		query = query.Where("assets.id NOT IN (SELECT asset_id FROM asset_tags)")
 	}
 
 	var models []store.Asset
@@ -335,6 +347,23 @@ func (s *AssetService) AddTag(ctx context.Context, assetID, tagName string) erro
 	}
 	return s.db.WithContext(ctx).
 		Exec("INSERT OR IGNORE INTO asset_tags (asset_id, tag_id) VALUES (?, ?)", assetID, tag.ID).Error
+}
+
+// AddTagByID attaches an existing tag to an asset, so callers that already know
+// the tag id are not affected by name normalization.
+func (s *AssetService) AddTagByID(ctx context.Context, assetID, tagID string) error {
+	var count int64
+	if err := s.db.WithContext(ctx).
+		Model(&store.Tag{}).
+		Where("id = ?", tagID).
+		Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return domain.ErrNotFound
+	}
+	return s.db.WithContext(ctx).
+		Exec("INSERT OR IGNORE INTO asset_tags (asset_id, tag_id) VALUES (?, ?)", assetID, tagID).Error
 }
 
 func (s *AssetService) RemoveTag(ctx context.Context, assetID, tagID string) error {

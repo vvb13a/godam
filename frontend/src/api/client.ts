@@ -1,4 +1,4 @@
-import type { Asset, Collection, Stats } from '../types'
+import type { Asset, Collection, Stats, Tag, TagGroup } from '../types'
 
 async function ensureOk(res: Response): Promise<void> {
   if (res.ok) return
@@ -43,11 +43,21 @@ export function getStats(): Promise<Stats> {
   return getJSON<Stats>('/api/stats')
 }
 
-export function listAssets(collectionId?: string): Promise<Asset[]> {
-  const query = collectionId
-    ? `?collection_id=${encodeURIComponent(collectionId)}`
-    : ''
-  return getJSON<Asset[]>(`/api/assets${query}`)
+export interface AssetListParams {
+  collectionId?: string
+  tagIds?: string[]
+  uncategorized?: boolean
+  untagged?: boolean
+}
+
+export function listAssets(params: AssetListParams = {}): Promise<Asset[]> {
+  const query = new URLSearchParams()
+  if (params.collectionId) query.set('collection_id', params.collectionId)
+  if (params.tagIds?.length) query.set('tag_ids', params.tagIds.join(','))
+  if (params.uncategorized) query.set('uncategorized', 'true')
+  if (params.untagged) query.set('untagged', 'true')
+  const qs = query.toString()
+  return getJSON<Asset[]>(`/api/assets${qs ? `?${qs}` : ''}`)
 }
 
 export function getAsset(id: string): Promise<Asset> {
@@ -112,11 +122,11 @@ export function assetPreviewUrl(id: string): string {
 
 // ---- Asset tags & collections ----
 
-export function addTag(assetId: string, name: string): Promise<Asset> {
+export function addTag(assetId: string, tagId: string): Promise<Asset> {
   return sendJSON<Asset>(
     `/api/assets/${encodeURIComponent(assetId)}/tags`,
     'POST',
-    { name },
+    { tag_id: tagId },
   )
 }
 
@@ -146,6 +156,70 @@ export function removeFromCollection(
     `/api/assets/${encodeURIComponent(assetId)}/collections/${encodeURIComponent(collectionId)}`,
     { method: 'DELETE' },
   )
+}
+
+// ---- Tags ----
+
+export function listTags(): Promise<Tag[]> {
+  return getJSON<Tag[]>('/api/tags')
+}
+
+export function createTag(name: string): Promise<Tag> {
+  return sendJSON<Tag>('/api/tags', 'POST', { name })
+}
+
+export function updateTag(
+  id: string,
+  name: string,
+  groupId: string | null,
+  starred: boolean,
+): Promise<Tag> {
+  return sendJSON<Tag>(`/api/tags/${encodeURIComponent(id)}`, 'PUT', {
+    name,
+    group_id: groupId,
+    starred,
+  })
+}
+
+export function deleteTag(id: string): Promise<void> {
+  return requestVoid(`/api/tags/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+// ---- Tag groups ----
+
+export function listTagGroups(): Promise<TagGroup[]> {
+  return getJSON<TagGroup[]>('/api/tag-groups')
+}
+
+export function createTagGroup(
+  name: string,
+  description: string,
+  color: string,
+): Promise<TagGroup> {
+  return sendJSON<TagGroup>('/api/tag-groups', 'POST', {
+    name,
+    description,
+    color,
+  })
+}
+
+export function updateTagGroup(
+  id: string,
+  name: string,
+  description: string,
+  color: string,
+): Promise<TagGroup> {
+  return sendJSON<TagGroup>(
+    `/api/tag-groups/${encodeURIComponent(id)}`,
+    'PUT',
+    { name, description, color },
+  )
+}
+
+export function deleteTagGroup(id: string): Promise<void> {
+  return requestVoid(`/api/tag-groups/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
 }
 
 // ---- Collections ----

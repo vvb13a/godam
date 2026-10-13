@@ -18,6 +18,7 @@ var (
 	assetService      *service.AssetService
 	collectionService *service.CollectionService
 	tagService        *service.TagService
+	tagGroupService   *service.TagGroupService
 	statsService      *service.StatsService
 )
 
@@ -27,6 +28,7 @@ func main() {
 		Assets:         assetService,
 		Collections:    collectionService,
 		Tags:           tagService,
+		TagGroups:      tagGroupService,
 		Stats:          statsService,
 		MaxUploadBytes: appConfig.MaxUploadSizeBytes,
 	})
@@ -82,6 +84,7 @@ func initDependencies() {
 
 	// 3. Application services (gorm persistence, no repository adapters).
 	tagService = service.NewTagService(db)
+	tagGroupService = service.NewTagGroupService(db)
 	collectionService = service.NewCollectionService(db)
 	statsService = service.NewStatsService(db)
 	assetService = service.NewAssetService(

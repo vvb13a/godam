@@ -14,3 +14,14 @@ type Asset struct {
 	Collections   []Collection `json:"collections,omitempty"`
 	CreatedAt     time.Time    `json:"created_at"`
 }
+
+// AssetFilter narrows an asset listing. CollectionID restricts to a single
+// collection; TagIDs selects assets carrying any of the given tags;
+// Uncategorized and Untagged select assets belonging to no collection or
+// carrying no tags respectively. Filters combine (AND).
+type AssetFilter struct {
+	CollectionID  *string
+	TagIDs        []string
+	Uncategorized bool
+	Untagged      bool
+}

@@ -2,36 +2,30 @@
 import Button from 'primevue/button'
 import ContextMenu from 'primevue/contextmenu'
 import Message from 'primevue/message'
+import MultiSelect from 'primevue/multiselect'
 import Popover from 'primevue/popover'
-import Splitter from 'primevue/splitter'
-import SplitterPanel from 'primevue/splitterpanel'
 import ToggleSwitch from 'primevue/toggleswitch'
 import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 import type { MenuItem } from 'primevue/menuitem'
-import { ExternalLink, Sidebar, SlidersH, Trash, Upload } from '@primeicons/vue'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { ExternalLink, SlidersH, Tag, Trash, Upload } from '@primeicons/vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import * as api from '../api/client'
 import { endAssetDrag, startAssetDrag } from '../lib/assetDrag'
 import { CARD_SHAPES, CARD_SIZES } from '../lib/display'
 import type { CardShape, CardSize } from '../lib/display'
-import { library, loadCollections } from '../lib/library'
+import { library, notifyLibraryChanged } from '../lib/library'
+import { openAssetTags } from '../lib/tagsDialog'
 import { openUpload } from '../lib/upload'
 import type { Asset } from '../types'
 import AssetCard from './AssetCard.vue'
 import AssetDetailPanel from './AssetDetailPanel.vue'
-import CollectionsPanel from './CollectionsPanel.vue'
 import MosaicWall from './MosaicWall.vue'
 import MultiSelectionPanel from './MultiSelectionPanel.vue'
 
-type CollectionsMode = 'full' | 'rail' | 'hidden'
-
-const COLLECTIONS_MIN_PX = 200
-const RAIL_PX = 56
-const LEFT_WIDTH_KEY = 'godam.collectionsWidth'
-
 const route = useRoute()
+const router = useRouter()
 const confirm = useConfirm()
 const toast = useToast()
 
@@ -43,7 +37,6 @@ const selectedIds = ref<string[]>([])
 const anchorId = ref<string | null>(null)
 
 const typeFilter = ref('')
-const tagFilter = ref('')
 const sort = ref('date-desc')
 
 const size = ref<CardSize>('medium')
@@ -53,48 +46,53 @@ const displayPopover = ref<InstanceType<typeof Popover> | null>(null)
 
 const contextMenu = ref<{ show: (event: MouseEvent) => void } | null>(null)
 
-// Collections panel sizing: the full panel is resizable (width in px kept in
-// localStorage, min 200px); the icon rail is a fixed, non-resizable width.
-const wrapperEl = ref<HTMLElement | null>(null)
-const containerWidth = ref(0)
-const collectionsMode = ref<CollectionsMode>('full')
-const sizes = ref([22, 78, 0])
-const leftPx = ref(loadLeftWidth())
-let resizeObserver: ResizeObserver | undefined
-
-function loadLeftWidth(): number {
-  const raw = Number(localStorage.getItem(LEFT_WIDTH_KEY))
-  return Number.isFinite(raw) && raw >= COLLECTIONS_MIN_PX ? raw : 260
-}
-
-function toPercent(px: number, fallback: number): number {
-  return containerWidth.value > 0 ? (px / containerWidth.value) * 100 : fallback
-}
-
-const collectionsRail = computed(() => collectionsMode.value === 'rail')
-const collectionsMinPercent = computed(() => toPercent(COLLECTIONS_MIN_PX, 16))
-const railPercent = computed(() => toPercent(RAIL_PX, 6))
-const fullLeftPercent = computed(() => toPercent(leftPx.value, 22))
-const leftMinSize = computed(() =>
-  collectionsRail.value ? railPercent.value : collectionsMinPercent.value,
-)
-const leftMaxSize = computed(() =>
-  collectionsRail.value ? railPercent.value : 70,
-)
-const collectionsToggleTitle = computed(() => {
-  switch (collectionsMode.value) {
-    case 'full':
-      return 'Collapse collections to icons'
-    case 'rail':
-      return 'Hide collections'
-    default:
-      return 'Show collections'
-  }
+// Collection and tag filters live in the route query so the sidebar and the
+// toolbar stay in sync and the selection is shareable. Special values
+// 'uncategorized' and 'untagged' select assets with no collection/tags.
+const collectionFilter = computed({
+  get: () => (route.query.collection as string | undefined) ?? '',
+  set: (value: string) => setQueryFilter('collection', value),
 })
-
-const collectionId = computed(
-  () => (route.params.collectionId as string | undefined) ?? null,
+const tagFilter = computed({
+  get: () => {
+    const raw = route.query.tag
+    if (typeof raw !== 'string' || !raw) return [] as string[]
+    return raw.split(',').filter(Boolean)
+  },
+  set: (values: string[]) => {
+    const query = { ...route.query }
+    if (values.length) query.tag = values.join(',')
+    else delete query.tag
+    void router.push({ name: 'all', query })
+  },
+})
+const uploadCollectionId = computed(() =>
+  collectionFilter.value && collectionFilter.value !== 'uncategorized'
+    ? collectionFilter.value
+    : null,
 )
+
+function setQueryFilter(key: 'collection' | 'tag', value: string): void {
+  const query = { ...route.query }
+  if (value) query[key] = value
+  else delete query[key]
+  void router.push({ name: 'all', query })
+}
+
+const tagOptions = computed(() => [
+  { label: 'Untagged', value: 'untagged', color: undefined as string | undefined },
+  ...library.tags.map((tag) => {
+    const group = tag.group_id
+      ? library.tagGroups.find((item) => item.id === tag.group_id)
+      : undefined
+    return {
+      label: tag.name,
+      value: tag.id,
+      color: group?.color ? `#${group.color}` : undefined,
+    }
+  }),
+])
+
 const selectedSet = computed(() => new Set(selectedIds.value))
 const selectedAssets = computed(() =>
   assets.value.filter((asset) => selectedSet.value.has(asset.id)),
@@ -102,18 +100,9 @@ const selectedAssets = computed(() =>
 const singleAsset = computed(() =>
   selectedIds.value.length === 1 ? (selectedAssets.value[0] ?? null) : null,
 )
-const hasSelection = computed(() => selectedIds.value.length > 0)
 
 const types = computed(() => {
   const found = new Set(assets.value.map((a) => a.mime_type))
-  return [...found].sort()
-})
-
-const tags = computed(() => {
-  const found = new Set<string>()
-  for (const asset of assets.value) {
-    for (const tag of asset.tags ?? []) found.add(tag.name)
-  }
   return [...found].sort()
 })
 
@@ -121,11 +110,6 @@ const visibleAssets = computed(() => {
   let list = assets.value
   if (typeFilter.value) {
     list = list.filter((a) => a.mime_type === typeFilter.value)
-  }
-  if (tagFilter.value) {
-    list = list.filter((a) =>
-      (a.tags ?? []).some((t) => t.name === tagFilter.value),
-    )
   }
 
   const sorted = [...list]
@@ -177,6 +161,11 @@ const menuItems = computed<MenuItem[]>(() => {
       icon: ExternalLink,
       command: openOriginal,
     })
+    items.push({
+      label: 'Tags',
+      icon: Tag,
+      command: openTags,
+    })
   }
   items.push({
     label: count > 1 ? `Delete ${count} assets` : 'Delete',
@@ -195,7 +184,17 @@ async function load(): Promise<void> {
   loading.value = true
   error.value = null
   try {
-    assets.value = await api.listAssets(collectionId.value ?? undefined)
+    const params: api.AssetListParams = {}
+    const c = collectionFilter.value
+    if (c === 'uncategorized') params.uncategorized = true
+    else if (c) params.collectionId = c
+
+    const tags = tagFilter.value
+    if (tags.includes('untagged')) params.untagged = true
+    const tagIds = tags.filter((value) => value !== 'untagged')
+    if (tagIds.length) params.tagIds = tagIds
+
+    assets.value = await api.listAssets(params)
   } catch (e) {
     error.value = toMessage(e)
   } finally {
@@ -262,6 +261,11 @@ function openOriginal(): void {
   }
 }
 
+function openTags(): void {
+  const asset = selectedAssets.value[0]
+  if (asset) openAssetTags(asset.id)
+}
+
 function confirmDelete(): void {
   const ids = selectedIds.value.slice()
   if (!ids.length) return
@@ -279,8 +283,7 @@ function confirmDelete(): void {
       try {
         await Promise.all(ids.map((id) => api.deleteAsset(id)))
         clearSelection()
-        await load()
-        await loadCollections()
+        notifyLibraryChanged()
         toast.add({
           severity: 'success',
           summary: ids.length > 1 ? `${ids.length} assets deleted` : 'Asset deleted',
@@ -302,67 +305,21 @@ function toggleDisplay(event: Event): void {
   displayPopover.value?.toggle(event)
 }
 
-function applyCollectionsMode(mode: CollectionsMode): void {
-  collectionsMode.value = mode
-  const right = sizes.value[2] ?? 0
-  let left: number
-  if (mode === 'full') {
-    left = fullLeftPercent.value
-  } else if (mode === 'rail') {
-    left = railPercent.value
-  } else {
-    left = 0
-  }
-  sizes.value = [left, Math.max(0, 100 - left - right), right]
+// onChanged replaces the affected asset client-side (tags/collections
+// changed), avoiding a full library/asset reload.
+function onChanged(asset: Asset): void {
+  const index = assets.value.findIndex((item) => item.id === asset.id)
+  if (index >= 0) assets.value[index] = asset
 }
 
-function cycleCollections(): void {
-  if (collectionsMode.value === 'full') {
-    applyCollectionsMode('rail')
-  } else if (collectionsMode.value === 'rail') {
-    applyCollectionsMode('hidden')
-  } else {
-    applyCollectionsMode('full')
-  }
+function onDeleted(): void {
+  notifyLibraryChanged()
 }
 
-function expandDetailPanel(): void {
-  const left = sizes.value[0] ?? 0
-  const right = (sizes.value[2] ?? 0) > 0 ? (sizes.value[2] ?? 26) : 26
-  sizes.value = [left, Math.max(0, 100 - left - right), right]
-}
-
-function collapseDetailPanel(): void {
-  const left = sizes.value[0] ?? 0
-  sizes.value = [left, Math.max(0, 100 - left), 0]
-}
-
-function onCollapse(event: { index: number; collapsed: boolean }): void {
-  if (event.index === 0) {
-    collectionsMode.value = event.collapsed ? 'hidden' : 'full'
-  }
-  if (event.index === 2 && event.collapsed && hasSelection.value) {
-    clearSelection()
-  }
-}
-
-function onChanged(): void {
-  void load()
-}
-
-watch(collectionId, () => {
+watch([collectionFilter, tagFilter], () => {
   clearSelection()
   typeFilter.value = ''
-  tagFilter.value = ''
   void load()
-})
-
-watch(hasSelection, (open) => {
-  if (open) {
-    expandDetailPanel()
-  } else {
-    collapseDetailPanel()
-  }
 })
 
 watch(
@@ -372,235 +329,206 @@ watch(
   },
 )
 
-// Persist the full collections panel width (px) while it is the active mode.
-watch(sizes, (value) => {
-  if (collectionsMode.value !== 'full' || containerWidth.value <= 0) return
-  const px = ((value[0] ?? 0) / 100) * containerWidth.value
-  if (px >= COLLECTIONS_MIN_PX - 1) {
-    leftPx.value = Math.round(px)
-    localStorage.setItem(LEFT_WIDTH_KEY, String(leftPx.value))
-  }
-})
-
-// Recompute percentages from the stored pixel width when the pane resizes.
-watch(containerWidth, () => {
-  applyCollectionsMode(collectionsMode.value)
-})
-
 onMounted(() => {
-  if (wrapperEl.value) {
-    resizeObserver = new ResizeObserver((entries) => {
-      containerWidth.value = entries[0].contentRect.width
-    })
-    resizeObserver.observe(wrapperEl.value)
-  }
-  void loadCollections()
   void load()
-})
-
-onBeforeUnmount(() => {
-  resizeObserver?.disconnect()
 })
 </script>
 
 <template>
-  <div ref="wrapperEl" class="flex h-full flex-col">
-    <Message v-if="error" severity="error" class="mb-4">{{ error }}</Message>
+  <div class="flex h-full min-h-0 flex-col">
+    <Message v-if="error" severity="error" class="mx-6 mt-4">{{ error }}</Message>
 
-    <Splitter
-      v-model:sizes="sizes"
-      class="min-h-0 flex-1 overflow-hidden rounded border border-slate-200 bg-white"
-      @collapse="onCollapse"
-    >
-      <SplitterPanel
-        :min-size="leftMinSize"
-        :max-size="leftMaxSize"
-        :collapsible="true"
-        :collapsed-size="0"
-        class="overflow-hidden"
-      >
-        <CollectionsPanel :rail="collectionsRail" />
-      </SplitterPanel>
-
-      <SplitterPanel class="overflow-hidden">
-        <div class="flex h-full flex-col">
-          <div
-            class="flex flex-wrap items-center gap-3 border-b border-slate-200 p-3"
+    <div class="flex min-h-0 flex-1">
+      <div class="flex min-w-0 flex-1 flex-col">
+        <header class="flex flex-wrap items-center gap-3 px-6 py-4">
+          <select
+            v-model="collectionFilter"
+            class="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm"
           >
-            <Button
-              text
-              severity="secondary"
-              :title="collectionsToggleTitle"
-              aria-label="Toggle collections"
-              @click="cycleCollections"
+            <option value="">All collections</option>
+            <option value="uncategorized">Uncategorized</option>
+            <option
+              v-for="collection in library.collections"
+              :key="collection.id"
+              :value="collection.id"
             >
-              <template #icon><Sidebar :size="16" /></template>
-            </Button>
+              {{ collection.name }}
+            </option>
+          </select>
 
-            <select
-              v-model="typeFilter"
-              class="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm"
-            >
-              <option value="">All types</option>
-              <option v-for="type in types" :key="type" :value="type">
-                {{ type }}
-              </option>
-            </select>
+          <MultiSelect
+            v-model="tagFilter"
+            :options="tagOptions"
+            option-label="label"
+            option-value="value"
+            display="chip"
+            placeholder="All tags"
+            :max-selected-labels="3"
+            class="rounded border border-slate-300 bg-white text-sm"
+          >
+            <template #option="slotProps">
+              <span class="flex items-center gap-2">
+                <span
+                  v-if="slotProps.option.color"
+                  class="h-2.5 w-2.5 shrink-0 rounded-full"
+                  :style="{ backgroundColor: slotProps.option.color }"
+                />
+                {{ slotProps.option.label }}
+              </span>
+            </template>
+          </MultiSelect>
 
-            <select
-              v-model="tagFilter"
-              class="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm"
-            >
-              <option value="">All tags</option>
-              <option v-for="tag in tags" :key="tag" :value="tag">
-                #{{ tag }}
-              </option>
-            </select>
+          <select
+            v-model="typeFilter"
+            class="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm"
+          >
+            <option value="">All types</option>
+            <option v-for="type in types" :key="type" :value="type">
+              {{ type }}
+            </option>
+          </select>
 
-            <select
-              v-model="sort"
-              class="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm"
-            >
-              <option value="date-desc">Newest first</option>
-              <option value="date-asc">Oldest first</option>
-              <option value="name-asc">Name A–Z</option>
-              <option value="name-desc">Name Z–A</option>
-              <option value="size-desc">Largest first</option>
-              <option value="size-asc">Smallest first</option>
-            </select>
+          <select
+            v-model="sort"
+            class="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm"
+          >
+            <option value="date-desc">Newest first</option>
+            <option value="date-asc">Oldest first</option>
+            <option value="name-asc">Name A–Z</option>
+            <option value="name-desc">Name Z–A</option>
+            <option value="size-desc">Largest first</option>
+            <option value="size-asc">Smallest first</option>
+          </select>
 
-            <Button label="Upload" @click="openUpload([], collectionId)">
-              <template #icon><Upload :size="16" /></template>
-            </Button>
+          <Button label="Upload" @click="openUpload([], uploadCollectionId)">
+            <template #icon><Upload :size="16" /></template>
+          </Button>
 
-            <span class="ml-auto text-sm text-slate-400">
-              {{
-                selectedIds.length
-                  ? `${selectedIds.length} selected`
-                  : `${visibleAssets.length} item(s)`
-              }}
-            </span>
+          <span class="ml-auto text-sm text-slate-400">
+            {{
+              selectedIds.length
+                ? `${selectedIds.length} selected`
+                : `${visibleAssets.length} item(s)`
+            }}
+          </span>
 
-            <Button
-              severity="secondary"
-              title="Display settings"
-              aria-label="Display settings"
-              @click="toggleDisplay"
-            >
-              <template #icon><SlidersH :size="16" /></template>
-            </Button>
+          <Button
+            severity="secondary"
+            title="Display settings"
+            aria-label="Display settings"
+            @click="toggleDisplay"
+          >
+            <template #icon><SlidersH :size="16" /></template>
+          </Button>
 
-            <Popover ref="displayPopover">
-              <div class="w-64 space-y-4">
-                <div>
-                  <p
-                    class="mb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
-                  >
-                    Size
-                  </p>
-                  <div class="flex gap-1">
-                    <button
-                      v-for="option in CARD_SIZES"
-                      :key="option.value"
-                      type="button"
-                      class="flex-1 rounded px-2 py-1.5 text-sm"
-                      :class="
-                        size === option.value
-                          ? 'bg-violet-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      "
-                      @click="size = option.value"
-                    >
-                      {{ option.label }}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <p
-                    class="mb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
-                  >
-                    Shape
-                  </p>
-                  <div class="flex flex-wrap gap-1">
-                    <button
-                      v-for="option in CARD_SHAPES"
-                      :key="option.value"
-                      type="button"
-                      class="rounded px-2 py-1.5 text-sm"
-                      :class="
-                        shape === option.value
-                          ? 'bg-violet-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      "
-                      @click="shape = option.value"
-                    >
-                      {{ option.label }}
-                    </button>
-                  </div>
-                </div>
-
-                <div
-                  class="flex items-center justify-between border-t border-slate-100 pt-3"
+          <Popover ref="displayPopover">
+            <div class="w-64 space-y-4">
+              <div>
+                <p
+                  class="mb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
                 >
-                  <div>
-                    <p class="text-sm font-medium">Mosaic</p>
-                    <p class="text-xs text-slate-400">
-                      Full-bleed wall, no captions
-                    </p>
-                  </div>
-                  <ToggleSwitch v-model="mosaic" />
+                  Size
+                </p>
+                <div class="flex gap-1">
+                  <button
+                    v-for="option in CARD_SIZES"
+                    :key="option.value"
+                    type="button"
+                    class="flex-1 rounded px-2 py-1.5 text-sm"
+                    :class="
+                      size === option.value
+                        ? 'bg-violet-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    "
+                    @click="size = option.value"
+                  >
+                    {{ option.label }}
+                  </button>
                 </div>
               </div>
-            </Popover>
-          </div>
 
-          <div class="min-h-0 flex-1 overflow-y-auto p-3">
-            <p v-if="loading" class="text-sm text-slate-400">Loading…</p>
-            <p v-else-if="!assets.length" class="text-sm text-slate-400">
-              No assets yet.
-            </p>
-            <p v-else-if="!visibleAssets.length" class="text-sm text-slate-400">
-              No assets match the current filters.
-            </p>
-            <MosaicWall
-              v-else-if="mosaic"
-              :assets="visibleAssets"
-              :row-height="mosaicRowHeight"
-              :selected-ids="selectedIds"
+              <div>
+                <p
+                  class="mb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
+                >
+                  Shape
+                </p>
+                <div class="flex flex-wrap gap-1">
+                  <button
+                    v-for="option in CARD_SHAPES"
+                    :key="option.value"
+                    type="button"
+                    class="rounded px-2 py-1.5 text-sm"
+                    :class="
+                      shape === option.value
+                        ? 'bg-violet-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    "
+                    @click="shape = option.value"
+                  >
+                    {{ option.label }}
+                  </button>
+                </div>
+              </div>
+
+              <div
+                class="flex items-center justify-between border-t border-slate-100 pt-3"
+              >
+                <div>
+                  <p class="text-sm font-medium">Mosaic</p>
+                  <p class="text-xs text-slate-400">
+                    Full-bleed wall, no captions
+                  </p>
+                </div>
+                <ToggleSwitch v-model="mosaic" />
+              </div>
+            </div>
+          </Popover>
+        </header>
+
+        <div class="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
+          <p v-if="loading" class="text-sm text-slate-400">Loading…</p>
+          <p v-else-if="!assets.length" class="text-sm text-slate-400">
+            No assets yet.
+          </p>
+          <p v-else-if="!visibleAssets.length" class="text-sm text-slate-400">
+            No assets match the current filters.
+          </p>
+          <MosaicWall
+            v-else-if="mosaic"
+            :assets="visibleAssets"
+            :row-height="mosaicRowHeight"
+            :selected-ids="selectedIds"
+            @open="onSelect"
+            @menu="onContextMenu"
+            @dragstart="onDragStart"
+            @dragend="onDragEnd"
+          />
+          <div v-else class="grid gap-3" :style="gridStyle">
+            <AssetCard
+              v-for="asset in visibleAssets"
+              :key="asset.id"
+              :asset="asset"
+              :shape="shape"
+              :selected="selectedSet.has(asset.id)"
               @open="onSelect"
               @menu="onContextMenu"
               @dragstart="onDragStart"
               @dragend="onDragEnd"
             />
-            <div v-else class="grid gap-3" :style="gridStyle">
-              <AssetCard
-                v-for="asset in visibleAssets"
-                :key="asset.id"
-                :asset="asset"
-                :shape="shape"
-                :selected="selectedSet.has(asset.id)"
-                @open="onSelect"
-                @menu="onContextMenu"
-                @dragstart="onDragStart"
-                @dragend="onDragEnd"
-              />
-            </div>
           </div>
         </div>
-      </SplitterPanel>
+      </div>
 
-      <SplitterPanel
-        :min-size="18"
-        :collapsible="true"
-        :collapsed-size="0"
-        class="overflow-hidden"
+      <aside
+        class="flex w-80 shrink-0 flex-col overflow-hidden border-l border-slate-200"
       >
         <AssetDetailPanel
           v-if="singleAsset"
           :asset="singleAsset"
           @close="clearSelection"
           @changed="onChanged"
+          @deleted="onDeleted"
         />
         <MultiSelectionPanel
           v-else-if="selectedAssets.length > 1"
@@ -608,8 +536,14 @@ onBeforeUnmount(() => {
           @close="clearSelection"
           @remove="confirmDelete"
         />
-      </SplitterPanel>
-    </Splitter>
+        <div
+          v-else
+          class="flex h-full items-center justify-center p-6 text-center text-sm text-slate-400"
+        >
+          Select an asset to view its details.
+        </div>
+      </aside>
+    </div>
 
     <ContextMenu ref="contextMenu" :model="menuItems" />
   </div>

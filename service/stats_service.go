@@ -32,6 +32,20 @@ func (s *StatsService) Get(ctx context.Context) (*domain.Stats, error) {
 		return nil, fmt.Errorf("count tags: %w", err)
 	}
 
+	var uncategorized int64
+	if err := db.Model(&store.Asset{}).
+		Where("id NOT IN (SELECT asset_id FROM asset_collections)").
+		Count(&uncategorized).Error; err != nil {
+		return nil, fmt.Errorf("count uncategorized: %w", err)
+	}
+
+	var untagged int64
+	if err := db.Model(&store.Asset{}).
+		Where("id NOT IN (SELECT asset_id FROM asset_tags)").
+		Count(&untagged).Error; err != nil {
+		return nil, fmt.Errorf("count untagged: %w", err)
+	}
+
 	var storageBytes int64
 	row := db.Model(&store.Asset{}).Select("COALESCE(SUM(byte_size), 0)").Row()
 	if err := row.Scan(&storageBytes); err != nil {
@@ -61,10 +75,12 @@ func (s *StatsService) Get(ctx context.Context) (*domain.Stats, error) {
 	}
 
 	return &domain.Stats{
-		Assets:       int(assets),
-		Collections:  int(collections),
-		Tags:         int(tags),
-		StorageBytes: storageBytes,
-		Types:        types,
+		Assets:        int(assets),
+		Collections:   int(collections),
+		Tags:          int(tags),
+		Uncategorized: int(uncategorized),
+		Untagged:      int(untagged),
+		StorageBytes:  storageBytes,
+		Types:         types,
 	}, nil
 }

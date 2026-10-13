@@ -5,7 +5,10 @@ import { CloudUpload } from '@primeicons/vue'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import AppSidebar from './components/AppSidebar.vue'
+import CommandPalette from './components/CommandPalette.vue'
+import TagsDialog from './components/TagsDialog.vue'
 import UploadDialog from './components/UploadDialog.vue'
+import { commandMenu } from './lib/command'
 import { openUpload } from './lib/upload'
 
 const route = useRoute()
@@ -18,7 +21,9 @@ function hasFiles(event: DragEvent): boolean {
 }
 
 function currentCollectionId(): string | null {
-  return route.name === 'collection' ? String(route.params.collectionId) : null
+  const collection = route.query.collection
+  if (typeof collection !== 'string' || collection === 'uncategorized') return null
+  return collection
 }
 
 function onDragEnter(event: DragEvent): void {
@@ -51,11 +56,19 @@ function onDrop(event: DragEvent): void {
   }
 }
 
+function onKeydown(event: KeyboardEvent): void {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault()
+    commandMenu.visible = !commandMenu.visible
+  }
+}
+
 onMounted(() => {
   window.addEventListener('dragenter', onDragEnter)
   window.addEventListener('dragover', onDragOver)
   window.addEventListener('dragleave', onDragLeave)
   window.addEventListener('drop', onDrop)
+  window.addEventListener('keydown', onKeydown)
 })
 
 onBeforeUnmount(() => {
@@ -63,13 +76,14 @@ onBeforeUnmount(() => {
   window.removeEventListener('dragover', onDragOver)
   window.removeEventListener('dragleave', onDragLeave)
   window.removeEventListener('drop', onDrop)
+  window.removeEventListener('keydown', onKeydown)
 })
 </script>
 
 <template>
   <div class="flex h-screen bg-slate-50 text-slate-800">
     <AppSidebar />
-    <main class="min-h-0 flex-1 overflow-hidden p-6">
+    <main class="min-h-0 flex-1 overflow-hidden">
       <RouterView />
     </main>
 
@@ -91,6 +105,8 @@ onBeforeUnmount(() => {
     </div>
 
     <UploadDialog />
+    <CommandPalette />
+    <TagsDialog />
     <ConfirmDialog />
     <Toast />
   </div>

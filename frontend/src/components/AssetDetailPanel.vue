@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import Button from 'primevue/button'
-import InputText from 'primevue/inputtext'
 import Message from 'primevue/message'
 import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
@@ -9,15 +8,16 @@ import { computed, ref, watch } from 'vue'
 import * as api from '../api/client'
 import { formatDate, formatSize } from '../lib/format'
 import { library } from '../lib/library'
-import type { Asset } from '../types'
+import { openAssetTags } from '../lib/tagsDialog'
+import type { Asset, Tag } from '../types'
+import TagBadge from './TagBadge.vue'
 
 const props = defineProps<{ asset: Asset }>()
-const emit = defineEmits<{ close: []; changed: [] }>()
+const emit = defineEmits<{ close: []; changed: [asset: Asset]; deleted: [] }>()
 
 const confirm = useConfirm()
 const toast = useToast()
 
-const tagName = ref('')
 const busy = ref(false)
 const error = ref<string | null>(null)
 const previewFailed = ref(false)
@@ -32,7 +32,6 @@ watch(
   () => props.asset.id,
   () => {
     previewFailed.value = false
-    tagName.value = ''
     error.value = null
   },
 )
@@ -41,30 +40,31 @@ function toMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
+function tagColor(tag: Tag): string | undefined {
+  if (!tag.group_id) return undefined
+  const group = library.tagGroups.find((item) => item.id === tag.group_id)
+  return group?.color ? `#${group.color}` : undefined
+}
+
+function editTags(): void {
+  openAssetTags(props.asset.id)
+}
+
 function memberOf(collectionId: string): boolean {
   return !!props.asset.collections?.some((c) => c.id === collectionId)
 }
 
-async function run(action: () => Promise<unknown>): Promise<void> {
+async function run(action: () => Promise<Asset>): Promise<void> {
   busy.value = true
   error.value = null
   try {
-    await action()
-    emit('changed')
+    const asset = await action()
+    emit('changed', asset)
   } catch (e) {
     error.value = toMessage(e)
   } finally {
     busy.value = false
   }
-}
-
-function addTag(): void {
-  const name = tagName.value.trim()
-  if (!name) return
-  void run(async () => {
-    await api.addTag(props.asset.id, name)
-    tagName.value = ''
-  })
 }
 
 function removeTag(tagId: string): void {
@@ -92,8 +92,8 @@ function confirmDelete(): void {
       try {
         await api.deleteAsset(asset.id)
         toast.add({ severity: 'success', summary: 'Asset deleted', life: 2500 })
+        emit('deleted')
         emit('close')
-        emit('changed')
       } catch (e) {
         toast.add({
           severity: 'error',
@@ -184,42 +184,34 @@ function confirmDelete(): void {
       </dl>
 
       <section>
-        <h3 class="mb-2 text-sm font-semibold">Tags</h3>
-        <div class="mb-2 flex flex-wrap gap-1">
-          <span
+        <div class="mb-2 flex items-center justify-between">
+          <h3 class="text-sm font-semibold">Tags</h3>
+          <button
+            class="inline-flex text-slate-400 hover:text-violet-600"
+            title="Edit tags"
+            @click="editTags"
+          >
+            <Plus :size="14" />
+          </button>
+        </div>
+        <div class="flex flex-wrap gap-1">
+          <TagBadge
             v-for="tag in asset.tags"
             :key="tag.id"
-            class="flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
+            :name="tag.name"
+            :color="tagColor(tag)"
           >
-            #{{ tag.name }}
             <button
               class="inline-flex text-slate-400 hover:text-red-500"
               title="Remove tag"
               @click="removeTag(tag.id)"
             >
-              <Times :size="14" />
+              <Times :size="12" />
             </button>
-          </span>
+          </TagBadge>
           <span v-if="!asset.tags?.length" class="text-xs text-slate-400">
             No tags
           </span>
-        </div>
-        <div class="flex gap-2">
-          <InputText
-            v-model="tagName"
-            placeholder="Add a tag"
-            size="small"
-            class="flex-1"
-            @keyup.enter="addTag"
-          />
-          <Button
-            label="Add"
-            size="small"
-            :disabled="busy || !tagName.trim()"
-            @click="addTag"
-          >
-            <template #icon><Plus :size="16" /></template>
-          </Button>
         </div>
       </section>
 
@@ -256,7 +248,7 @@ function confirmDelete(): void {
           </div>
         </div>
         <p v-else class="text-xs text-slate-400">
-          No collections yet. Create one from the collections panel.
+          No collections yet. Create one from the sidebar.
         </p>
       </section>
 

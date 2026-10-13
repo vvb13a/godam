@@ -1,0 +1,60 @@
+package api
+
+import "net/http"
+
+func (s *Server) handleListTagGroups(w http.ResponseWriter, r *http.Request) {
+	groups, err := s.deps.TagGroups.List(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, groups)
+}
+
+type tagGroupRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Color       string `json:"color"`
+}
+
+func (s *Server) handleCreateTagGroup(w http.ResponseWriter, r *http.Request) {
+	var req tagGroupRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
+		return
+	}
+	group, err := s.deps.TagGroups.Create(r.Context(), req.Name, req.Description, req.Color)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, group)
+}
+
+func (s *Server) handleUpdateTagGroup(w http.ResponseWriter, r *http.Request) {
+	var req tagGroupRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
+		return
+	}
+	group, err := s.deps.TagGroups.Update(r.Context(), r.PathValue("id"), req.Name, req.Description, req.Color)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, group)
+}
+
+func (s *Server) handleDeleteTagGroup(w http.ResponseWriter, r *http.Request) {
+	if err := s.deps.TagGroups.Delete(r.Context(), r.PathValue("id")); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

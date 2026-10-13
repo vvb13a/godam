@@ -54,11 +54,74 @@ func (s *TagService) List(ctx context.Context) ([]domain.Tag, error) {
 	if err := s.db.WithContext(ctx).Order("name ASC").Find(&models).Error; err != nil {
 		return nil, err
 	}
+
+	type countRow struct {
+		TagID string
+		Count int64
+	}
+	var rows []countRow
+	if err := s.db.WithContext(ctx).
+		Table("asset_tags").
+		Select("tag_id, COUNT(*) AS count").
+		Group("tag_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int, len(rows))
+	for _, r := range rows {
+		counts[r.TagID] = int(r.Count)
+	}
+
 	tags := make([]domain.Tag, 0, len(models))
 	for i := range models {
-		tags = append(tags, *models[i].ToDomain())
+		tag := models[i].ToDomain()
+		tag.AssetCount = counts[tag.ID]
+		tags = append(tags, *tag)
 	}
 	return tags, nil
+}
+
+func (s *TagService) GetByID(ctx context.Context, id string) (*domain.Tag, error) {
+	var m store.Tag
+	err := s.db.WithContext(ctx).First(&m, "id = ?", id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, domain.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	tag := m.ToDomain()
+	var count int64
+	if err := s.db.WithContext(ctx).
+		Table("asset_tags").
+		Where("tag_id = ?", id).
+		Count(&count).Error; err != nil {
+		return nil, err
+	}
+	tag.AssetCount = int(count)
+	return tag, nil
+}
+
+// Update sets a tag's name, group (nil for uncategorized) and starred flag.
+// Callers send the complete desired state. The name is normalized the same way
+// as on creation so case variants cannot become separate tags.
+func (s *TagService) Update(ctx context.Context, id, name string, groupID *string, starred bool) (*domain.Tag, error) {
+	cleaned := strings.ToLower(strings.TrimSpace(name))
+	cleaned = strings.TrimPrefix(cleaned, "#")
+	if cleaned == "" {
+		return nil, domain.ErrNotFound
+	}
+	var group any
+	if groupID != nil {
+		group = *groupID
+	}
+	if err := s.db.WithContext(ctx).
+		Model(&store.Tag{}).
+		Where("id = ?", id).
+		Updates(map[string]any{"name": cleaned, "group_id": group, "starred": starred}).Error; err != nil {
+		return nil, err
+	}
+	return s.GetByID(ctx, id)
 }
 
 func (s *TagService) Delete(ctx context.Context, id string) error {

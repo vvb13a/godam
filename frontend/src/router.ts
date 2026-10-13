@@ -5,24 +5,18 @@ import {
 } from 'vue-router'
 
 const routes: RouteRecordRaw[] = [
-  { path: '/', redirect: '/dashboard' },
+  { path: '/', redirect: '/all' },
   {
-    path: '/dashboard',
-    name: 'dashboard',
-    component: () => import('./components/DashboardView.vue'),
-  },
-  {
-    path: '/library',
-    name: 'library',
+    path: '/all',
+    name: 'all',
     component: () => import('./components/AssetsView.vue'),
   },
   {
-    path: '/collections/:collectionId',
-    name: 'collection',
-    component: () => import('./components/AssetsView.vue'),
-    props: true,
+    path: '/trash',
+    name: 'trash',
+    component: () => import('./components/TrashView.vue'),
   },
-  { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
+  { path: '/:pathMatch(.*)*', redirect: '/all' },
 ]
 
 export const router = createRouter({

@@ -1,7 +1,20 @@
 export interface Tag {
   id: string
   name: string
+  group_id?: string
+  starred: boolean
+  asset_count: number
   created_at: string
+}
+
+export interface TagGroup {
+  id: string
+  name: string
+  description: string
+  color: string
+  tag_count: number
+  created_at: string
+  updated_at: string
 }
 
 export interface Collection {
@@ -45,6 +58,8 @@ export interface Stats {
   assets: number
   collections: number
   tags: number
+  uncategorized: number
+  untagged: number
   storage_bytes: number
   types: TypeCount[]
 }

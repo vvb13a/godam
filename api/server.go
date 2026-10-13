@@ -18,6 +18,7 @@ type Deps struct {
 	Assets         *service.AssetService
 	Collections    *service.CollectionService
 	Tags           *service.TagService
+	TagGroups      *service.TagGroupService
 	Stats          *service.StatsService
 	MaxUploadBytes int64
 }
@@ -65,6 +66,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/collections/{id}", s.handleDeleteCollection)
 
 	s.mux.HandleFunc("GET /api/tags", s.handleListTags)
+	s.mux.HandleFunc("POST /api/tags", s.handleCreateTag)
+	s.mux.HandleFunc("PUT /api/tags/{id}", s.handleUpdateTag)
+	s.mux.HandleFunc("DELETE /api/tags/{id}", s.handleDeleteTag)
+
+	s.mux.HandleFunc("GET /api/tag-groups", s.handleListTagGroups)
+	s.mux.HandleFunc("POST /api/tag-groups", s.handleCreateTagGroup)
+	s.mux.HandleFunc("PUT /api/tag-groups/{id}", s.handleUpdateTagGroup)
+	s.mux.HandleFunc("DELETE /api/tag-groups/{id}", s.handleDeleteTagGroup)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

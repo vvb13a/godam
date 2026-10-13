@@ -7,7 +7,7 @@ import ProgressBar from 'primevue/progressbar'
 import { Times, Upload } from '@primeicons/vue'
 import { ref, watch } from 'vue'
 import * as api from '../api/client'
-import { library, loadCollections, notifyLibraryChanged } from '../lib/library'
+import { library, notifyLibraryChanged } from '../lib/library'
 import { upload } from '../lib/upload'
 
 const sourceUrl = ref('')
@@ -58,7 +58,6 @@ async function finish(assetIds: string[]): Promise<void> {
       assetIds.map((id) => api.addToCollection(id, destination)),
     )
   }
-  await loadCollections()
   notifyLibraryChanged()
   upload.visible = false
 }

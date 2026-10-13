@@ -3,17 +3,32 @@ package api
 import (
 	"io"
 	"net/http"
+	"strings"
+
+	"github.com/vvb13a/godam/domain"
 )
 
-// handleListAssets returns every asset, optionally filtered to a collection
-// via the collection_id query parameter.
+// handleListAssets returns every asset, optionally filtered by collection
+// (collection_id or uncategorized=true), tag (tag_id or untagged=true).
 func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
-	var collectionID *string
-	if v := r.URL.Query().Get("collection_id"); v != "" {
-		collectionID = &v
-	}
+	q := r.URL.Query()
 
-	assets, err := s.deps.Assets.List(r.Context(), collectionID)
+	var filter domain.AssetFilter
+	if v := q.Get("collection_id"); v != "" {
+		filter.CollectionID = &v
+	}
+	for _, raw := range []string{q.Get("tag_ids"), q.Get("tag_id")} {
+		for _, id := range strings.Split(raw, ",") {
+			id = strings.TrimSpace(id)
+			if id != "" {
+				filter.TagIDs = append(filter.TagIDs, id)
+			}
+		}
+	}
+	filter.Uncategorized = q.Get("uncategorized") == "true"
+	filter.Untagged = q.Get("untagged") == "true"
+
+	assets, err := s.deps.Assets.List(r.Context(), filter)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -128,13 +143,22 @@ func (s *Server) handleAssetPreview(w http.ResponseWriter, r *http.Request) {
 }
 
 type tagRequest struct {
-	Name string `json:"name"`
+	Name  string `json:"name"`
+	TagID string `json:"tag_id"`
 }
 
 func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req tagRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.TagID != "" {
+		if err := s.deps.Assets.AddTagByID(r.Context(), id, req.TagID); err != nil {
+			writeError(w, err)
+			return
+		}
+		s.respondAsset(w, r, id)
 		return
 	}
 	if req.Name == "" {
