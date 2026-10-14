@@ -11,6 +11,7 @@ import (
 // table and loaded with a Preload.
 type Asset struct {
 	ID            string    `gorm:"column:id;primaryKey;type:text"`
+	LibraryID     string    `gorm:"column:library_id;type:text;not null;index"`
 	Filename      string    `gorm:"column:filename;type:text;not null"`
 	StorageDriver string    `gorm:"column:storage_driver;type:text;not null;default:local"`
 	StorageKey    string    `gorm:"column:storage_key;type:text;not null"`
@@ -34,6 +35,7 @@ func (Asset) TableName() string { return "assets" }
 func AssetModel(a *domain.Asset) *Asset {
 	return &Asset{
 		ID:            a.ID,
+		LibraryID:     a.LibraryID,
 		Filename:      a.Filename,
 		StorageDriver: a.StorageDriver,
 		StorageKey:    a.StorageKey,
@@ -59,6 +61,7 @@ func (m *Asset) ToDomain() *domain.Asset {
 	}
 	return &domain.Asset{
 		ID:            m.ID,
+		LibraryID:     m.LibraryID,
 		Filename:      m.Filename,
 		StorageDriver: m.StorageDriver,
 		StorageKey:    m.StorageKey,

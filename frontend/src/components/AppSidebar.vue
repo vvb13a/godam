@@ -26,6 +26,7 @@ import { assetDrag } from '../lib/assetDrag'
 import { COLLECTION_ICONS, collectionIcon } from '../lib/collectionIcons'
 import { openCommandMenu } from '../lib/command'
 import {
+  initLibrary,
   library,
   notifyLibraryChanged,
   refreshLibrary,
@@ -33,6 +34,7 @@ import {
 import type { Collection } from '../types'
 import { openTagsDialog } from '../lib/tagsDialog'
 import Kbd from './Kbd.vue'
+import LibrarySwitcher from './LibrarySwitcher.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -190,7 +192,10 @@ async function save(): Promise<void> {
       notifyLibraryChanged()
       toast.add({ severity: 'success', summary: 'Collection updated', life: 2500 })
     } else {
+      const libraryId = library.currentId
+      if (!libraryId) return
       const collection = await api.createCollection(
+        libraryId,
         name.value.trim(),
         description.value.trim(),
         icon.value,
@@ -273,13 +278,14 @@ watch(
 )
 
 onMounted(() => {
-  void refreshLibrary()
+  void initLibrary()
 })
 </script>
 
 <template>
   <aside class="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white">
-    <div class="p-3 pb-0">
+    <div class="space-y-2 p-3 pb-0">
+      <LibrarySwitcher />
       <button
         class="flex w-full items-center gap-2 rounded border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:border-slate-300 hover:text-slate-700"
         @click="openCommandMenu"

@@ -20,10 +20,14 @@ func NewCollectionService(db *gorm.DB) *CollectionService {
 	return &CollectionService{db: db}
 }
 
-func (s *CollectionService) Create(ctx context.Context, name, description, icon string) (*domain.Collection, error) {
+func (s *CollectionService) Create(ctx context.Context, libraryID, name, description, icon string) (*domain.Collection, error) {
+	if err := ensureLibraryExists(ctx, s.db, libraryID); err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 	col := &domain.Collection{
 		ID:          uuid.New().String(),
+		LibraryID:   libraryID,
 		Name:        name,
 		Description: description,
 		Icon:        icon,
@@ -67,9 +71,12 @@ func (s *CollectionService) GetByID(ctx context.Context, id string) (*domain.Col
 	return m.ToDomain(), nil
 }
 
-func (s *CollectionService) List(ctx context.Context) ([]domain.Collection, error) {
+func (s *CollectionService) List(ctx context.Context, libraryID string) ([]domain.Collection, error) {
 	var models []store.Collection
-	if err := s.db.WithContext(ctx).Order("name ASC").Find(&models).Error; err != nil {
+	if err := s.db.WithContext(ctx).
+		Where("library_id = ?", libraryID).
+		Order("name ASC").
+		Find(&models).Error; err != nil {
 		return nil, err
 	}
 
@@ -108,7 +115,7 @@ func (s *CollectionService) Duplicate(ctx context.Context, id string) (*domain.C
 		return nil, err
 	}
 
-	name, err := s.uniqueName(ctx, src.Name+" copy")
+	name, err := s.uniqueName(ctx, src.LibraryID, src.Name+" copy")
 	if err != nil {
 		return nil, err
 	}
@@ -116,6 +123,7 @@ func (s *CollectionService) Duplicate(ctx context.Context, id string) (*domain.C
 	now := time.Now().UTC()
 	dup := &domain.Collection{
 		ID:          uuid.New().String(),
+		LibraryID:   src.LibraryID,
 		Name:        name,
 		Description: src.Description,
 		Icon:        src.Icon,
@@ -141,13 +149,14 @@ func (s *CollectionService) Duplicate(ctx context.Context, id string) (*domain.C
 	return dup, nil
 }
 
-// uniqueName appends an incrementing suffix until the name is free.
-func (s *CollectionService) uniqueName(ctx context.Context, base string) (string, error) {
+// uniqueName appends an incrementing suffix until the name is free within the
+// library.
+func (s *CollectionService) uniqueName(ctx context.Context, libraryID, base string) (string, error) {
 	name := base
 	for i := 2; ; i++ {
 		var count int64
 		if err := s.db.WithContext(ctx).Model(&store.Collection{}).
-			Where("name = ?", name).Count(&count).Error; err != nil {
+			Where("library_id = ? AND name = ?", libraryID, name).Count(&count).Error; err != nil {
 			return "", err
 		}
 		if count == 0 {

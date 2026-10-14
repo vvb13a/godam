@@ -10,7 +10,8 @@ import (
 // asset_collections table.
 type Collection struct {
 	ID          string    `gorm:"column:id;primaryKey;type:text"`
-	Name        string    `gorm:"column:name;type:text;not null;uniqueIndex"`
+	LibraryID   string    `gorm:"column:library_id;type:text;not null;index"`
+	Name        string    `gorm:"column:name;type:text;not null"`
 	Description string    `gorm:"column:description;type:text"`
 	Icon        string    `gorm:"column:icon;type:text;not null;default:''"`
 	CreatedAt   time.Time `gorm:"column:created_at"`
@@ -24,6 +25,7 @@ func (Collection) TableName() string { return "collections" }
 func CollectionModel(c *domain.Collection) *Collection {
 	return &Collection{
 		ID:          c.ID,
+		LibraryID:   c.LibraryID,
 		Name:        c.Name,
 		Description: c.Description,
 		Icon:        c.Icon,
@@ -35,6 +37,7 @@ func CollectionModel(c *domain.Collection) *Collection {
 func (m *Collection) ToDomain() *domain.Collection {
 	return &domain.Collection{
 		ID:          m.ID,
+		LibraryID:   m.LibraryID,
 		Name:        m.Name,
 		Description: m.Description,
 		Icon:        m.Icon,

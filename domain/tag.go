@@ -4,6 +4,7 @@ import "time"
 
 type Tag struct {
 	ID         string    `json:"id"`
+	LibraryID  string    `json:"library_id"`
 	Name       string    `json:"name"`
 	GroupID    *string   `json:"group_id,omitempty"`
 	Starred    bool      `json:"starred"`

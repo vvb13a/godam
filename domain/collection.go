@@ -4,6 +4,7 @@ import "time"
 
 type Collection struct {
 	ID          string    `json:"id"`
+	LibraryID   string    `json:"library_id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description,omitempty"`
 	Icon        string    `json:"icon,omitempty"`

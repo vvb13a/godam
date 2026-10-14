@@ -95,7 +95,11 @@ func (s *AssetService) GetByID(ctx context.Context, id string) (*domain.Asset, e
 }
 
 func (s *AssetService) List(ctx context.Context, filter domain.AssetFilter) ([]domain.Asset, error) {
-	query := s.db.WithContext(ctx).Preload("Tags").Preload("Collections").Order("created_at DESC")
+	query := s.db.WithContext(ctx).
+		Preload("Tags").
+		Preload("Collections").
+		Where("assets.library_id = ?", filter.LibraryID).
+		Order("created_at DESC")
 	if filter.CollectionID != nil {
 		query = query.
 			Joins("JOIN asset_collections ON asset_collections.asset_id = assets.id").
@@ -144,7 +148,7 @@ func (s *AssetService) OpenPreview(ctx context.Context, id string) (io.ReadClose
 
 // UploadFromSource accepts either a local filesystem path or an http(s) URL,
 // streams it through onProgress and stores it with the default driver.
-func (s *AssetService) UploadFromSource(ctx context.Context, source string, onProgress ProgressCallback) (*domain.Asset, error) {
+func (s *AssetService) UploadFromSource(ctx context.Context, libraryID, source string, onProgress ProgressCallback) (*domain.Asset, error) {
 	var reader io.Reader
 	var filename string
 	var size int64
@@ -216,10 +220,10 @@ func (s *AssetService) UploadFromSource(ctx context.Context, source string, onPr
 	}
 
 	// Uses default driver ("")
-	return s.Upload(ctx, "", filename, mimeType, size, reader)
+	return s.Upload(ctx, libraryID, "", filename, mimeType, size, reader)
 }
 
-func (s *AssetService) Upload(ctx context.Context, driverName, filename, mimeType string, size int64, reader io.Reader) (*domain.Asset, error) {
+func (s *AssetService) Upload(ctx context.Context, libraryID, driverName, filename, mimeType string, size int64, reader io.Reader) (*domain.Asset, error) {
 	cleanMime := strings.Split(mimeType, ";")[0]
 	if s.cfg != nil {
 		if !s.cfg.IsAllowedMime(cleanMime) {
@@ -228,6 +232,10 @@ func (s *AssetService) Upload(ctx context.Context, driverName, filename, mimeTyp
 		if s.cfg.MaxUploadSizeBytes > 0 && size > s.cfg.MaxUploadSizeBytes {
 			return nil, fmt.Errorf("%w: %d bytes (limit: %d)", ErrFileTooLarge, size, s.cfg.MaxUploadSizeBytes)
 		}
+	}
+
+	if err := s.ensureLibrary(ctx, libraryID); err != nil {
+		return nil, err
 	}
 
 	driver, err := s.registry.Get(driverName)
@@ -265,6 +273,7 @@ func (s *AssetService) Upload(ctx context.Context, driverName, filename, mimeTyp
 
 	asset := &domain.Asset{
 		ID:            id,
+		LibraryID:     libraryID,
 		Filename:      filename,
 		StorageDriver: driverName,
 		StorageKey:    storageKey,
@@ -341,7 +350,14 @@ func (s *AssetService) Download(ctx context.Context, assetID, destPath string, t
 }
 
 func (s *AssetService) AddTag(ctx context.Context, assetID, tagName string) error {
-	tag, err := s.tags.GetOrCreate(ctx, tagName)
+	var asset store.Asset
+	if err := s.db.WithContext(ctx).Select("library_id").First(&asset, "id = ?", assetID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.ErrNotFound
+		}
+		return err
+	}
+	tag, err := s.tags.GetOrCreate(ctx, asset.LibraryID, tagName)
 	if err != nil {
 		return err
 	}
@@ -402,4 +418,28 @@ func (s *AssetService) Delete(ctx context.Context, id string) error {
 	_ = s.local.Delete(ctx, fmt.Sprintf("previews/%s.jpg", id))
 
 	return nil
+}
+
+// DeleteByLibrary removes every asset in a library and its stored files. It is
+// used when a whole library is deleted.
+func (s *AssetService) DeleteByLibrary(ctx context.Context, libraryID string) error {
+	var ids []string
+	if err := s.db.WithContext(ctx).
+		Model(&store.Asset{}).
+		Where("library_id = ?", libraryID).
+		Pluck("id", &ids).Error; err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := s.Delete(ctx, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ensureLibrary verifies a library exists before persisting scoped rows, so an
+// unknown library yields ErrNotFound (404) instead of a foreign key error.
+func (s *AssetService) ensureLibrary(ctx context.Context, libraryID string) error {
+	return ensureLibraryExists(ctx, s.db, libraryID)
 }

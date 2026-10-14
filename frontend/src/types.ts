@@ -1,5 +1,15 @@
+export interface Library {
+  id: string
+  name: string
+  color: string
+  sort: number
+  created_at: string
+  updated_at: string
+}
+
 export interface Tag {
   id: string
+  library_id: string
   name: string
   group_id?: string
   starred: boolean
@@ -9,6 +19,7 @@ export interface Tag {
 
 export interface TagGroup {
   id: string
+  library_id: string
   name: string
   description: string
   color: string
@@ -19,6 +30,7 @@ export interface TagGroup {
 
 export interface Collection {
   id: string
+  library_id: string
   name: string
   description?: string
   icon?: string
@@ -37,6 +49,7 @@ export interface AssetMetadata {
 
 export interface Asset {
   id: string
+  library_id: string
   filename: string
   storage_driver: string
   storage_key: string

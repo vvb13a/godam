@@ -19,6 +19,7 @@ var (
 	collectionService *service.CollectionService
 	tagService        *service.TagService
 	tagGroupService   *service.TagGroupService
+	libraryService    *service.LibraryService
 	statsService      *service.StatsService
 )
 
@@ -29,6 +30,7 @@ func main() {
 		Collections:    collectionService,
 		Tags:           tagService,
 		TagGroups:      tagGroupService,
+		Libraries:      libraryService,
 		Stats:          statsService,
 		MaxUploadBytes: appConfig.MaxUploadSizeBytes,
 	})
@@ -96,6 +98,7 @@ func initDependencies() {
 		service.NewPreviewGenerator(600, 85),
 		tagService,
 	)
+	libraryService = service.NewLibraryService(db, assetService)
 
 	log.Printf("godam database: %s", dbPath)
 	log.Printf("godam storage:  %s", storagePath)

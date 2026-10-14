@@ -19,9 +19,12 @@ func NewTagGroupService(db *gorm.DB) *TagGroupService {
 	return &TagGroupService{db: db}
 }
 
-func (s *TagGroupService) List(ctx context.Context) ([]domain.TagGroup, error) {
+func (s *TagGroupService) List(ctx context.Context, libraryID string) ([]domain.TagGroup, error) {
 	var models []store.TagGroup
-	if err := s.db.WithContext(ctx).Order("rowid ASC").Find(&models).Error; err != nil {
+	if err := s.db.WithContext(ctx).
+		Where("library_id = ?", libraryID).
+		Order("rowid ASC").
+		Find(&models).Error; err != nil {
 		return nil, err
 	}
 
@@ -32,7 +35,7 @@ func (s *TagGroupService) List(ctx context.Context) ([]domain.TagGroup, error) {
 	if err := s.db.WithContext(ctx).
 		Table("tags").
 		Select("group_id, COUNT(*) AS count").
-		Where("group_id IS NOT NULL").
+		Where("group_id IS NOT NULL AND library_id = ?", libraryID).
 		Group("group_id").
 		Scan(&rows).Error; err != nil {
 		return nil, err
@@ -63,10 +66,14 @@ func (s *TagGroupService) GetByID(ctx context.Context, id string) (*domain.TagGr
 	return m.ToDomain(), nil
 }
 
-func (s *TagGroupService) Create(ctx context.Context, name, description, color string) (*domain.TagGroup, error) {
+func (s *TagGroupService) Create(ctx context.Context, libraryID, name, description, color string) (*domain.TagGroup, error) {
+	if err := ensureLibraryExists(ctx, s.db, libraryID); err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 	group := &domain.TagGroup{
 		ID:          uuid.New().String(),
+		LibraryID:   libraryID,
 		Name:        name,
 		Description: description,
 		Color:       color,

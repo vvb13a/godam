@@ -3,7 +3,11 @@ package api
 import "net/http"
 
 func (s *Server) handleListTagGroups(w http.ResponseWriter, r *http.Request) {
-	groups, err := s.deps.TagGroups.List(r.Context())
+	libraryID, ok := requireLibraryID(w, r)
+	if !ok {
+		return
+	}
+	groups, err := s.deps.TagGroups.List(r.Context(), libraryID)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -12,6 +16,7 @@ func (s *Server) handleListTagGroups(w http.ResponseWriter, r *http.Request) {
 }
 
 type tagGroupRequest struct {
+	LibraryID   string `json:"library_id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Color       string `json:"color"`
@@ -26,7 +31,11 @@ func (s *Server) handleCreateTagGroup(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
 		return
 	}
-	group, err := s.deps.TagGroups.Create(r.Context(), req.Name, req.Description, req.Color)
+	if req.LibraryID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
+		return
+	}
+	group, err := s.deps.TagGroups.Create(r.Context(), req.LibraryID, req.Name, req.Description, req.Color)
 	if err != nil {
 		writeError(w, err)
 		return

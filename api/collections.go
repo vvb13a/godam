@@ -3,7 +3,11 @@ package api
 import "net/http"
 
 func (s *Server) handleListCollections(w http.ResponseWriter, r *http.Request) {
-	collections, err := s.deps.Collections.List(r.Context())
+	libraryID, ok := requireLibraryID(w, r)
+	if !ok {
+		return
+	}
+	collections, err := s.deps.Collections.List(r.Context(), libraryID)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -12,6 +16,7 @@ func (s *Server) handleListCollections(w http.ResponseWriter, r *http.Request) {
 }
 
 type collectionRequest struct {
+	LibraryID   string `json:"library_id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Icon        string `json:"icon"`
@@ -26,7 +31,11 @@ func (s *Server) handleCreateCollection(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
 		return
 	}
-	collection, err := s.deps.Collections.Create(r.Context(), req.Name, req.Description, req.Icon)
+	if req.LibraryID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
+		return
+	}
+	collection, err := s.deps.Collections.Create(r.Context(), req.LibraryID, req.Name, req.Description, req.Icon)
 	if err != nil {
 		writeError(w, err)
 		return

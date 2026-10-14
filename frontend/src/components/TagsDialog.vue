@@ -899,8 +899,10 @@ function uniqueUntitledTagName(): string {
 // addTag creates a draft tag then opens its inline editor. If the name is left
 // unchanged the draft is rolled back, so nothing is persisted.
 async function addTag(): Promise<void> {
+  const libraryId = library.currentId
+  if (!libraryId) return
   try {
-    let tag = await api.createTag(uniqueUntitledTagName())
+    let tag = await api.createTag(libraryId, uniqueUntitledTagName())
     const view = activeView.value
     if (view.startsWith('group:')) {
       tag = await api.updateTag(
@@ -996,8 +998,11 @@ function uniqueUntitledName(): string {
 }
 
 async function addGroup(): Promise<void> {
+  const libraryId = library.currentId
+  if (!libraryId) return
   try {
     const group = await api.createTagGroup(
+      libraryId,
       uniqueUntitledName(),
       '',
       DEFAULT_COLOR,

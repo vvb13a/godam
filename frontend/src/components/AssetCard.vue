@@ -55,6 +55,7 @@ const imageClass = computed(() => {
   <button
     type="button"
     draggable="true"
+    :data-asset-id="asset.id"
     class="group overflow-hidden rounded border bg-white text-left transition hover:border-violet-300 hover:shadow-sm focus:ring-2 focus:ring-violet-400 focus:outline-none"
     :class="selected ? 'border-violet-500 ring-2 ring-violet-500' : 'border-slate-200'"
     @click.stop="$emit('open', asset, $event)"

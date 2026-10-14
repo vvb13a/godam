@@ -64,6 +64,8 @@ async function finish(assetIds: string[]): Promise<void> {
 
 async function uploadFiles(): Promise<void> {
   if (!upload.files.length || uploading.value) return
+  const libraryId = library.currentId
+  if (!libraryId) return
   uploading.value = true
   error.value = null
   const total = upload.files.length
@@ -72,7 +74,7 @@ async function uploadFiles(): Promise<void> {
     let done = 0
     for (const file of upload.files) {
       current.value = file.name
-      const asset = await api.uploadAsset(file, undefined, (fraction) => {
+      const asset = await api.uploadAsset(libraryId, file, undefined, (fraction) => {
         progress.value = Math.round(((done + fraction) / total) * 100)
       })
       ids.push(asset.id)
@@ -90,12 +92,14 @@ async function uploadFiles(): Promise<void> {
 async function importUrl(): Promise<void> {
   const source = sourceUrl.value.trim()
   if (!source || uploading.value) return
+  const libraryId = library.currentId
+  if (!libraryId) return
   uploading.value = true
   error.value = null
   current.value = source
   progress.value = 0
   try {
-    const asset = await api.importAsset(source)
+    const asset = await api.importAsset(libraryId, source)
     await finish([asset.id])
   } catch (e) {
     error.value = toMessage(e)

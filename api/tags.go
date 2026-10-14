@@ -6,7 +6,11 @@ import (
 )
 
 func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
-	tags, err := s.deps.Tags.List(r.Context())
+	libraryID, ok := requireLibraryID(w, r)
+	if !ok {
+		return
+	}
+	tags, err := s.deps.Tags.List(r.Context(), libraryID)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -25,7 +29,11 @@ func (s *Server) handleCreateTag(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
 		return
 	}
-	tag, err := s.deps.Tags.GetOrCreate(r.Context(), req.Name)
+	if req.LibraryID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
+		return
+	}
+	tag, err := s.deps.Tags.GetOrCreate(r.Context(), req.LibraryID, req.Name)
 	if err != nil {
 		writeError(w, err)
 		return

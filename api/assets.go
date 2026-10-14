@@ -8,12 +8,17 @@ import (
 	"github.com/vvb13a/godam/domain"
 )
 
-// handleListAssets returns every asset, optionally filtered by collection
-// (collection_id or uncategorized=true), tag (tag_id or untagged=true).
+// handleListAssets returns the assets of a library, optionally filtered by
+// collection (collection_id or uncategorized=true), tag (tag_id or
+// untagged=true). library_id is required.
 func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
-	var filter domain.AssetFilter
+	libraryID, ok := requireLibraryID(w, r)
+	if !ok {
+		return
+	}
+	filter := domain.AssetFilter{LibraryID: libraryID}
 	if v := q.Get("collection_id"); v != "" {
 		filter.CollectionID = &v
 	}
@@ -70,7 +75,13 @@ func (s *Server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
 		_, _ = file.Seek(0, 0)
 	}
 
-	asset, err := s.deps.Assets.Upload(r.Context(), r.FormValue("driver"), header.Filename, mimeType, header.Size, file)
+	libraryID := r.FormValue("library_id")
+	if libraryID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
+		return
+	}
+
+	asset, err := s.deps.Assets.Upload(r.Context(), libraryID, r.FormValue("driver"), header.Filename, mimeType, header.Size, file)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -79,7 +90,8 @@ func (s *Server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 type importRequest struct {
-	Source string `json:"source"`
+	LibraryID string `json:"library_id"`
+	Source    string `json:"source"`
 }
 
 // handleImportAsset pulls an asset from a local path or an http(s) URL.
@@ -92,7 +104,11 @@ func (s *Server) handleImportAsset(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "source is required"})
 		return
 	}
-	asset, err := s.deps.Assets.UploadFromSource(r.Context(), req.Source, nil)
+	if req.LibraryID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
+		return
+	}
+	asset, err := s.deps.Assets.UploadFromSource(r.Context(), req.LibraryID, req.Source, nil)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -143,8 +159,9 @@ func (s *Server) handleAssetPreview(w http.ResponseWriter, r *http.Request) {
 }
 
 type tagRequest struct {
-	Name  string `json:"name"`
-	TagID string `json:"tag_id"`
+	Name      string `json:"name"`
+	TagID     string `json:"tag_id"`
+	LibraryID string `json:"library_id"`
 }
 
 func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {

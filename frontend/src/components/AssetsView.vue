@@ -9,7 +9,7 @@ import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 import type { MenuItem } from 'primevue/menuitem'
 import { ExternalLink, SlidersH, Tag, Trash, Upload } from '@primeicons/vue'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as api from '../api/client'
 import { endAssetDrag, startAssetDrag } from '../lib/assetDrag'
@@ -45,6 +45,39 @@ const mosaic = ref(false)
 const displayPopover = ref<InstanceType<typeof Popover> | null>(null)
 
 const contextMenu = ref<{ show: (event: MouseEvent) => void } | null>(null)
+
+// Lasso (marquee) selection state. Coordinates are viewport-relative
+// (clientX/clientY) so the rectangle and hit-testing stay correct while the
+// grid scrolls. `data-asset-id` marks the hittable cards in AssetCard/MosaicWall.
+interface LassoRect {
+  startX: number
+  startY: number
+  x: number
+  y: number
+}
+
+interface LassoSession {
+  startX: number
+  startY: number
+  additive: boolean
+  base: string[]
+}
+
+const gridContainer = ref<HTMLElement | null>(null)
+const lasso = ref<LassoRect | null>(null)
+let lassoSession: LassoSession | null = null
+const LASSO_THRESHOLD = 4
+
+const lassoStyle = computed(() => {
+  const rect = lasso.value
+  if (!rect) return null
+  return {
+    left: `${Math.min(rect.startX, rect.x)}px`,
+    top: `${Math.min(rect.startY, rect.y)}px`,
+    width: `${Math.abs(rect.x - rect.startX)}px`,
+    height: `${Math.abs(rect.y - rect.startY)}px`,
+  }
+})
 
 // Collection and tag filters live in the route query so the sidebar and the
 // toolbar stay in sync and the selection is shareable. Special values
@@ -181,10 +214,15 @@ function toMessage(e: unknown): string {
 }
 
 async function load(): Promise<void> {
+  const libraryId = library.currentId
+  if (!libraryId) {
+    assets.value = []
+    return
+  }
   loading.value = true
   error.value = null
   try {
-    const params: api.AssetListParams = {}
+    const params: api.AssetListParams = { libraryId }
     const c = collectionFilter.value
     if (c === 'uncategorized') params.uncategorized = true
     else if (c) params.collectionId = c
@@ -227,6 +265,84 @@ function onSelect(asset: Asset, event: MouseEvent): void {
 function clearSelection(): void {
   selectedIds.value = []
   anchorId.value = null
+}
+
+// onLassoStart begins a marquee drag when the press lands on empty grid
+// background. Pressing a card (or any control) is left to the normal click /
+// native-drag handling. Ctrl/Cmd/Shift keeps the existing selection.
+function onLassoStart(event: MouseEvent): void {
+  if (event.button !== 0) return
+  const target = event.target as HTMLElement | null
+  if (!target || target.closest('[data-asset-id], button, a, input, select, textarea')) {
+    return
+  }
+  lassoSession = {
+    startX: event.clientX,
+    startY: event.clientY,
+    additive: event.metaKey || event.ctrlKey || event.shiftKey,
+    base: selectedIds.value.slice(),
+  }
+  window.addEventListener('mousemove', onLassoMove)
+  window.addEventListener('mouseup', onLassoEnd)
+  event.preventDefault()
+}
+
+function onLassoMove(event: MouseEvent): void {
+  const session = lassoSession
+  if (!session) return
+  if (
+    !lasso.value &&
+    Math.hypot(event.clientX - session.startX, event.clientY - session.startY) <
+      LASSO_THRESHOLD
+  ) {
+    return
+  }
+  lasso.value = {
+    startX: session.startX,
+    startY: session.startY,
+    x: event.clientX,
+    y: event.clientY,
+  }
+  applyLasso(event.clientX, event.clientY)
+}
+
+// applyLasso selects every card whose bounding box intersects the marquee.
+function applyLasso(x: number, y: number): void {
+  const session = lassoSession
+  const container = gridContainer.value
+  if (!session || !container) return
+  const left = Math.min(session.startX, x)
+  const right = Math.max(session.startX, x)
+  const top = Math.min(session.startY, y)
+  const bottom = Math.max(session.startY, y)
+
+  const hits: string[] = []
+  container.querySelectorAll<HTMLElement>('[data-asset-id]').forEach((el) => {
+    const id = el.dataset.assetId
+    if (!id) return
+    const rect = el.getBoundingClientRect()
+    if (rect.left < right && rect.right > left && rect.top < bottom && rect.bottom > top) {
+      hits.push(id)
+    }
+  })
+
+  selectedIds.value = session.additive
+    ? [...new Set([...session.base, ...hits])]
+    : hits
+  anchorId.value = selectedIds.value[selectedIds.value.length - 1] ?? null
+}
+
+function onLassoEnd(): void {
+  window.removeEventListener('mousemove', onLassoMove)
+  window.removeEventListener('mouseup', onLassoEnd)
+  const session = lassoSession
+  lassoSession = null
+  if (lasso.value) {
+    lasso.value = null
+    return
+  }
+  // A press with no drag on empty background clears the selection.
+  if (session && !session.additive) clearSelection()
 }
 
 function onContextMenu(event: MouseEvent, asset: Asset): void {
@@ -329,8 +445,20 @@ watch(
   },
 )
 
+watch(
+  () => library.currentId,
+  () => {
+    clearSelection()
+  },
+)
+
 onMounted(() => {
   void load()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('mousemove', onLassoMove)
+  window.removeEventListener('mouseup', onLassoEnd)
 })
 </script>
 
@@ -486,7 +614,11 @@ onMounted(() => {
           </Popover>
         </header>
 
-        <div class="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
+        <div
+          ref="gridContainer"
+          class="min-h-0 flex-1 overflow-y-auto px-6 pb-6"
+          @mousedown="onLassoStart"
+        >
           <p v-if="loading" class="text-sm text-slate-400">Loading…</p>
           <p v-else-if="!assets.length" class="text-sm text-slate-400">
             No assets yet.
@@ -546,5 +678,11 @@ onMounted(() => {
     </div>
 
     <ContextMenu ref="contextMenu" :model="menuItems" />
+
+    <div
+      v-if="lassoStyle"
+      class="pointer-events-none fixed z-40 rounded-sm border border-violet-500 bg-violet-500/10"
+      :style="lassoStyle"
+    />
   </div>
 </template>

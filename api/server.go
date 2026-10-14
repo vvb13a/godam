@@ -19,6 +19,7 @@ type Deps struct {
 	Collections    *service.CollectionService
 	Tags           *service.TagService
 	TagGroups      *service.TagGroupService
+	Libraries      *service.LibraryService
 	Stats          *service.StatsService
 	MaxUploadBytes int64
 }
@@ -46,6 +47,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/stats", s.handleStats)
+
+	s.mux.HandleFunc("GET /api/libraries", s.handleListLibraries)
+	s.mux.HandleFunc("POST /api/libraries", s.handleCreateLibrary)
+	s.mux.HandleFunc("PUT /api/libraries/sort", s.handleReorderLibraries)
+	s.mux.HandleFunc("PUT /api/libraries/{id}", s.handleUpdateLibrary)
+	s.mux.HandleFunc("DELETE /api/libraries/{id}", s.handleDeleteLibrary)
 
 	s.mux.HandleFunc("GET /api/assets", s.handleListAssets)
 	s.mux.HandleFunc("POST /api/assets/upload", s.handleUploadAsset)
@@ -109,4 +116,15 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 		return false
 	}
 	return true
+}
+
+// requireLibraryID reads the mandatory library_id query parameter that scopes
+// every library-owned listing, writing a 400 and returning false when absent.
+func requireLibraryID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	id := r.URL.Query().Get("library_id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
+		return "", false
+	}
+	return id, true
 }
