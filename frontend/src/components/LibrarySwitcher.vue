@@ -8,12 +8,10 @@ import {
   ChevronDown,
   ChevronUp,
   Database,
-  ExclamationTriangle,
   GripVertical,
   Palette,
   Pencil,
   Plus,
-  Trash,
 } from '@primeicons/vue'
 import type { Component } from 'vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -31,6 +29,7 @@ import {
   LIBRARY_COLORS,
   libraryColorHex,
 } from '../lib/libraryColors'
+import { confirmDeleteMenuItem } from '../lib/menu'
 import type { Library } from '../types'
 
 interface LibraryMenuItem extends MenuItem {
@@ -195,19 +194,7 @@ const menuItems = computed<LibraryMenuItem[]>(() => {
       })),
     },
     { separator: true },
-    {
-      label: 'Delete',
-      menuIcon: Trash,
-      class: 'text-red-600',
-      items: [
-        {
-          label: 'Confirm',
-          menuIcon: ExclamationTriangle,
-          class: 'text-red-600',
-          command: () => void removeLib(lib),
-        },
-      ],
-    },
+    confirmDeleteMenuItem('Delete', () => void removeLib(lib)),
   ]
 })
 

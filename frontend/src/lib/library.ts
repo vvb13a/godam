@@ -1,6 +1,13 @@
 import { reactive } from 'vue'
 import * as api from '../api/client'
-import type { Collection, Library, Stats, Tag, TagGroup } from '../types'
+import type {
+  Collection,
+  Library,
+  SmartCollection,
+  Stats,
+  Tag,
+  TagGroup,
+} from '../types'
 
 // library holds the top-level Library scopes together with the scoped data
 // (collections, tags, tag groups, stats) of the active library. The version
@@ -11,6 +18,7 @@ export const library = reactive({
   currentId: null as string | null,
   loaded: false,
   collections: [] as Collection[],
+  smartCollections: [] as SmartCollection[],
   tags: [] as Tag[],
   tagGroups: [] as TagGroup[],
   stats: null as Stats | null,
@@ -35,6 +43,11 @@ export async function loadCollections(): Promise<void> {
   library.collections = id ? await api.listCollections(id) : []
 }
 
+export async function loadSmartCollections(): Promise<void> {
+  const id = library.currentId
+  library.smartCollections = id ? await api.listSmartCollections(id) : []
+}
+
 export async function loadTags(): Promise<void> {
   const id = library.currentId
   library.tags = id ? await api.listTags(id) : []
@@ -52,6 +65,7 @@ export async function loadStats(): Promise<void> {
 
 export function clearScopedData(): void {
   library.collections = []
+  library.smartCollections = []
   library.tags = []
   library.tagGroups = []
   library.stats = null
@@ -71,7 +85,13 @@ export async function refreshLibrary(): Promise<void> {
     clearScopedData()
     return
   }
-  await Promise.all([loadCollections(), loadTags(), loadTagGroups(), loadStats()])
+  await Promise.all([
+    loadCollections(),
+    loadSmartCollections(),
+    loadTags(),
+    loadTagGroups(),
+    loadStats(),
+  ])
 }
 
 // selectLibrary switches the active library, drops the previous library's data

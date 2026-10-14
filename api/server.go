@@ -16,14 +16,15 @@ import (
 
 // Deps carries the services the HTTP handlers operate on.
 type Deps struct {
-	Assets         *service.AssetService
-	Collections    *service.CollectionService
-	Tags           *service.TagService
-	TagGroups      *service.TagGroupService
-	Libraries      *service.LibraryService
-	Users          *service.UserService
-	Stats          *service.StatsService
-	MaxUploadBytes int64
+	Assets           *service.AssetService
+	Collections      *service.CollectionService
+	SmartCollections *service.SmartCollectionService
+	Tags             *service.TagService
+	TagGroups        *service.TagGroupService
+	Libraries        *service.LibraryService
+	Users            *service.UserService
+	Stats            *service.StatsService
+	MaxUploadBytes   int64
 }
 
 // Server is the HTTP handler for the JSON API.
@@ -83,8 +84,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/collections", s.handleListCollections)
 	s.mux.HandleFunc("POST /api/collections", s.handleCreateCollection)
 	s.mux.HandleFunc("PUT /api/collections/{id}", s.handleUpdateCollection)
-	s.mux.HandleFunc("POST /api/collections/{id}/duplicate", s.handleDuplicateCollection)
+	s.mux.HandleFunc("PUT /api/collections/{id}/move", s.handleMoveCollection)
 	s.mux.HandleFunc("DELETE /api/collections/{id}", s.handleDeleteCollection)
+
+	s.mux.HandleFunc("GET /api/smart-collections", s.handleListSmartCollections)
+	s.mux.HandleFunc("POST /api/smart-collections", s.handleCreateSmartCollection)
+	s.mux.HandleFunc("PUT /api/smart-collections/{id}", s.handleUpdateSmartCollection)
+	s.mux.HandleFunc("DELETE /api/smart-collections/{id}", s.handleDeleteSmartCollection)
 
 	s.mux.HandleFunc("GET /api/tags", s.handleListTags)
 	s.mux.HandleFunc("POST /api/tags", s.handleCreateTag)
@@ -230,4 +236,16 @@ func (s *Server) ownedTagGroup(w http.ResponseWriter, r *http.Request, id string
 		return nil, false
 	}
 	return group, true
+}
+
+func (s *Server) ownedSmartCollection(w http.ResponseWriter, r *http.Request, id string) (*domain.SmartCollection, bool) {
+	collection, err := s.deps.SmartCollections.GetByID(r.Context(), id)
+	if err != nil {
+		writeError(w, err)
+		return nil, false
+	}
+	if !s.requireOwnedLibrary(w, r, collection.LibraryID) {
+		return nil, false
+	}
+	return collection, true
 }

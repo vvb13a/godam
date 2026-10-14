@@ -9,7 +9,6 @@ import {
   Bookmark,
   Check,
   CheckCircle,
-  ExclamationTriangle,
   Folder,
   FolderOpen,
   Palette,
@@ -21,13 +20,13 @@ import {
   StarFill,
   ThLarge,
   Times,
-  Trash,
 } from '@primeicons/vue'
 import type { Component } from 'vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import * as api from '../api/client'
 import { library, notifyLibraryChanged } from '../lib/library'
+import { confirmDeleteMenuItem } from '../lib/menu'
 import { tagsDialog } from '../lib/tagsDialog'
 import type { Tag, TagGroup } from '../types'
 import Kbd from './Kbd.vue'
@@ -98,6 +97,12 @@ const editingName = ref('')
 const draftGroupId = ref<string | null>(null)
 
 const isAssetContext = computed(() => !!tagsDialog.assetId)
+const isBulkContext = computed(
+  () => tagsDialog.assetIds.length > 0 && !!tagsDialog.mode,
+)
+const isAssetEditing = computed(
+  () => isAssetContext.value || isBulkContext.value,
+)
 const selectionLoaded = ref(false)
 
 const syntheticNav = computed<NavEntry[]>(() => {
@@ -391,19 +396,7 @@ const tagMenuItems = computed<MenuItem[]>(() => {
         pendingAction.value = 'create-tag'
       },
     },
-    {
-      label: 'Delete',
-      icon: Trash,
-      class: 'text-red-600',
-      items: [
-        {
-          label: 'Confirm',
-          icon: ExclamationTriangle,
-          class: 'text-red-600',
-          command: () => performDeleteTag(tag.id),
-        },
-      ],
-    },
+    confirmDeleteMenuItem('Delete', () => performDeleteTag(tag.id)),
   )
   return items
 })
@@ -440,19 +433,7 @@ const groupMenuItems = computed<GroupMenuItem[]>(() => {
         pendingAction.value = 'create-group'
       },
     },
-    {
-      label: 'Delete',
-      menuIcon: Trash,
-      class: 'text-red-600',
-      items: [
-        {
-          label: 'Confirm',
-          menuIcon: ExclamationTriangle,
-          class: 'text-red-600',
-          command: () => performDeleteGroup(group.id),
-        },
-      ],
-    },
+    confirmDeleteMenuItem('Delete', () => performDeleteGroup(group.id)),
   ]
 })
 
@@ -474,6 +455,7 @@ watch(
       selectionLoaded.value = false
       dirty.value = false
       if (tagsDialog.assetId) void loadAssetSelection(tagsDialog.assetId)
+      else if (isBulkContext.value) selectionLoaded.value = true
     } else {
       window.removeEventListener('keydown', onWindowKeydown)
       void saveAssetSelection()
@@ -578,6 +560,10 @@ async function loadAssetSelection(assetId: string): Promise<void> {
 }
 
 async function saveAssetSelection(): Promise<void> {
+  if (isBulkContext.value) {
+    await saveBulkSelection()
+    return
+  }
   const assetId = tagsDialog.assetId
   if (!assetId || !selectionLoaded.value) return
   selectionLoaded.value = false
@@ -602,6 +588,49 @@ async function saveAssetSelection(): Promise<void> {
   }
 }
 
+// Applies the chosen tags to every selected asset: "replace" makes the
+// selection the exact tag set, "add" merges it into each asset's tags.
+async function saveBulkSelection(): Promise<void> {
+  if (!selectionLoaded.value) return
+  selectionLoaded.value = false
+  const ids = tagsDialog.assetIds
+  const mode = tagsDialog.mode
+  const target = selectedTagIds.value.slice()
+  if (!ids.length || !mode) return
+  try {
+    if (mode === 'add') {
+      const ops: Promise<unknown>[] = []
+      for (const assetId of ids) {
+        for (const tagId of target) ops.push(api.addTag(assetId, tagId))
+      }
+      await Promise.all(ops)
+      if (target.length) notifyLibraryChanged()
+      return
+    }
+    for (const assetId of ids) {
+      const asset = await api.getAsset(assetId)
+      const current = new Set((asset.tags ?? []).map((tag) => tag.id))
+      const wanted = new Set(target)
+      const ops: Promise<unknown>[] = []
+      for (const tagId of target) {
+        if (!current.has(tagId)) ops.push(api.addTag(assetId, tagId))
+      }
+      for (const tagId of current) {
+        if (!wanted.has(tagId)) ops.push(api.removeTag(assetId, tagId))
+      }
+      await Promise.all(ops)
+    }
+    notifyLibraryChanged()
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: 'Could not update tags',
+      detail: toMessage(e),
+      life: 4000,
+    })
+  }
+}
+
 function applyNavIndex(): void {
   const item = navItems.value[navIndex.value]
   if (!item) return
@@ -619,7 +648,7 @@ function selectNav(key?: string, index?: number): void {
 }
 
 function toggleTagSelection(tag: Tag): void {
-  if (!isAssetContext.value) return
+  if (!isAssetEditing.value) return
   if (selectedTagIds.value.includes(tag.id)) {
     selectedTagIds.value = selectedTagIds.value.filter((id) => id !== tag.id)
   } else {
@@ -1175,7 +1204,7 @@ onBeforeUnmount(() => {
             <span class="truncate text-left">{{ item.label }}</span>
             <span
               v-if="item.count > 0"
-              class="ml-auto shrink-0 rounded bg-slate-100 px-1.5 text-xs text-slate-500"
+              class="ml-auto shrink-0 text-xs text-slate-400"
             >
               {{ item.count }}
             </span>
@@ -1253,7 +1282,7 @@ onBeforeUnmount(() => {
             </span>
             <span
               v-if="group.tag_count > 0"
-              class="shrink-0 rounded bg-slate-100 px-1.5 text-xs text-slate-500"
+              class="shrink-0 text-xs text-slate-400"
             >
               {{ group.tag_count }}
             </span>
@@ -1269,7 +1298,7 @@ onBeforeUnmount(() => {
             </span>
             <span
               v-if="viewTags.length > 0"
-              class="shrink-0 rounded bg-slate-100 px-1.5 text-xs text-slate-500"
+              class="shrink-0 text-xs text-slate-400"
             >
               {{ viewTags.length }}
             </span>
@@ -1362,7 +1391,7 @@ onBeforeUnmount(() => {
                   </span>
                   <span
                     v-if="tag.asset_count > 0"
-                    class="shrink-0 rounded bg-slate-100 px-1.5 text-xs text-slate-500"
+                    class="shrink-0 text-xs text-slate-400"
                   >
                     {{ tag.asset_count }}
                   </span>
@@ -1372,7 +1401,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div
-            v-if="isAssetContext"
+            v-if="isAssetEditing"
             class="flex flex-wrap items-center gap-1.5 border-t border-slate-100 px-3 py-2"
           >
             <span v-if="!selectedTags.length" class="text-xs text-slate-400">
@@ -1406,7 +1435,7 @@ onBeforeUnmount(() => {
           <Kbd>→</Kbd>
           <span class="ml-1">Move</span>
         </span>
-        <span v-if="isAssetContext" class="flex items-center gap-1.5">
+        <span v-if="isAssetEditing" class="flex items-center gap-1.5">
           <Kbd>↵</Kbd>
           <span class="ml-1">Select</span>
         </span>

@@ -39,12 +39,31 @@ export interface TagGroup {
 export interface Collection {
   id: string
   library_id: string
+  parent_id?: string
   name: string
-  description?: string
-  icon?: string
+  color: string
+  sort: number
   created_at: string
   updated_at: string
   asset_count: number
+}
+
+export interface SmartCollectionFilter {
+  collection?: string
+  tag?: string
+  type?: string
+  sort?: string
+}
+
+export interface SmartCollection {
+  id: string
+  library_id: string
+  name: string
+  color: string
+  sort: number
+  filter: SmartCollectionFilter
+  created_at: string
+  updated_at: string
 }
 
 export interface AssetMetadata {

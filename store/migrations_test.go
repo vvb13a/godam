@@ -64,3 +64,56 @@ func TestLibraryUsersMigration(t *testing.T) {
 		t.Fatalf("insert after drop column: %v", err)
 	}
 }
+
+// TestCollectionHierarchyMigration upgrades a populated v6 schema to the
+// hierarchical collection head: parent_id/color/sort appear and the icon column
+// is dropped.
+func TestCollectionHierarchyMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	sqlDB, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer sqlDB.Close()
+
+	goose.SetBaseFS(migrationsFS)
+	defer goose.SetBaseFS(nil)
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		t.Fatalf("dialect: %v", err)
+	}
+	if err := goose.UpTo(sqlDB, "migrations", 6); err != nil {
+		t.Fatalf("migrate to 6: %v", err)
+	}
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO libraries (id, name, color, sort, created_at, updated_at)
+		 VALUES ('lib', 'Lib', '', 0, '2020-01-01T00:00:00Z', '2020-01-01T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("seed library: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO collections (id, library_id, name, description, icon, created_at, updated_at)
+		 VALUES ('c1', 'lib', 'Old', '', 'folder', '2020-01-01T00:00:00Z', '2020-01-01T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("seed collection: %v", err)
+	}
+
+	if err := goose.Up(sqlDB, "migrations"); err != nil {
+		t.Fatalf("migrate to head: %v", err)
+	}
+
+	// icon is gone and the new columns exist with sane defaults.
+	if _, err := sqlDB.Exec(
+		`INSERT INTO collections (id, library_id, parent_id, name, color, sort, created_at, updated_at)
+		 VALUES ('c2', 'lib', 'c1', 'Child', '', 0, '2020-01-01T00:00:00Z', '2020-01-01T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("insert with hierarchy columns: %v", err)
+	}
+	var parent string
+	if err := sqlDB.QueryRow(`SELECT parent_id FROM collections WHERE id = 'c2'`).Scan(&parent); err != nil {
+		t.Fatalf("query parent: %v", err)
+	}
+	if parent != "c1" {
+		t.Fatalf("expected parent c1, got %q", parent)
+	}
+}

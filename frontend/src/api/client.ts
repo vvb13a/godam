@@ -1,4 +1,14 @@
-import type { Asset, Collection, Library, Stats, Tag, TagGroup, User } from '../types'
+import type {
+  Asset,
+  Collection,
+  Library,
+  SmartCollection,
+  SmartCollectionFilter,
+  Stats,
+  Tag,
+  TagGroup,
+  User,
+} from '../types'
 
 // Auth endpoints legitimately return 401 (bad/absent credentials); every other
 // 401 means the session expired, which the app handles by returning to login.
@@ -333,39 +343,86 @@ export function listCollections(libraryId: string): Promise<Collection[]> {
 export function createCollection(
   libraryId: string,
   name: string,
-  description: string,
-  icon: string,
+  color: string,
+  parentId: string | null,
 ): Promise<Collection> {
   return sendJSON<Collection>('/api/collections', 'POST', {
     library_id: libraryId,
     name,
-    description,
-    icon,
+    color,
+    parent_id: parentId,
   })
 }
 
 export function updateCollection(
   id: string,
   name: string,
-  description: string,
-  icon: string,
+  color: string,
 ): Promise<Collection> {
   return sendJSON<Collection>(
     `/api/collections/${encodeURIComponent(id)}`,
     'PUT',
-    { name, description, icon },
+    { name, color },
   )
 }
 
-export function duplicateCollection(id: string): Promise<Collection> {
-  return requestJSON<Collection>(
-    `/api/collections/${encodeURIComponent(id)}/duplicate`,
-    { method: 'POST' },
-  )
+// moveCollection reparents/reorders a folder after a drag-and-drop.
+export function moveCollection(
+  id: string,
+  parentId: string | null,
+  position: number,
+): Promise<void> {
+  return requestVoid(`/api/collections/${encodeURIComponent(id)}/move`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ parent_id: parentId, position }),
+  })
 }
 
 export function deleteCollection(id: string): Promise<void> {
   return requestVoid(`/api/collections/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+}
+
+// ---- Smart collections ----
+
+export function listSmartCollections(
+  libraryId: string,
+): Promise<SmartCollection[]> {
+  return getJSON<SmartCollection[]>(
+    `/api/smart-collections?library_id=${encodeURIComponent(libraryId)}`,
+  )
+}
+
+export function createSmartCollection(
+  libraryId: string,
+  name: string,
+  color: string,
+  filter: SmartCollectionFilter,
+): Promise<SmartCollection> {
+  return sendJSON<SmartCollection>('/api/smart-collections', 'POST', {
+    library_id: libraryId,
+    name,
+    color,
+    filter,
+  })
+}
+
+export function updateSmartCollection(
+  id: string,
+  name: string,
+  color: string,
+): Promise<SmartCollection> {
+  return sendJSON<SmartCollection>(
+    `/api/smart-collections/${encodeURIComponent(id)}`,
+    'PUT',
+    { name, color },
+  )
+}
+
+export function deleteSmartCollection(id: string): Promise<void> {
+  return requestVoid(`/api/smart-collections/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   })
 }

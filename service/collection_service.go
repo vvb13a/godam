@@ -20,19 +20,33 @@ func NewCollectionService(db *gorm.DB) *CollectionService {
 	return &CollectionService{db: db}
 }
 
-func (s *CollectionService) Create(ctx context.Context, libraryID, name, description, icon string) (*domain.Collection, error) {
+// Create inserts a folder, optionally under a parent, appended after its
+// siblings. Names are made unique within the library.
+func (s *CollectionService) Create(ctx context.Context, libraryID string, parentID *string, name, color string) (*domain.Collection, error) {
 	if err := ensureLibraryExists(ctx, s.db, libraryID); err != nil {
+		return nil, err
+	}
+	if err := s.ensureValidParent(ctx, libraryID, "", parentID); err != nil {
+		return nil, err
+	}
+	unique, err := s.uniqueName(ctx, libraryID, name)
+	if err != nil {
+		return nil, err
+	}
+	sort, err := s.nextSort(ctx, libraryID, parentID)
+	if err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
 	col := &domain.Collection{
-		ID:          uuid.New().String(),
-		LibraryID:   libraryID,
-		Name:        name,
-		Description: description,
-		Icon:        icon,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:        uuid.New().String(),
+		LibraryID: libraryID,
+		ParentID:  parentID,
+		Name:      unique,
+		Color:     color,
+		Sort:      sort,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 	if err := s.db.WithContext(ctx).Create(store.CollectionModel(col)).Error; err != nil {
 		return nil, err
@@ -40,15 +54,14 @@ func (s *CollectionService) Create(ctx context.Context, libraryID, name, descrip
 	return col, nil
 }
 
-func (s *CollectionService) Update(ctx context.Context, id, name, description, icon string) (*domain.Collection, error) {
+func (s *CollectionService) Update(ctx context.Context, id, name, color string) (*domain.Collection, error) {
 	res := s.db.WithContext(ctx).
 		Model(&store.Collection{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
-			"name":        name,
-			"description": description,
-			"icon":        icon,
-			"updated_at":  time.Now().UTC(),
+			"name":       name,
+			"color":      color,
+			"updated_at": time.Now().UTC(),
 		})
 	if res.Error != nil {
 		return nil, res.Error
@@ -75,13 +88,13 @@ func (s *CollectionService) List(ctx context.Context, libraryID string) ([]domai
 	var models []store.Collection
 	if err := s.db.WithContext(ctx).
 		Where("library_id = ?", libraryID).
-		Order("name ASC").
+		Order("sort ASC, name ASC").
 		Find(&models).Error; err != nil {
 		return nil, err
 	}
 
 	// Count the assets of every collection in one grouped query and attach the
-	// totals, so the collections panel can show badges without a request each.
+	// totals, so the tree can show badges without a request each.
 	var rows []struct {
 		CollectionID string
 		Count        int64
@@ -107,46 +120,119 @@ func (s *CollectionService) List(ctx context.Context, libraryID string) ([]domai
 	return collections, nil
 }
 
-// Duplicate clones a collection (name, description, icon) under a unique name
-// and copies its asset membership, so the clone starts with the same assets.
-func (s *CollectionService) Duplicate(ctx context.Context, id string) (*domain.Collection, error) {
-	src, err := s.GetByID(ctx, id)
+// Move reparents a collection (parentID may be nil for a root) and reorders it
+// among its new siblings at the given position. It rejects cycles and foreign
+// parents.
+func (s *CollectionService) Move(ctx context.Context, id string, parentID *string, position int) error {
+	col, err := s.GetByID(ctx, id)
 	if err != nil {
-		return nil, err
+		return err
+	}
+	if err := s.ensureValidParent(ctx, col.LibraryID, id, parentID); err != nil {
+		return err
+	}
+	if position < 0 {
+		position = 0
 	}
 
-	name, err := s.uniqueName(ctx, src.LibraryID, src.Name+" copy")
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&store.Collection{}).
+			Where("id = ?", id).
+			Updates(map[string]any{"parent_id": parentID, "updated_at": time.Now().UTC()}).Error; err != nil {
+			return err
+		}
+
+		var siblings []store.Collection
+		q := tx.Where("library_id = ? AND id <> ?", col.LibraryID, id)
+		if parentID == nil {
+			q = q.Where("parent_id IS NULL")
+		} else {
+			q = q.Where("parent_id = ?", *parentID)
+		}
+		if err := q.Order("sort ASC, name ASC").Find(&siblings).Error; err != nil {
+			return err
+		}
+		if position > len(siblings) {
+			position = len(siblings)
+		}
+		order := make([]string, 0, len(siblings)+1)
+		for i, sibling := range siblings {
+			if i == position {
+				order = append(order, id)
+			}
+			order = append(order, sibling.ID)
+		}
+		if position >= len(siblings) {
+			order = append(order, id)
+		}
+		for i, siblingID := range order {
+			if err := tx.Model(&store.Collection{}).
+				Where("id = ?", siblingID).
+				Update("sort", i).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// ensureValidParent checks the parent exists in the library and that id is not
+// an ancestor of it (which would create a cycle). id is "" when creating.
+func (s *CollectionService) ensureValidParent(ctx context.Context, libraryID, id string, parentID *string) error {
+	if parentID == nil {
+		return nil
+	}
+	if id != "" && *parentID == id {
+		return ErrInvalidInput
+	}
+	var parent store.Collection
+	err := s.db.WithContext(ctx).First(&parent, "id = ?", *parentID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return domain.ErrNotFound
+	}
 	if err != nil {
-		return nil, err
+		return err
 	}
+	if parent.LibraryID != libraryID {
+		return domain.ErrNotFound
+	}
+	if id == "" {
+		return nil
+	}
+	for cur := parent.ParentID; cur != nil; {
+		if *cur == id {
+			return ErrInvalidInput
+		}
+		var ancestor store.Collection
+		if err := s.db.WithContext(ctx).Select("parent_id").First(&ancestor, "id = ?", *cur).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				break
+			}
+			return err
+		}
+		cur = ancestor.ParentID
+	}
+	return nil
+}
 
-	now := time.Now().UTC()
-	dup := &domain.Collection{
-		ID:          uuid.New().String(),
-		LibraryID:   src.LibraryID,
-		Name:        name,
-		Description: src.Description,
-		Icon:        src.Icon,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+// nextSort returns one past the highest sibling position.
+func (s *CollectionService) nextSort(ctx context.Context, libraryID string, parentID *string) (int, error) {
+	var row struct {
+		Max *int
 	}
-	if err := s.db.WithContext(ctx).Create(store.CollectionModel(dup)).Error; err != nil {
-		return nil, err
+	q := s.db.WithContext(ctx).Model(&store.Collection{}).Where("library_id = ?", libraryID)
+	if parentID == nil {
+		q = q.Where("parent_id IS NULL")
+	} else {
+		q = q.Where("parent_id = ?", *parentID)
 	}
-	if err := s.db.WithContext(ctx).Exec(
-		"INSERT INTO asset_collections (asset_id, collection_id) SELECT asset_id, ? FROM asset_collections WHERE collection_id = ?",
-		dup.ID, id,
-	).Error; err != nil {
-		return nil, err
+	if err := q.Select("MAX(sort) AS max").Scan(&row).Error; err != nil {
+		return 0, err
 	}
-
-	var count int64
-	if err := s.db.WithContext(ctx).Table("asset_collections").
-		Where("collection_id = ?", dup.ID).Count(&count).Error; err != nil {
-		return nil, err
+	if row.Max == nil {
+		return 0, nil
 	}
-	dup.AssetCount = int(count)
-	return dup, nil
+	return *row.Max + 1, nil
 }
 
 // uniqueName appends an incrementing suffix until the name is free within the

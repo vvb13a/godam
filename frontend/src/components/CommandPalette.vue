@@ -2,13 +2,21 @@
 import CommandMenu from 'primevue/commandmenu'
 import type { CommandMenuItem } from 'primevue/commandmenu'
 import Dialog from 'primevue/dialog'
-import { Folder, Images, Tag, Trash } from '@primeicons/vue'
+import { Folder, FolderOpen, Images, Tag, Trash } from '@primeicons/vue'
+import type { Component } from 'vue'
 import { computed, ref } from 'vue'
 import { useRouter, type RouteLocationRaw } from 'vue-router'
 import { commandMenu } from '../lib/command'
 import { library } from '../lib/library'
+import { libraryColorHex } from '../lib/libraryColors'
 import { openTagsDialog } from '../lib/tagsDialog'
 import Kbd from './Kbd.vue'
+
+interface PaletteItem extends CommandMenuItem {
+  folderIcon?: Component
+  color?: string
+  dot?: string
+}
 
 const router = useRouter()
 
@@ -23,8 +31,8 @@ function run(to: RouteLocationRaw): void {
   void router.push(to)
 }
 
-const model = computed<CommandMenuItem[]>(() => {
-  const items: CommandMenuItem[] = [
+const model = computed<PaletteItem[]>(() => {
+  const items: PaletteItem[] = [
     {
       label: 'Navigation',
       items: [
@@ -72,26 +80,36 @@ const model = computed<CommandMenuItem[]>(() => {
   ]
 
   if (library.collections.length) {
-    items.push({
-      label: 'Collections',
-      items: library.collections.map((collection) => ({
+    const collectionItems: PaletteItem[] = library.collections.map(
+      (collection) => ({
         label: collection.name,
         keywords: ['collection'],
+        folderIcon: library.collections.some(
+          (item) => item.parent_id === collection.id,
+        )
+          ? FolderOpen
+          : Folder,
+        color: libraryColorHex(collection.color),
         command: () =>
           run({ name: 'all', query: { collection: collection.id } }),
-      })),
-    })
+      }),
+    )
+    items.push({ label: 'Collections', items: collectionItems })
   }
 
   if (library.tags.length) {
-    items.push({
-      label: 'Tags',
-      items: library.tags.map((tag) => ({
+    const tagItems: PaletteItem[] = library.tags.map((tag) => {
+      const group = tag.group_id
+        ? library.tagGroups.find((item) => item.id === tag.group_id)
+        : undefined
+      return {
         label: tag.name,
         keywords: ['tag'],
+        dot: group?.color ? `#${group.color}` : '#94a3b8',
         command: () => run({ name: 'all', query: { tag: tag.id } }),
-      })),
+      }
     })
+    items.push({ label: 'Tags', items: tagItems })
   }
 
   return items
@@ -115,6 +133,29 @@ const model = computed<CommandMenuItem[]>(() => {
       aria-label="Command menu"
       empty-filter-message="No matching commands."
     >
+      <template #item="slotProps">
+        <a
+          data-pc-section="itemlink"
+          class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm"
+          @click.prevent
+        >
+          <span
+            v-if="slotProps.item.dot"
+            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300"
+            :style="{ backgroundColor: slotProps.item.dot }"
+          />
+          <component
+            :is="slotProps.item.folderIcon || slotProps.item.icon"
+            v-else-if="slotProps.item.folderIcon || slotProps.item.icon"
+            :size="14"
+            class="shrink-0"
+            :style="
+              slotProps.item.color ? { color: slotProps.item.color } : undefined
+            "
+          />
+          <span class="flex-1">{{ slotProps.label }}</span>
+        </a>
+      </template>
       <template #footer>
         <div class="flex items-center gap-2 text-slate-400">
           <Kbd>↑</Kbd>

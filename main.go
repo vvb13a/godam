@@ -15,27 +15,29 @@ import (
 const addr = ":8080"
 
 var (
-	appConfig         *service.Config
-	assetService      *service.AssetService
-	collectionService *service.CollectionService
-	tagService        *service.TagService
-	tagGroupService   *service.TagGroupService
-	libraryService    *service.LibraryService
-	userService       *service.UserService
-	statsService      *service.StatsService
+	appConfig              *service.Config
+	assetService           *service.AssetService
+	collectionService      *service.CollectionService
+	smartCollectionService *service.SmartCollectionService
+	tagService             *service.TagService
+	tagGroupService        *service.TagGroupService
+	libraryService         *service.LibraryService
+	userService            *service.UserService
+	statsService           *service.StatsService
 )
 
 func main() {
 	initDependencies()
 	runServer(api.Deps{
-		Assets:         assetService,
-		Collections:    collectionService,
-		Tags:           tagService,
-		TagGroups:      tagGroupService,
-		Libraries:      libraryService,
-		Users:          userService,
-		Stats:          statsService,
-		MaxUploadBytes: appConfig.MaxUploadSizeBytes,
+		Assets:           assetService,
+		Collections:      collectionService,
+		SmartCollections: smartCollectionService,
+		Tags:             tagService,
+		TagGroups:        tagGroupService,
+		Libraries:        libraryService,
+		Users:            userService,
+		Stats:            statsService,
+		MaxUploadBytes:   appConfig.MaxUploadSizeBytes,
 	})
 }
 
@@ -91,6 +93,7 @@ func initDependencies() {
 	tagService = service.NewTagService(db)
 	tagGroupService = service.NewTagGroupService(db)
 	collectionService = service.NewCollectionService(db)
+	smartCollectionService = service.NewSmartCollectionService(db)
 	statsService = service.NewStatsService(db)
 	userService = service.NewUserService(db)
 	if err := userService.Load(context.Background()); err != nil {

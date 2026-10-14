@@ -19,10 +19,10 @@ func (s *Server) handleListCollections(w http.ResponseWriter, r *http.Request) {
 }
 
 type collectionRequest struct {
-	LibraryID   string `json:"library_id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Icon        string `json:"icon"`
+	LibraryID string  `json:"library_id"`
+	ParentID  *string `json:"parent_id"`
+	Name      string  `json:"name"`
+	Color     string  `json:"color"`
 }
 
 func (s *Server) handleCreateCollection(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +41,7 @@ func (s *Server) handleCreateCollection(w http.ResponseWriter, r *http.Request) 
 	if !s.requireOwnedLibrary(w, r, req.LibraryID) {
 		return
 	}
-	collection, err := s.deps.Collections.Create(r.Context(), req.LibraryID, req.Name, req.Description, req.Icon)
+	collection, err := s.deps.Collections.Create(r.Context(), req.LibraryID, req.ParentID, req.Name, req.Color)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -61,7 +61,7 @@ func (s *Server) handleUpdateCollection(w http.ResponseWriter, r *http.Request) 
 	if _, ok := s.ownedCollection(w, r, r.PathValue("id")); !ok {
 		return
 	}
-	collection, err := s.deps.Collections.Update(r.Context(), r.PathValue("id"), req.Name, req.Description, req.Icon)
+	collection, err := s.deps.Collections.Update(r.Context(), r.PathValue("id"), req.Name, req.Color)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -69,16 +69,25 @@ func (s *Server) handleUpdateCollection(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, collection)
 }
 
-func (s *Server) handleDuplicateCollection(w http.ResponseWriter, r *http.Request) {
+type collectionMoveRequest struct {
+	ParentID *string `json:"parent_id"`
+	Position int     `json:"position"`
+}
+
+// handleMoveCollection reparents/reorders a folder for drag-and-drop.
+func (s *Server) handleMoveCollection(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.ownedCollection(w, r, r.PathValue("id")); !ok {
 		return
 	}
-	collection, err := s.deps.Collections.Duplicate(r.Context(), r.PathValue("id"))
-	if err != nil {
+	var req collectionMoveRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Collections.Move(r.Context(), r.PathValue("id"), req.ParentID, req.Position); err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, collection)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleDeleteCollection(w http.ResponseWriter, r *http.Request) {

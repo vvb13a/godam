@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { reactive, watch } from 'vue'
 import * as api from '../api/client'
+import { formatSize } from '../lib/format'
 import type { Asset } from '../types'
 
 // MosaicWall renders a justified, full-width wall: each item's width comes from
@@ -12,8 +13,16 @@ const props = withDefaults(
     assets: Asset[]
     rowHeight: string
     selectedIds?: string[]
+    showExtension?: boolean
+    showName?: boolean
+    showSize?: boolean
   }>(),
-  { selectedIds: () => [] },
+  {
+    selectedIds: () => [],
+    showExtension: false,
+    showName: false,
+    showSize: false,
+  },
 )
 
 defineEmits<{
@@ -58,6 +67,16 @@ function onLoad(asset: Asset, event: Event): void {
     aspects[asset.id] = img.naturalWidth / img.naturalHeight
   }
 }
+
+function extensionOf(asset: Asset): string {
+  const name = asset.filename
+  const dot = name.lastIndexOf('.')
+  if (dot > 0 && dot < name.length - 1) {
+    return name.slice(dot + 1).toUpperCase()
+  }
+  const slash = asset.mime_type.indexOf('/')
+  return slash >= 0 ? asset.mime_type.slice(slash + 1).toUpperCase() : ''
+}
 </script>
 
 <template>
@@ -84,6 +103,23 @@ function onLoad(asset: Asset, event: Event): void {
         class="h-full w-full object-cover transition group-hover:opacity-90"
         @load="onLoad(asset, $event)"
       />
+      <span
+        v-if="showExtension && extensionOf(asset)"
+        class="pointer-events-none absolute top-1 left-1 rounded bg-slate-900/60 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-white uppercase"
+      >
+        {{ extensionOf(asset) }}
+      </span>
+      <div
+        v-if="showName || showSize"
+        class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-900/80 to-transparent px-2 pt-6 pb-1.5 text-white"
+      >
+        <p v-if="showName" class="truncate text-xs font-medium">
+          {{ asset.filename }}
+        </p>
+        <p v-if="showSize" class="text-[10px] text-white/70">
+          {{ formatSize(asset.byte_size) }}
+        </p>
+      </div>
     </button>
     <span
       aria-hidden="true"
