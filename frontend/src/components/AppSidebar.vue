@@ -35,6 +35,7 @@ import type { Collection } from '../types'
 import { openTagsDialog } from '../lib/tagsDialog'
 import Kbd from './Kbd.vue'
 import LibrarySwitcher from './LibrarySwitcher.vue'
+import UserMenu from './UserMenu.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -422,6 +423,8 @@ onMounted(() => {
         </RouterLink>
       </nav>
     </div>
+
+    <UserMenu />
 
     <ContextMenu ref="menu" :model="menuItems" />
 

@@ -7,6 +7,9 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !s.requireOwnedLibrary(w, r, libraryID) {
+		return
+	}
 	stats, err := s.deps.Stats.Get(r.Context(), libraryID)
 	if err != nil {
 		writeError(w, err)

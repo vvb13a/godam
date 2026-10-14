@@ -1,4 +1,12 @@
-import type { Asset, Collection, Library, Stats, Tag, TagGroup } from '../types'
+import type { Asset, Collection, Library, Stats, Tag, TagGroup, User } from '../types'
+
+// Auth endpoints legitimately return 401 (bad/absent credentials); every other
+// 401 means the session expired, which the app handles by returning to login.
+let unauthorizedHandler: (() => void) | null = null
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler
+}
 
 async function ensureOk(res: Response): Promise<void> {
   if (res.ok) return
@@ -11,17 +19,20 @@ async function ensureOk(res: Response): Promise<void> {
   } catch {
     // Non-JSON error body: keep the status message.
   }
+  if (res.status === 401 && !res.url.includes('/api/auth/')) {
+    unauthorizedHandler?.()
+  }
   throw new Error(message)
 }
 
 async function requestJSON<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init)
+  const res = await fetch(url, { credentials: 'same-origin', ...init })
   await ensureOk(res)
   return (await res.json()) as T
 }
 
 async function requestVoid(url: string, init?: RequestInit): Promise<void> {
-  const res = await fetch(url, init)
+  const res = await fetch(url, { credentials: 'same-origin', ...init })
   await ensureOk(res)
 }
 
@@ -34,6 +45,42 @@ function sendJSON<T>(url: string, method: string, body: unknown): Promise<T> {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+  })
+}
+
+// ---- Auth ----
+
+export function getMe(): Promise<User> {
+  return getJSON<User>('/api/auth/me')
+}
+
+export function login(email: string, password: string): Promise<User> {
+  return sendJSON<User>('/api/auth/login', 'POST', { email, password })
+}
+
+export function devLogin(): Promise<User> {
+  return requestJSON<User>('/api/auth/dev-login', { method: 'POST' })
+}
+
+export function logout(): Promise<void> {
+  return requestVoid('/api/auth/logout', { method: 'POST' })
+}
+
+export function updateProfile(name: string, email: string): Promise<User> {
+  return sendJSON<User>('/api/auth/profile', 'PUT', { name, email })
+}
+
+export function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  return requestVoid('/api/auth/password', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
   })
 }
 

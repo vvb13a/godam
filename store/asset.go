@@ -12,6 +12,7 @@ import (
 type Asset struct {
 	ID            string    `gorm:"column:id;primaryKey;type:text"`
 	LibraryID     string    `gorm:"column:library_id;type:text;not null;index"`
+	UploadedBy    *string   `gorm:"column:uploaded_by;type:text;index"`
 	Filename      string    `gorm:"column:filename;type:text;not null"`
 	StorageDriver string    `gorm:"column:storage_driver;type:text;not null;default:local"`
 	StorageKey    string    `gorm:"column:storage_key;type:text;not null"`
@@ -33,9 +34,14 @@ func (Asset) TableName() string { return "assets" }
 
 // AssetModel converts a domain asset into its row model.
 func AssetModel(a *domain.Asset) *Asset {
+	var uploadedBy *string
+	if a.UploadedBy != "" {
+		uploadedBy = &a.UploadedBy
+	}
 	return &Asset{
 		ID:            a.ID,
 		LibraryID:     a.LibraryID,
+		UploadedBy:    uploadedBy,
 		Filename:      a.Filename,
 		StorageDriver: a.StorageDriver,
 		StorageKey:    a.StorageKey,
@@ -59,9 +65,14 @@ func (m *Asset) ToDomain() *domain.Asset {
 	for i := range m.Collections {
 		collections = append(collections, *m.Collections[i].ToDomain())
 	}
+	var uploadedBy string
+	if m.UploadedBy != nil {
+		uploadedBy = *m.UploadedBy
+	}
 	return &domain.Asset{
 		ID:            m.ID,
 		LibraryID:     m.LibraryID,
+		UploadedBy:    uploadedBy,
 		Filename:      m.Filename,
 		StorageDriver: m.StorageDriver,
 		StorageKey:    m.StorageKey,

@@ -1,0 +1,206 @@
+<script setup lang="ts">
+import Button from 'primevue/button'
+import Dialog from 'primevue/dialog'
+import InputText from 'primevue/inputtext'
+import Popover from 'primevue/popover'
+import { useConfirm } from 'primevue/useconfirm'
+import { useToast } from 'primevue/usetoast'
+import { EllipsisV, SignOut, UserEdit } from '@primeicons/vue'
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { auth, changePassword, logout, updateProfile } from '../lib/auth'
+
+const router = useRouter()
+const toast = useToast()
+const confirm = useConfirm()
+
+const menu = ref<InstanceType<typeof Popover> | null>(null)
+
+const dialogVisible = ref(false)
+const name = ref('')
+const email = ref('')
+const currentPassword = ref('')
+const newPassword = ref('')
+const confirmPassword = ref('')
+const busy = ref(false)
+const error = ref<string | null>(null)
+
+const initial = computed(() =>
+  (auth.user?.name?.trim()?.[0] ?? '?').toUpperCase(),
+)
+
+function toMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e)
+}
+
+function toggle(event: Event): void {
+  menu.value?.toggle(event)
+}
+
+function open(): void {
+  name.value = auth.user?.name ?? ''
+  email.value = auth.user?.email ?? ''
+  currentPassword.value = ''
+  newPassword.value = ''
+  confirmPassword.value = ''
+  error.value = null
+  menu.value?.hide()
+  dialogVisible.value = true
+}
+
+async function save(): Promise<void> {
+  if (busy.value) return
+  const nextName = name.value.trim()
+  const nextEmail = email.value.trim()
+  if (!nextName || !nextEmail) {
+    error.value = 'Name and email are required'
+    return
+  }
+  const wantsPassword =
+    !!currentPassword.value || !!newPassword.value || !!confirmPassword.value
+  if (wantsPassword) {
+    if (newPassword.value.length < 8) {
+      error.value = 'New password must be at least 8 characters'
+      return
+    }
+    if (newPassword.value !== confirmPassword.value) {
+      error.value = 'Passwords do not match'
+      return
+    }
+  }
+
+  error.value = null
+  busy.value = true
+  try {
+    await updateProfile(nextName, nextEmail)
+    if (wantsPassword) {
+      await changePassword(currentPassword.value, newPassword.value)
+    }
+    toast.add({ severity: 'success', summary: 'Account updated', life: 2000 })
+    dialogVisible.value = false
+  } catch (e) {
+    error.value = toMessage(e)
+  } finally {
+    busy.value = false
+  }
+}
+
+function doLogout(): void {
+  menu.value?.hide()
+  confirm.require({
+    header: 'Sign out',
+    message: 'Sign out of GoDam?',
+    acceptLabel: 'Sign out',
+    rejectLabel: 'Cancel',
+    acceptProps: { severity: 'danger' },
+    rejectProps: { text: true },
+    accept: async () => {
+      await logout()
+      await router.push({ name: 'login' })
+    },
+  })
+}
+</script>
+
+<template>
+  <div class="border-t border-slate-200 p-2">
+    <button
+      type="button"
+      class="flex w-full items-center gap-2 rounded px-2 py-2 text-left hover:bg-slate-100"
+      title="Account"
+      @click="toggle"
+    >
+      <span
+        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-semibold text-violet-700"
+      >
+        {{ initial }}
+      </span>
+      <span class="min-w-0 flex-1">
+        <span class="block truncate text-sm font-medium text-slate-700">
+          {{ auth.user?.name }}
+        </span>
+        <span class="block truncate text-xs text-slate-400">
+          {{ auth.user?.email }}
+        </span>
+      </span>
+      <EllipsisV :size="14" class="shrink-0 text-slate-400" />
+    </button>
+
+    <Popover ref="menu">
+      <div class="w-52">
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+          @click="open"
+        >
+          <UserEdit :size="14" />
+          <span>Account settings</span>
+        </button>
+        <div class="my-1 border-t border-slate-100" />
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-red-600 hover:bg-red-50"
+          @click="doLogout"
+        >
+          <SignOut :size="14" />
+          <span>Sign out</span>
+        </button>
+      </div>
+    </Popover>
+
+    <Dialog
+      v-model:visible="dialogVisible"
+      modal
+      header="Account settings"
+      :style="{ width: '26rem' }"
+    >
+      <div class="space-y-4">
+        <div>
+          <label class="mb-1.5 block text-sm font-medium text-slate-700">Name</label>
+          <InputText v-model="name" placeholder="Name" class="w-full" />
+        </div>
+        <div>
+          <label class="mb-1.5 block text-sm font-medium text-slate-700">Email</label>
+          <InputText v-model="email" type="email" placeholder="Email" class="w-full" />
+        </div>
+
+        <div class="border-t border-slate-100 pt-4">
+          <p class="mb-1 text-sm font-medium text-slate-700">Change password</p>
+          <p class="mb-3 text-xs text-slate-400">
+            Leave these blank to keep your current password.
+          </p>
+          <div class="space-y-3">
+            <InputText
+              v-model="currentPassword"
+              type="password"
+              placeholder="Current password"
+              class="w-full"
+              autocomplete="current-password"
+            />
+            <InputText
+              v-model="newPassword"
+              type="password"
+              placeholder="New password"
+              class="w-full"
+              autocomplete="new-password"
+            />
+            <InputText
+              v-model="confirmPassword"
+              type="password"
+              placeholder="Confirm new password"
+              class="w-full"
+              autocomplete="new-password"
+              @keyup.enter="save"
+            />
+          </div>
+        </div>
+
+        <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+      </div>
+      <template #footer>
+        <Button label="Cancel" text :disabled="busy" @click="dialogVisible = false" />
+        <Button label="Save" :loading="busy" @click="save" />
+      </template>
+    </Dialog>
+  </div>
+</template>

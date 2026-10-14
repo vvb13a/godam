@@ -7,7 +7,7 @@ import (
 )
 
 func (s *Server) handleListLibraries(w http.ResponseWriter, r *http.Request) {
-	libraries, err := s.deps.Libraries.List(r.Context())
+	libraries, err := s.deps.Libraries.List(r.Context(), currentUser(r).ID)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -31,7 +31,7 @@ func (s *Server) handleReorderLibraries(w http.ResponseWriter, r *http.Request) 
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := s.deps.Libraries.Reorder(r.Context(), req.Items); err != nil {
+	if err := s.deps.Libraries.Reorder(r.Context(), currentUser(r).ID, req.Items); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -47,7 +47,7 @@ func (s *Server) handleCreateLibrary(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
 		return
 	}
-	lib, err := s.deps.Libraries.Create(r.Context(), req.Name, req.Color, req.Sort)
+	lib, err := s.deps.Libraries.Create(r.Context(), currentUser(r).ID, req.Name, req.Color, req.Sort)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -64,7 +64,7 @@ func (s *Server) handleUpdateLibrary(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
 		return
 	}
-	lib, err := s.deps.Libraries.Update(r.Context(), r.PathValue("id"), req.Name, req.Color, req.Sort)
+	lib, err := s.deps.Libraries.Update(r.Context(), r.PathValue("id"), currentUser(r).ID, req.Name, req.Color, req.Sort)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -73,7 +73,7 @@ func (s *Server) handleUpdateLibrary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteLibrary(w http.ResponseWriter, r *http.Request) {
-	if err := s.deps.Libraries.Delete(r.Context(), r.PathValue("id")); err != nil {
+	if err := s.deps.Libraries.Delete(r.Context(), r.PathValue("id"), currentUser(r).ID); err != nil {
 		writeError(w, err)
 		return
 	}

@@ -4,6 +4,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -20,32 +21,45 @@ type Deps struct {
 	Tags           *service.TagService
 	TagGroups      *service.TagGroupService
 	Libraries      *service.LibraryService
+	Users          *service.UserService
 	Stats          *service.StatsService
 	MaxUploadBytes int64
 }
 
 // Server is the HTTP handler for the JSON API.
 type Server struct {
-	deps Deps
-	mux  *http.ServeMux
+	deps    Deps
+	mux     *http.ServeMux
+	handler http.Handler
 }
 
-// NewServer builds the API handler with every route registered.
+// NewServer builds the API handler with every route registered. The mux is
+// wrapped in authentication middleware, so route handlers can assume an
+// authenticated user except on the public auth routes.
 func NewServer(deps Deps) *Server {
 	s := &Server{
 		deps: deps,
 		mux:  http.NewServeMux(),
 	}
 	s.routes()
+	s.handler = s.authMiddleware(s.mux)
 	return s
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.mux.ServeHTTP(w, r)
+	s.handler.ServeHTTP(w, r)
 }
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
+
+	s.mux.HandleFunc("POST /api/auth/login", s.handleLogin)
+	s.mux.HandleFunc("POST /api/auth/dev-login", s.handleDevLogin)
+	s.mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
+	s.mux.HandleFunc("GET /api/auth/me", s.handleMe)
+	s.mux.HandleFunc("PUT /api/auth/profile", s.handleUpdateProfile)
+	s.mux.HandleFunc("PUT /api/auth/password", s.handleChangePassword)
+
 	s.mux.HandleFunc("GET /api/stats", s.handleStats)
 
 	s.mux.HandleFunc("GET /api/libraries", s.handleListLibraries)
@@ -100,6 +114,12 @@ func writeError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		status = http.StatusNotFound
+	case errors.Is(err, service.ErrInvalidCredentials):
+		status = http.StatusUnauthorized
+	case errors.Is(err, service.ErrEmailTaken):
+		status = http.StatusConflict
+	case errors.Is(err, service.ErrInvalidInput), errors.Is(err, service.ErrWeakPassword):
+		status = http.StatusBadRequest
 	case errors.Is(err, service.ErrUnsupportedFormat), errors.Is(err, service.ErrFileTooLarge):
 		status = http.StatusBadRequest
 	case errors.Is(err, storage.ErrDriverNotFound):
@@ -127,4 +147,87 @@ func requireLibraryID(w http.ResponseWriter, r *http.Request) (string, bool) {
 		return "", false
 	}
 	return id, true
+}
+
+// ---- Authentication context & ownership ----
+
+type contextKey int
+
+const userContextKey contextKey = iota
+
+func userFromContext(ctx context.Context) *domain.User {
+	user, _ := ctx.Value(userContextKey).(*domain.User)
+	return user
+}
+
+// currentUser returns the authenticated user. The auth middleware guarantees a
+// non-nil user on every protected route.
+func currentUser(r *http.Request) *domain.User {
+	return userFromContext(r.Context())
+}
+
+// requireOwnedLibrary verifies the library belongs to the authenticated user,
+// writing an error and returning false when it does not.
+func (s *Server) requireOwnedLibrary(w http.ResponseWriter, r *http.Request, libraryID string) bool {
+	user := currentUser(r)
+	if user == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		return false
+	}
+	if err := s.deps.Libraries.VerifyOwned(r.Context(), libraryID, user.ID); err != nil {
+		writeError(w, err)
+		return false
+	}
+	return true
+}
+
+// The owned* helpers resolve a resource by id and confirm its library belongs
+// to the authenticated user before handing it back.
+
+func (s *Server) ownedAsset(w http.ResponseWriter, r *http.Request, id string) (*domain.Asset, bool) {
+	asset, err := s.deps.Assets.GetByID(r.Context(), id)
+	if err != nil {
+		writeError(w, err)
+		return nil, false
+	}
+	if !s.requireOwnedLibrary(w, r, asset.LibraryID) {
+		return nil, false
+	}
+	return asset, true
+}
+
+func (s *Server) ownedTag(w http.ResponseWriter, r *http.Request, id string) (*domain.Tag, bool) {
+	tag, err := s.deps.Tags.GetByID(r.Context(), id)
+	if err != nil {
+		writeError(w, err)
+		return nil, false
+	}
+	if !s.requireOwnedLibrary(w, r, tag.LibraryID) {
+		return nil, false
+	}
+	return tag, true
+}
+
+func (s *Server) ownedCollection(w http.ResponseWriter, r *http.Request, id string) (*domain.Collection, bool) {
+	collection, err := s.deps.Collections.GetByID(r.Context(), id)
+	if err != nil {
+		writeError(w, err)
+		return nil, false
+	}
+	if !s.requireOwnedLibrary(w, r, collection.LibraryID) {
+		return nil, false
+	}
+	return collection, true
+}
+
+func (s *Server) ownedTagGroup(w http.ResponseWriter, r *http.Request, id string) (*domain.TagGroup, bool) {
+	group, err := s.deps.TagGroups.GetByID(r.Context(), id)
+	if err != nil {
+		writeError(w, err)
+		return nil, false
+	}
+	if !s.requireOwnedLibrary(w, r, group.LibraryID) {
+		return nil, false
+	}
+	return group, true
 }

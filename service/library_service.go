@@ -30,17 +30,23 @@ type LibrarySort struct {
 }
 
 // Reorder applies a batch of sort positions in one transaction so a drag
-// reorder is a single request and never leaves the order half-applied.
-func (s *LibraryService) Reorder(ctx context.Context, items []LibrarySort) error {
+// reorder is a single request and never leaves the order half-applied. Only
+// libraries the user is a member of are affected.
+func (s *LibraryService) Reorder(ctx context.Context, userID string, items []LibrarySort) error {
 	if len(items) == 0 {
 		return nil
 	}
 	now := time.Now().UTC()
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, item := range items {
-			res := tx.Model(&store.Library{}).
-				Where("id = ?", item.ID).
-				Updates(map[string]any{"sort": item.Sort, "updated_at": now})
+			res := tx.Exec(
+				`UPDATE libraries SET sort = ?, updated_at = ?
+				 WHERE id = ? AND EXISTS (
+					SELECT 1 FROM library_users
+					WHERE library_users.library_id = libraries.id AND library_users.user_id = ?
+				 )`,
+				item.Sort, now, item.ID, userID,
+			)
 			if res.Error != nil {
 				return res.Error
 			}
@@ -52,12 +58,15 @@ func (s *LibraryService) Reorder(ctx context.Context, items []LibrarySort) error
 	})
 }
 
-// List returns every library ordered by sort (ascending) so the first element
-// is the one loaded on start.
-func (s *LibraryService) List(ctx context.Context) ([]domain.Library, error) {
+// List returns the libraries the user is a member of, ordered by sort
+// (ascending) so the first element is the one loaded on start.
+func (s *LibraryService) List(ctx context.Context, userID string) ([]domain.Library, error) {
 	var models []store.Library
 	if err := s.db.WithContext(ctx).
-		Order("sort ASC, created_at ASC").
+		Select("libraries.*").
+		Joins("JOIN library_users ON library_users.library_id = libraries.id").
+		Where("library_users.user_id = ?", userID).
+		Order("libraries.sort ASC, libraries.created_at ASC").
 		Find(&models).Error; err != nil {
 		return nil, err
 	}
@@ -80,7 +89,27 @@ func (s *LibraryService) GetByID(ctx context.Context, id string) (*domain.Librar
 	return m.ToDomain(), nil
 }
 
-func (s *LibraryService) Create(ctx context.Context, name, color string, sort int) (*domain.Library, error) {
+// VerifyOwned returns ErrNotFound unless the user is a member of the library,
+// so callers never leak another account's data.
+func (s *LibraryService) VerifyOwned(ctx context.Context, libraryID, userID string) error {
+	if libraryID == "" {
+		return domain.ErrNotFound
+	}
+	var count int64
+	if err := s.db.WithContext(ctx).
+		Table("library_users").
+		Where("library_id = ? AND user_id = ?", libraryID, userID).
+		Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+// Create inserts a library and enrols the creator as its first member.
+func (s *LibraryService) Create(ctx context.Context, userID, name, color string, sort int) (*domain.Library, error) {
 	now := time.Now().UTC()
 	lib := &domain.Library{
 		ID:        uuid.New().String(),
@@ -90,13 +119,25 @@ func (s *LibraryService) Create(ctx context.Context, name, color string, sort in
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	if err := s.db.WithContext(ctx).Create(store.LibraryModel(lib)).Error; err != nil {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(store.LibraryModel(lib)).Error; err != nil {
+			return err
+		}
+		return tx.Exec(
+			"INSERT INTO library_users (library_id, user_id) VALUES (?, ?)",
+			lib.ID, userID,
+		).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 	return lib, nil
 }
 
-func (s *LibraryService) Update(ctx context.Context, id, name, color string, sort int) (*domain.Library, error) {
+func (s *LibraryService) Update(ctx context.Context, id, userID, name, color string, sort int) (*domain.Library, error) {
+	if err := s.VerifyOwned(ctx, id, userID); err != nil {
+		return nil, err
+	}
 	res := s.db.WithContext(ctx).
 		Model(&store.Library{}).
 		Where("id = ?", id).
@@ -109,15 +150,13 @@ func (s *LibraryService) Update(ctx context.Context, id, name, color string, sor
 	if res.Error != nil {
 		return nil, res.Error
 	}
-	if res.RowsAffected == 0 {
-		return nil, domain.ErrNotFound
-	}
 	return s.GetByID(ctx, id)
 }
 
-// Delete removes a library and everything scoped to it. Asset files are
-// deleted first (the rows cascade away with the library).
-func (s *LibraryService) Delete(ctx context.Context, id string) error {	if _, err := s.GetByID(ctx, id); err != nil {
+// Delete removes a library the user is a member of and everything scoped to
+// it. Asset files are deleted first (the rows cascade away with the library).
+func (s *LibraryService) Delete(ctx context.Context, id, userID string) error {
+	if err := s.VerifyOwned(ctx, id, userID); err != nil {
 		return err
 	}
 	if err := s.assets.DeleteByLibrary(ctx, id); err != nil {

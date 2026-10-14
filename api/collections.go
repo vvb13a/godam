@@ -7,6 +7,9 @@ func (s *Server) handleListCollections(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !s.requireOwnedLibrary(w, r, libraryID) {
+		return
+	}
 	collections, err := s.deps.Collections.List(r.Context(), libraryID)
 	if err != nil {
 		writeError(w, err)
@@ -35,6 +38,9 @@ func (s *Server) handleCreateCollection(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
 		return
 	}
+	if !s.requireOwnedLibrary(w, r, req.LibraryID) {
+		return
+	}
 	collection, err := s.deps.Collections.Create(r.Context(), req.LibraryID, req.Name, req.Description, req.Icon)
 	if err != nil {
 		writeError(w, err)
@@ -52,6 +58,9 @@ func (s *Server) handleUpdateCollection(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
 		return
 	}
+	if _, ok := s.ownedCollection(w, r, r.PathValue("id")); !ok {
+		return
+	}
 	collection, err := s.deps.Collections.Update(r.Context(), r.PathValue("id"), req.Name, req.Description, req.Icon)
 	if err != nil {
 		writeError(w, err)
@@ -61,6 +70,9 @@ func (s *Server) handleUpdateCollection(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleDuplicateCollection(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.ownedCollection(w, r, r.PathValue("id")); !ok {
+		return
+	}
 	collection, err := s.deps.Collections.Duplicate(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeError(w, err)
@@ -70,6 +82,9 @@ func (s *Server) handleDuplicateCollection(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleDeleteCollection(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.ownedCollection(w, r, r.PathValue("id")); !ok {
+		return
+	}
 	if err := s.deps.Collections.Delete(r.Context(), r.PathValue("id")); err != nil {
 		writeError(w, err)
 		return

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 
@@ -20,6 +21,7 @@ var (
 	tagService        *service.TagService
 	tagGroupService   *service.TagGroupService
 	libraryService    *service.LibraryService
+	userService       *service.UserService
 	statsService      *service.StatsService
 )
 
@@ -31,6 +33,7 @@ func main() {
 		Tags:           tagService,
 		TagGroups:      tagGroupService,
 		Libraries:      libraryService,
+		Users:          userService,
 		Stats:          statsService,
 		MaxUploadBytes: appConfig.MaxUploadSizeBytes,
 	})
@@ -89,6 +92,10 @@ func initDependencies() {
 	tagGroupService = service.NewTagGroupService(db)
 	collectionService = service.NewCollectionService(db)
 	statsService = service.NewStatsService(db)
+	userService = service.NewUserService(db)
+	if err := userService.Load(context.Background()); err != nil {
+		log.Printf("warning: could not prime user session cache: %v", err)
+	}
 	assetService = service.NewAssetService(
 		cfg,
 		db,

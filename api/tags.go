@@ -10,6 +10,9 @@ func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !s.requireOwnedLibrary(w, r, libraryID) {
+		return
+	}
 	tags, err := s.deps.Tags.List(r.Context(), libraryID)
 	if err != nil {
 		writeError(w, err)
@@ -31,6 +34,9 @@ func (s *Server) handleCreateTag(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.LibraryID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
+		return
+	}
+	if !s.requireOwnedLibrary(w, r, req.LibraryID) {
 		return
 	}
 	tag, err := s.deps.Tags.GetOrCreate(r.Context(), req.LibraryID, req.Name)
@@ -62,6 +68,9 @@ func (s *Server) handleUpdateTag(w http.ResponseWriter, r *http.Request) {
 	if req.Starred != nil {
 		starred = *req.Starred
 	}
+	if _, ok := s.ownedTag(w, r, r.PathValue("id")); !ok {
+		return
+	}
 	tag, err := s.deps.Tags.Update(r.Context(), r.PathValue("id"), req.Name, req.GroupID, starred)
 	if err != nil {
 		writeError(w, err)
@@ -71,6 +80,9 @@ func (s *Server) handleUpdateTag(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteTag(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.ownedTag(w, r, r.PathValue("id")); !ok {
+		return
+	}
 	if err := s.deps.Tags.Delete(r.Context(), r.PathValue("id")); err != nil {
 		writeError(w, err)
 		return

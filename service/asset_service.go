@@ -148,7 +148,7 @@ func (s *AssetService) OpenPreview(ctx context.Context, id string) (io.ReadClose
 
 // UploadFromSource accepts either a local filesystem path or an http(s) URL,
 // streams it through onProgress and stores it with the default driver.
-func (s *AssetService) UploadFromSource(ctx context.Context, libraryID, source string, onProgress ProgressCallback) (*domain.Asset, error) {
+func (s *AssetService) UploadFromSource(ctx context.Context, userID, libraryID, source string, onProgress ProgressCallback) (*domain.Asset, error) {
 	var reader io.Reader
 	var filename string
 	var size int64
@@ -220,10 +220,10 @@ func (s *AssetService) UploadFromSource(ctx context.Context, libraryID, source s
 	}
 
 	// Uses default driver ("")
-	return s.Upload(ctx, libraryID, "", filename, mimeType, size, reader)
+	return s.Upload(ctx, userID, libraryID, "", filename, mimeType, size, reader)
 }
 
-func (s *AssetService) Upload(ctx context.Context, libraryID, driverName, filename, mimeType string, size int64, reader io.Reader) (*domain.Asset, error) {
+func (s *AssetService) Upload(ctx context.Context, userID, libraryID, driverName, filename, mimeType string, size int64, reader io.Reader) (*domain.Asset, error) {
 	cleanMime := strings.Split(mimeType, ";")[0]
 	if s.cfg != nil {
 		if !s.cfg.IsAllowedMime(cleanMime) {
@@ -274,6 +274,7 @@ func (s *AssetService) Upload(ctx context.Context, libraryID, driverName, filena
 	asset := &domain.Asset{
 		ID:            id,
 		LibraryID:     libraryID,
+		UploadedBy:    userID,
 		Filename:      filename,
 		StorageDriver: driverName,
 		StorageKey:    storageKey,
@@ -366,16 +367,24 @@ func (s *AssetService) AddTag(ctx context.Context, assetID, tagName string) erro
 }
 
 // AddTagByID attaches an existing tag to an asset, so callers that already know
-// the tag id are not affected by name normalization.
+// the tag id are not affected by name normalization. The tag must belong to the
+// same library as the asset.
 func (s *AssetService) AddTagByID(ctx context.Context, assetID, tagID string) error {
-	var count int64
-	if err := s.db.WithContext(ctx).
-		Model(&store.Tag{}).
-		Where("id = ?", tagID).
-		Count(&count).Error; err != nil {
+	var asset store.Asset
+	if err := s.db.WithContext(ctx).Select("library_id").First(&asset, "id = ?", assetID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.ErrNotFound
+		}
 		return err
 	}
-	if count == 0 {
+	var tag store.Tag
+	if err := s.db.WithContext(ctx).Select("library_id").First(&tag, "id = ?", tagID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.ErrNotFound
+		}
+		return err
+	}
+	if tag.LibraryID != asset.LibraryID {
 		return domain.ErrNotFound
 	}
 	return s.db.WithContext(ctx).
@@ -387,7 +396,25 @@ func (s *AssetService) RemoveTag(ctx context.Context, assetID, tagID string) err
 		Exec("DELETE FROM asset_tags WHERE asset_id = ? AND tag_id = ?", assetID, tagID).Error
 }
 
+// AddToCollection adds an asset to a collection in the same library.
 func (s *AssetService) AddToCollection(ctx context.Context, assetID, collectionID string) error {
+	var asset store.Asset
+	if err := s.db.WithContext(ctx).Select("library_id").First(&asset, "id = ?", assetID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.ErrNotFound
+		}
+		return err
+	}
+	var collection store.Collection
+	if err := s.db.WithContext(ctx).Select("library_id").First(&collection, "id = ?", collectionID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.ErrNotFound
+		}
+		return err
+	}
+	if collection.LibraryID != asset.LibraryID {
+		return domain.ErrNotFound
+	}
 	return s.db.WithContext(ctx).
 		Exec("INSERT OR IGNORE INTO asset_collections (asset_id, collection_id) VALUES (?, ?)", assetID, collectionID).Error
 }

@@ -1,3 +1,11 @@
+export interface User {
+  id: string
+  name: string
+  email: string
+  created_at: string
+  updated_at: string
+}
+
 export interface Library {
   id: string
   name: string
@@ -50,6 +58,7 @@ export interface AssetMetadata {
 export interface Asset {
   id: string
   library_id: string
+  uploaded_by?: string
   filename: string
   storage_driver: string
   storage_key: string

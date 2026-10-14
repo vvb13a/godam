@@ -57,6 +57,15 @@ export function clearScopedData(): void {
   library.stats = null
 }
 
+// resetLibrary clears all library state, used on logout so the next account
+// does not briefly see the previous one's data.
+export function resetLibrary(): void {
+  library.libraries = []
+  library.currentId = null
+  library.loaded = false
+  clearScopedData()
+}
+
 export async function refreshLibrary(): Promise<void> {
   if (!library.currentId) {
     clearScopedData()

@@ -18,6 +18,9 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !s.requireOwnedLibrary(w, r, libraryID) {
+		return
+	}
 	filter := domain.AssetFilter{LibraryID: libraryID}
 	if v := q.Get("collection_id"); v != "" {
 		filter.CollectionID = &v
@@ -42,9 +45,8 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetAsset(w http.ResponseWriter, r *http.Request) {
-	asset, err := s.deps.Assets.GetByID(r.Context(), r.PathValue("id"))
-	if err != nil {
-		writeError(w, err)
+	asset, ok := s.ownedAsset(w, r, r.PathValue("id"))
+	if !ok {
 		return
 	}
 	writeJSON(w, http.StatusOK, asset)
@@ -80,8 +82,11 @@ func (s *Server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
 		return
 	}
+	if !s.requireOwnedLibrary(w, r, libraryID) {
+		return
+	}
 
-	asset, err := s.deps.Assets.Upload(r.Context(), libraryID, r.FormValue("driver"), header.Filename, mimeType, header.Size, file)
+	asset, err := s.deps.Assets.Upload(r.Context(), currentUser(r).ID, libraryID, r.FormValue("driver"), header.Filename, mimeType, header.Size, file)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -108,7 +113,10 @@ func (s *Server) handleImportAsset(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
 		return
 	}
-	asset, err := s.deps.Assets.UploadFromSource(r.Context(), req.LibraryID, req.Source, nil)
+	if !s.requireOwnedLibrary(w, r, req.LibraryID) {
+		return
+	}
+	asset, err := s.deps.Assets.UploadFromSource(r.Context(), currentUser(r).ID, req.LibraryID, req.Source, nil)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -117,6 +125,9 @@ func (s *Server) handleImportAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteAsset(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.ownedAsset(w, r, r.PathValue("id")); !ok {
+		return
+	}
 	if err := s.deps.Assets.Delete(r.Context(), r.PathValue("id")); err != nil {
 		writeError(w, err)
 		return
@@ -127,9 +138,8 @@ func (s *Server) handleDeleteAsset(w http.ResponseWriter, r *http.Request) {
 // handleAssetContent streams the original stored file.
 func (s *Server) handleAssetContent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	asset, err := s.deps.Assets.GetByID(r.Context(), id)
-	if err != nil {
-		writeError(w, err)
+	asset, ok := s.ownedAsset(w, r, id)
+	if !ok {
 		return
 	}
 	rc, err := s.deps.Assets.Open(r.Context(), id)
@@ -146,7 +156,11 @@ func (s *Server) handleAssetContent(w http.ResponseWriter, r *http.Request) {
 
 // handleAssetPreview streams the generated JPEG preview.
 func (s *Server) handleAssetPreview(w http.ResponseWriter, r *http.Request) {
-	rc, err := s.deps.Assets.OpenPreview(r.Context(), r.PathValue("id"))
+	id := r.PathValue("id")
+	if _, ok := s.ownedAsset(w, r, id); !ok {
+		return
+	}
+	rc, err := s.deps.Assets.OpenPreview(r.Context(), id)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -166,6 +180,9 @@ type tagRequest struct {
 
 func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := s.ownedAsset(w, r, id); !ok {
+		return
+	}
 	var req tagRequest
 	if !decodeJSON(w, r, &req) {
 		return
@@ -191,6 +208,9 @@ func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := s.ownedAsset(w, r, id); !ok {
+		return
+	}
 	if err := s.deps.Assets.RemoveTag(r.Context(), id, r.PathValue("tagId")); err != nil {
 		writeError(w, err)
 		return
@@ -204,6 +224,9 @@ type collectionRelationRequest struct {
 
 func (s *Server) handleAddToCollection(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := s.ownedAsset(w, r, id); !ok {
+		return
+	}
 	var req collectionRelationRequest
 	if !decodeJSON(w, r, &req) {
 		return
@@ -221,6 +244,9 @@ func (s *Server) handleAddToCollection(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRemoveFromCollection(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := s.ownedAsset(w, r, id); !ok {
+		return
+	}
 	if err := s.deps.Assets.RemoveFromCollection(r.Context(), id, r.PathValue("collectionId")); err != nil {
 		writeError(w, err)
 		return

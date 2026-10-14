@@ -5,6 +5,7 @@ import "time"
 type Asset struct {
 	ID            string       `json:"id"`
 	LibraryID     string       `json:"library_id"`
+	UploadedBy    string       `json:"uploaded_by,omitempty"`
 	Filename      string       `json:"filename"`
 	StorageDriver string       `json:"storage_driver"`
 	StorageKey    string       `json:"storage_key"`
