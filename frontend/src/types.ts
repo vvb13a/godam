@@ -62,6 +62,7 @@ export interface SmartCollection {
   color: string
   sort: number
   filter: SmartCollectionFilter
+  asset_count: number
   created_at: string
   updated_at: string
 }

@@ -72,6 +72,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/assets", s.handleListAssets)
 	s.mux.HandleFunc("POST /api/assets/upload", s.handleUploadAsset)
 	s.mux.HandleFunc("POST /api/assets/import", s.handleImportAsset)
+	s.mux.HandleFunc("POST /api/assets/collections", s.handleAddAssetsToCollection)
+	s.mux.HandleFunc("POST /api/assets/tags", s.handleApplyAssetsTags)
 	s.mux.HandleFunc("GET /api/assets/{id}", s.handleGetAsset)
 	s.mux.HandleFunc("DELETE /api/assets/{id}", s.handleDeleteAsset)
 	s.mux.HandleFunc("GET /api/assets/{id}/content", s.handleAssetContent)
@@ -89,6 +91,7 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /api/smart-collections", s.handleListSmartCollections)
 	s.mux.HandleFunc("POST /api/smart-collections", s.handleCreateSmartCollection)
+	s.mux.HandleFunc("PUT /api/smart-collections/sort", s.handleReorderSmartCollections)
 	s.mux.HandleFunc("PUT /api/smart-collections/{id}", s.handleUpdateSmartCollection)
 	s.mux.HandleFunc("DELETE /api/smart-collections/{id}", s.handleDeleteSmartCollection)
 

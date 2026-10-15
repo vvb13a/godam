@@ -5,7 +5,7 @@ import InputText from 'primevue/inputtext'
 import Message from 'primevue/message'
 import ProgressBar from 'primevue/progressbar'
 import { Times, Upload } from '@primeicons/vue'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import * as api from '../api/client'
 import { library, notifyLibraryChanged } from '../lib/library'
 import { upload } from '../lib/upload'
@@ -27,6 +27,7 @@ watch(
 function cleanup(): void {
   upload.files = []
   upload.destinationCollectionId = null
+  upload.destinationTagId = null
   sourceUrl.value = ''
   uploading.value = false
   progress.value = 0
@@ -51,12 +52,21 @@ function removeFile(index: number): void {
   upload.files.splice(index, 1)
 }
 
+const destinationTagName = computed(() => {
+  const id = upload.destinationTagId
+  if (!id) return null
+  return library.tags.find((tag) => tag.id === id)?.name ?? null
+})
+
 async function finish(assetIds: string[]): Promise<void> {
   const destination = upload.destinationCollectionId
+  const tagId = upload.destinationTagId
+  const libraryId = library.currentId
   if (destination) {
-    await Promise.all(
-      assetIds.map((id) => api.addToCollection(id, destination)),
-    )
+    await api.addAssetsToCollection(destination, assetIds)
+  }
+  if (tagId && libraryId) {
+    await api.applyAssetsTags(libraryId, assetIds, [tagId], 'add')
   }
   notifyLibraryChanged()
   upload.visible = false
@@ -185,6 +195,9 @@ async function importUrl(): Promise<void> {
             {{ collection.name }}
           </option>
         </select>
+        <p v-if="destinationTagName" class="mt-1 text-xs text-slate-500">
+          Tag “{{ destinationTagName }}” will be applied to the uploaded assets.
+        </p>
       </div>
 
       <div v-if="uploading" class="space-y-2">

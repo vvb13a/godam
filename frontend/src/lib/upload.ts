@@ -6,17 +6,21 @@ export const upload = reactive({
   visible: false,
   files: [] as File[],
   destinationCollectionId: null as string | null,
+  destinationTagId: null as string | null,
 })
 
 // openUpload stages the given files (if any) and opens the dialog. The
-// destination defaults to the collection the user is currently viewing.
+// collection and tag defaults come from the view the user is currently in, so
+// uploads are automatically associated with the active collection/tag filter.
 export function openUpload(
   files: File[] = [],
   destination: string | null = null,
+  destinationTag: string | null = null,
 ): void {
   if (files.length) {
     upload.files.push(...files)
   }
   upload.destinationCollectionId = destination
+  upload.destinationTagId = destinationTag
   upload.visible = true
 }

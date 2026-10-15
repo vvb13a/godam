@@ -3,18 +3,21 @@ import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Popover from 'primevue/popover'
-import { useConfirm } from 'primevue/useconfirm'
+import ToggleSwitch from 'primevue/toggleswitch'
 import { useToast } from 'primevue/usetoast'
-import { EllipsisV, SignOut, UserEdit } from '@primeicons/vue'
+import { ChevronRight, SignOut, SlidersH, UserEdit } from '@primeicons/vue'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { auth, changePassword, logout, updateProfile } from '../lib/auth'
+import { openCommandMenu } from '../lib/command'
+import { SIDEBAR_TOGGLES, sidebarPrefs } from '../lib/sidebar'
+import Kbd from './Kbd.vue'
 
 const router = useRouter()
 const toast = useToast()
-const confirm = useConfirm()
 
 const menu = ref<InstanceType<typeof Popover> | null>(null)
+const displayMenu = ref<InstanceType<typeof Popover> | null>(null)
 
 const dialogVisible = ref(false)
 const name = ref('')
@@ -35,6 +38,11 @@ function toMessage(e: unknown): string {
 
 function toggle(event: Event): void {
   menu.value?.toggle(event)
+}
+
+function openDisplayMenu(event: Event): void {
+  menu.value?.hide()
+  displayMenu.value?.toggle(event)
 }
 
 function open(): void {
@@ -85,46 +93,45 @@ async function save(): Promise<void> {
   }
 }
 
-function doLogout(): void {
+async function doLogout(): Promise<void> {
   menu.value?.hide()
-  confirm.require({
-    header: 'Sign out',
-    message: 'Sign out of GoDam?',
-    acceptLabel: 'Sign out',
-    rejectLabel: 'Cancel',
-    acceptProps: { severity: 'danger' },
-    rejectProps: { text: true },
-    accept: async () => {
-      await logout()
-      await router.push({ name: 'login' })
-    },
-  })
+  await logout()
+  await router.push({ name: 'login' })
 }
 </script>
 
 <template>
   <div class="border-t border-slate-200 p-2">
-    <button
-      type="button"
-      class="flex w-full items-center gap-2 rounded px-2 py-2 text-left hover:bg-slate-100"
-      title="Account"
-      @click="toggle"
-    >
-      <span
-        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-semibold text-violet-700"
+    <div class="flex items-center gap-2 rounded px-2 py-2 hover:bg-slate-100">
+      <button
+        type="button"
+        class="flex min-w-0 flex-1 items-center gap-2 text-left"
+        title="Account"
+        @click="toggle"
       >
-        {{ initial }}
-      </span>
-      <span class="min-w-0 flex-1">
-        <span class="block truncate text-sm font-medium text-slate-700">
-          {{ auth.user?.name }}
+        <span
+          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-semibold text-violet-700"
+        >
+          {{ initial }}
         </span>
-        <span class="block truncate text-xs text-slate-400">
-          {{ auth.user?.email }}
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-sm font-medium text-slate-700">
+            {{ auth.user?.name }}
+          </span>
+          <span class="block truncate text-xs text-slate-400">
+            {{ auth.user?.email }}
+          </span>
         </span>
-      </span>
-      <EllipsisV :size="14" class="shrink-0 text-slate-400" />
-    </button>
+      </button>
+      <button
+        type="button"
+        class="shrink-0"
+        title="Open command menu"
+        @click="openCommandMenu"
+      >
+        <Kbd>⌘K</Kbd>
+      </button>
+    </div>
 
     <Popover ref="menu">
       <div class="w-52">
@@ -136,6 +143,15 @@ function doLogout(): void {
           <UserEdit :size="14" />
           <span>Account settings</span>
         </button>
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+          @click="openDisplayMenu"
+        >
+          <SlidersH :size="14" />
+          <span class="flex-1 text-left">Sidebar display</span>
+          <ChevronRight :size="12" class="shrink-0 text-slate-400" />
+        </button>
         <div class="my-1 border-t border-slate-100" />
         <button
           type="button"
@@ -145,6 +161,24 @@ function doLogout(): void {
           <SignOut :size="14" />
           <span>Sign out</span>
         </button>
+      </div>
+    </Popover>
+
+    <Popover ref="displayMenu">
+      <div class="w-56">
+        <p
+          class="px-2 pt-1 pb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
+        >
+          Sidebar
+        </p>
+        <div
+          v-for="toggle in SIDEBAR_TOGGLES"
+          :key="toggle.key"
+          class="flex items-center justify-between gap-3 rounded px-2 py-1.5"
+        >
+          <span class="text-sm text-slate-600">{{ toggle.label }}</span>
+          <ToggleSwitch v-model="sidebarPrefs[toggle.key]" />
+        </div>
       </div>
     </Popover>
 

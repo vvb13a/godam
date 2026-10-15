@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,6 +12,57 @@ import (
 	"github.com/vvb13a/godam/store"
 	"gorm.io/gorm"
 )
+
+// defaultSmartCollections are seeded for every library so the built-in
+// Uncategorized/Untagged views are ordinary, editable smart collections.
+var defaultSmartCollections = []struct {
+	name   string
+	color  string
+	filter string
+}{
+	{name: "Uncategorized", color: "8b5cf6", filter: `{"collection":"uncategorized"}`},
+	{name: "Untagged", color: "8b5cf6", filter: `{"tag":"untagged"}`},
+}
+
+// seedDefaultSmartCollections inserts the built-in presets, appended after any
+// existing rows. It runs inside the library-creation transaction.
+func seedDefaultSmartCollections(tx *gorm.DB, libraryID string, now time.Time) error {
+	for i, def := range defaultSmartCollections {
+		model := &store.SmartCollection{
+			ID:        uuid.New().String(),
+			LibraryID: libraryID,
+			Name:      def.name,
+			Color:     def.color,
+			Sort:      i,
+			Filter:    def.filter,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := tx.Create(model).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SmartCollectionSort is a single smart collection's new position.
+type SmartCollectionSort struct {
+	ID   string `json:"id"`
+	Sort int    `json:"sort"`
+}
+
+// documentMimes mirrors the frontend's document media category so a smart
+// collection's "document" type filter counts the same assets the view shows.
+var documentMimes = []string{
+	"application/pdf",
+	"application/msword",
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	"application/vnd.ms-excel",
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	"application/vnd.ms-powerpoint",
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	"application/rtf",
+}
 
 // SmartCollectionService manages flat, library-scoped saved filter presets.
 type SmartCollectionService struct {
@@ -31,9 +83,85 @@ func (s *SmartCollectionService) List(ctx context.Context, libraryID string) ([]
 	}
 	collections := make([]domain.SmartCollection, 0, len(models))
 	for i := range models {
-		collections = append(collections, *models[i].ToDomain())
+		collection := models[i].ToDomain()
+		count, err := s.countAssets(ctx, libraryID, collection.Filter)
+		if err != nil {
+			return nil, err
+		}
+		collection.AssetCount = count
+		collections = append(collections, *collection)
 	}
 	return collections, nil
+}
+
+// countAssets returns how many assets in the library match a saved filter. The
+// special collection/tag values "uncategorized"/"untagged" and the broad media
+// categories mirror the asset list's filtering.
+func (s *SmartCollectionService) countAssets(ctx context.Context, libraryID string, filter domain.SmartCollectionFilter) (int, error) {
+	query := s.db.WithContext(ctx).
+		Model(&store.Asset{}).
+		Where("library_id = ?", libraryID)
+
+	switch filter.Collection {
+	case "":
+	case "uncategorized":
+		query = query.Where("id NOT IN (SELECT asset_id FROM asset_collections)")
+	default:
+		query = query.Where(
+			"id IN (SELECT asset_id FROM asset_collections WHERE collection_id = ?)",
+			filter.Collection,
+		)
+	}
+
+	switch filter.Tag {
+	case "":
+	case "untagged":
+		query = query.Where("id NOT IN (SELECT asset_id FROM asset_tags)")
+	default:
+		ids := splitCSV(filter.Tag)
+		if len(ids) > 0 {
+			query = query.Where(
+				"id IN (SELECT asset_id FROM asset_tags WHERE tag_id IN ?)",
+				ids,
+			)
+		}
+	}
+
+	switch filter.Type {
+	case "":
+	case "image":
+		query = query.Where("mime_type LIKE 'image/%'")
+	case "video":
+		query = query.Where("mime_type LIKE 'video/%'")
+	case "audio":
+		query = query.Where("mime_type LIKE 'audio/%'")
+	case "document":
+		query = query.Where("mime_type LIKE 'text/%' OR mime_type IN ?", documentMimes)
+	case "other":
+		query = query.
+			Where("mime_type NOT LIKE 'image/%'").
+			Where("mime_type NOT LIKE 'video/%'").
+			Where("mime_type NOT LIKE 'audio/%'").
+			Where("mime_type NOT LIKE 'text/%'").
+			Where("mime_type NOT IN ?", documentMimes)
+	}
+
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	ids := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			ids = append(ids, trimmed)
+		}
+	}
+	return ids
 }
 
 func (s *SmartCollectionService) GetByID(ctx context.Context, id string) (*domain.SmartCollection, error) {
@@ -105,6 +233,30 @@ func (s *SmartCollectionService) Delete(ctx context.Context, id string) error {
 		return domain.ErrNotFound
 	}
 	return nil
+}
+
+// Reorder applies a batch of sort positions in one transaction so a drag
+// reorder is a single request and never leaves the order half-applied. Only
+// rows in the given library are affected.
+func (s *SmartCollectionService) Reorder(ctx context.Context, libraryID string, items []SmartCollectionSort) error {
+	if len(items) == 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, item := range items {
+			res := tx.Model(&store.SmartCollection{}).
+				Where("id = ? AND library_id = ?", item.ID, libraryID).
+				Updates(map[string]any{"sort": item.Sort, "updated_at": now})
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				return domain.ErrNotFound
+			}
+		}
+		return nil
+	})
 }
 
 func (s *SmartCollectionService) nextSort(ctx context.Context, libraryID string) (int, error) {

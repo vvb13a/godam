@@ -1,6 +1,9 @@
 <script setup lang="ts">
-withDefaults(defineProps<{ name: string; color?: string }>(), {
+import { StarFill } from '@primeicons/vue'
+
+withDefaults(defineProps<{ name: string; color?: string; starred?: boolean }>(), {
   color: undefined,
+  starred: false,
 })
 </script>
 
@@ -12,7 +15,14 @@ withDefaults(defineProps<{ name: string; color?: string }>(), {
       borderColor: color ?? '#e2e8f0',
     }"
   >
+    <StarFill
+      v-if="starred"
+      :size="12"
+      class="shrink-0"
+      :style="{ color: color ?? '#f59e0b' }"
+    />
     <span
+      v-else
       class="h-2 w-2 shrink-0 rounded-full"
       :style="{ backgroundColor: color ?? '#94a3b8' }"
     />

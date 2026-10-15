@@ -29,6 +29,15 @@ function currentCollectionId(): string | null {
   return collection
 }
 
+// currentTagId returns the tag filter's id only when it is a single, concrete
+// tag (not the "untagged" pseudo-filter or a multi-tag selection).
+function currentTagId(): string | null {
+  const tag = route.query.tag
+  if (typeof tag !== 'string' || !tag) return null
+  if (tag === 'untagged' || tag.includes(',')) return null
+  return tag
+}
+
 function onDragEnter(event: DragEvent): void {
   if (!hasFiles(event)) return
   dragDepth++
@@ -55,7 +64,7 @@ function onDrop(event: DragEvent): void {
     ? Array.from(event.dataTransfer.files)
     : []
   if (files.length) {
-    openUpload(files, currentCollectionId())
+    openUpload(files, currentCollectionId(), currentTagId())
   }
 }
 

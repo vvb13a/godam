@@ -123,10 +123,13 @@ func (s *LibraryService) Create(ctx context.Context, userID, name, color string,
 		if err := tx.Create(store.LibraryModel(lib)).Error; err != nil {
 			return err
 		}
-		return tx.Exec(
+		if err := tx.Exec(
 			"INSERT INTO library_users (library_id, user_id) VALUES (?, ?)",
 			lib.ID, userID,
-		).Error
+		).Error; err != nil {
+			return err
+		}
+		return seedDefaultSmartCollections(tx, lib.ID, now)
 	})
 	if err != nil {
 		return nil, err

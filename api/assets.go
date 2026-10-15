@@ -254,6 +254,71 @@ func (s *Server) handleRemoveFromCollection(w http.ResponseWriter, r *http.Reque
 	s.respondAsset(w, r, id)
 }
 
+type bulkCollectionRequest struct {
+	CollectionID string   `json:"collection_id"`
+	AssetIDs     []string `json:"asset_ids"`
+}
+
+// handleAddAssetsToCollection links many assets to one collection in a single
+// request, replacing the per-asset POST /api/assets/{id}/collections calls.
+func (s *Server) handleAddAssetsToCollection(w http.ResponseWriter, r *http.Request) {
+	var req bulkCollectionRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.CollectionID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "collection_id is required"})
+		return
+	}
+	if _, ok := s.ownedCollection(w, r, req.CollectionID); !ok {
+		return
+	}
+	if err := s.deps.Assets.AddToCollectionBulk(r.Context(), req.CollectionID, req.AssetIDs); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type bulkTagRequest struct {
+	LibraryID string   `json:"library_id"`
+	AssetIDs  []string `json:"asset_ids"`
+	TagIDs    []string `json:"tag_ids"`
+	Mode      string   `json:"mode"`
+}
+
+// handleApplyAssetsTags applies a tag set to many assets in one request,
+// replacing the per-asset/tag POST/DELETE tag calls. "add" merges the tags into
+// each asset; "replace" makes tag_ids the exact tag set of every asset.
+func (s *Server) handleApplyAssetsTags(w http.ResponseWriter, r *http.Request) {
+	var req bulkTagRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.LibraryID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
+		return
+	}
+	if req.Mode != "add" && req.Mode != "replace" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "mode must be add or replace"})
+		return
+	}
+	if !s.requireOwnedLibrary(w, r, req.LibraryID) {
+		return
+	}
+	var err error
+	if req.Mode == "replace" {
+		err = s.deps.Assets.ReplaceTagsBulk(r.Context(), req.LibraryID, req.AssetIDs, req.TagIDs)
+	} else {
+		err = s.deps.Assets.AddTagsBulk(r.Context(), req.LibraryID, req.AssetIDs, req.TagIDs)
+	}
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // respondAsset writes the current state of an asset, so relation mutations
 // return the updated membership without a follow-up request.
 func (s *Server) respondAsset(w http.ResponseWriter, r *http.Request, id string) {

@@ -424,6 +424,68 @@ func (s *AssetService) RemoveFromCollection(ctx context.Context, assetID, collec
 		Exec("DELETE FROM asset_collections WHERE asset_id = ? AND collection_id = ?", assetID, collectionID).Error
 }
 
+// AddToCollectionBulk adds many assets to one collection in a single statement.
+// Only assets sharing the collection's library are linked, so unknown or
+// foreign ids are ignored rather than failing the whole batch.
+func (s *AssetService) AddToCollectionBulk(ctx context.Context, collectionID string, assetIDs []string) error {
+	if len(assetIDs) == 0 {
+		return nil
+	}
+	var collection store.Collection
+	if err := s.db.WithContext(ctx).Select("library_id").First(&collection, "id = ?", collectionID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.ErrNotFound
+		}
+		return err
+	}
+	return s.db.WithContext(ctx).Exec(
+		`INSERT OR IGNORE INTO asset_collections (asset_id, collection_id)
+		 SELECT a.id, ? FROM assets a WHERE a.id IN ? AND a.library_id = ?`,
+		collectionID, assetIDs, collection.LibraryID,
+	).Error
+}
+
+// AddTagsBulk attaches many tags to many assets in one statement, scoped to the
+// library so assets and tags from other libraries are never linked. Existing
+// links are ignored, so the operation is idempotent.
+func (s *AssetService) AddTagsBulk(ctx context.Context, libraryID string, assetIDs, tagIDs []string) error {
+	if len(assetIDs) == 0 || len(tagIDs) == 0 {
+		return nil
+	}
+	return s.db.WithContext(ctx).Exec(
+		`INSERT OR IGNORE INTO asset_tags (asset_id, tag_id)
+		 SELECT a.id, t.id FROM assets a, tags t
+		 WHERE a.id IN ? AND t.id IN ? AND a.library_id = ? AND t.library_id = ?`,
+		assetIDs, tagIDs, libraryID, libraryID,
+	).Error
+}
+
+// ReplaceTagsBulk makes tagIDs the exact tag set of every given asset (scoped to
+// the library), in one transaction. Pass an empty tagIDs to clear tags.
+func (s *AssetService) ReplaceTagsBulk(ctx context.Context, libraryID string, assetIDs, tagIDs []string) error {
+	if len(assetIDs) == 0 {
+		return nil
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(
+			`DELETE FROM asset_tags
+			 WHERE asset_id IN (SELECT id FROM assets WHERE id IN ? AND library_id = ?)`,
+			assetIDs, libraryID,
+		).Error; err != nil {
+			return err
+		}
+		if len(tagIDs) == 0 {
+			return nil
+		}
+		return tx.Exec(
+			`INSERT OR IGNORE INTO asset_tags (asset_id, tag_id)
+			 SELECT a.id, t.id FROM assets a, tags t
+			 WHERE a.id IN ? AND t.id IN ? AND a.library_id = ? AND t.library_id = ?`,
+			assetIDs, tagIDs, libraryID, libraryID,
+		).Error
+	})
+}
+
 func (s *AssetService) Delete(ctx context.Context, id string) error {
 	asset, err := s.GetByID(ctx, id)
 	if err != nil {

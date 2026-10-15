@@ -22,4 +22,8 @@ type SmartCollection struct {
 	Filter    SmartCollectionFilter `json:"filter"`
 	CreatedAt time.Time             `json:"created_at"`
 	UpdatedAt time.Time             `json:"updated_at"`
+
+	// AssetCount is derived on read (not stored): how many assets in the
+	// library match the smart collection's filter.
+	AssetCount int `json:"asset_count"`
 }

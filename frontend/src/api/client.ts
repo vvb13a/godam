@@ -264,6 +264,38 @@ export function removeFromCollection(
   )
 }
 
+// addAssetsToCollection links many assets to one collection in a single request.
+export function addAssetsToCollection(
+  collectionId: string,
+  assetIds: string[],
+): Promise<void> {
+  return requestVoid('/api/assets/collections', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ collection_id: collectionId, asset_ids: assetIds }),
+  })
+}
+
+// applyAssetsTags adds or replaces tags across many assets in one request.
+// "add" merges tagIds into each asset; "replace" makes them the exact tag set.
+export function applyAssetsTags(
+  libraryId: string,
+  assetIds: string[],
+  tagIds: string[],
+  mode: 'add' | 'replace',
+): Promise<void> {
+  return requestVoid('/api/assets/tags', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      library_id: libraryId,
+      asset_ids: assetIds,
+      tag_ids: tagIds,
+      mode,
+    }),
+  })
+}
+
 // ---- Tags ----
 
 export function listTags(libraryId: string): Promise<Tag[]> {
@@ -419,6 +451,17 @@ export function updateSmartCollection(
     'PUT',
     { name, color },
   )
+}
+
+export function reorderSmartCollections(
+  libraryId: string,
+  items: { id: string; sort: number }[],
+): Promise<void> {
+  return requestVoid('/api/smart-collections/sort', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ library_id: libraryId, items }),
+  })
 }
 
 export function deleteSmartCollection(id: string): Promise<void> {

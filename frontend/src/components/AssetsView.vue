@@ -20,7 +20,7 @@ import {
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as api from '../api/client'
-import { endAssetDrag, startAssetDrag } from '../lib/assetDrag'
+import { assetDrag, endAssetDrag, startAssetDrag } from '../lib/assetDrag'
 import { confirmDeleteMenuItem } from '../lib/menu'
 import {
   CARD_SHAPES,
@@ -167,6 +167,13 @@ const uploadCollectionId = computed(() =>
     ? collectionFilter.value
     : null,
 )
+// Only a single, concrete tag filter is auto-applied to uploads; multi-tag and
+// the virtual "untagged" filter are skipped.
+const uploadTagId = computed(() => {
+  const tags = tagFilter.value
+  if (tags.length !== 1 || tags[0] === 'untagged') return null
+  return tags[0]
+})
 
 // The media-type and sort filters also live in the route query so a smart
 // collection (a saved preset) can restore them.
@@ -500,6 +507,77 @@ function onContextMenu(event: MouseEvent, asset: Asset): void {
   contextMenu.value?.show(event)
 }
 
+const DRAG_IMAGE_SIZE = 64
+let dragGhostEl: HTMLElement | null = null
+
+// renderedPreview returns the already-decoded preview <img> for a card in the
+// grid, so the ghost can be painted synchronously (no waiting on image loads).
+function renderedPreview(assetId: string): HTMLImageElement | null {
+  return document.querySelector<HTMLImageElement>(
+    `[data-asset-id="${CSS.escape(assetId)}"] img`,
+  )
+}
+
+function drawCover(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  const iw = img.naturalWidth
+  const ih = img.naturalHeight
+  if (!iw || !ih) {
+    ctx.fillStyle = '#cbd5e1'
+    ctx.fillRect(x, y, w, h)
+    return
+  }
+  const scale = Math.max(w / iw, h / ih)
+  const dw = iw * scale
+  const dh = ih * scale
+  ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh)
+}
+
+// buildDragCanvas paints the drag preview: a single translucent thumbnail, or a
+// 2x2 grid with the first three previews and a "+N" badge for the remainder.
+// A canvas is used so the 50% transparency renders reliably everywhere.
+function buildDragCanvas(assets: Asset[], count: number): HTMLCanvasElement {
+  const size = DRAG_IMAGE_SIZE
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return canvas
+  ctx.globalAlpha = 0.5
+
+  if (count <= 1) {
+    const img = assets[0] ? renderedPreview(assets[0].id) : null
+    if (img) drawCover(ctx, img, 0, 0, size, size)
+    return canvas
+  }
+
+  const cell = size / 2
+  for (let i = 0; i < Math.min(3, assets.length); i++) {
+    const img = renderedPreview(assets[i].id)
+    if (img) {
+      drawCover(ctx, img, (i % 2) * cell, Math.floor(i / 2) * cell, cell, cell)
+    }
+  }
+
+  if (count > 3) {
+    ctx.globalAlpha = 1
+    ctx.fillStyle = '#0f172a'
+    ctx.fillRect(cell, cell, cell, cell)
+    ctx.fillStyle = '#ffffff'
+    ctx.font = '600 12px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(`+${count - 3}`, cell + cell / 2, cell + cell / 2)
+  }
+  return canvas
+}
+
 function onDragStart(asset: Asset, event: DragEvent): void {
   if (!selectedSet.value.has(asset.id)) {
     selectedIds.value = [asset.id]
@@ -507,14 +585,32 @@ function onDragStart(asset: Asset, event: DragEvent): void {
   }
   const ids = selectedIds.value.slice()
   startAssetDrag(ids)
-  if (event.dataTransfer) {
-    event.dataTransfer.setData('text/plain', JSON.stringify(ids))
-    event.dataTransfer.effectAllowed = 'copy'
-  }
+  if (!event.dataTransfer) return
+  event.dataTransfer.setData('text/plain', JSON.stringify(ids))
+  event.dataTransfer.effectAllowed = 'copy'
+  const ghost = buildDragCanvas(selectedAssets.value, ids.length)
+  ghost.style.position = 'fixed'
+  ghost.style.top = '-1000px'
+  ghost.style.left = '-1000px'
+  ghost.style.pointerEvents = 'none'
+  document.body.appendChild(ghost)
+  event.dataTransfer.setDragImage(
+    ghost,
+    DRAG_IMAGE_SIZE / 2,
+    DRAG_IMAGE_SIZE / 2,
+  )
+  dragGhostEl = ghost
+  // The browser snapshots the image during setDragImage; drop it right after.
+  window.setTimeout(() => {
+    ghost.remove()
+    if (dragGhostEl === ghost) dragGhostEl = null
+  }, 0)
 }
 
 function onDragEnd(): void {
   endAssetDrag()
+  dragGhostEl?.remove()
+  dragGhostEl = null
 }
 
 function openOriginal(): void {
@@ -680,7 +776,10 @@ onBeforeUnmount(() => {
             <option value="size-asc">Smallest first</option>
           </select>
 
-          <Button label="Upload" @click="openUpload([], uploadCollectionId)">
+          <Button
+            label="Upload"
+            @click="openUpload([], uploadCollectionId, uploadTagId)"
+          >
             <template #icon><Upload :size="16" /></template>
           </Button>
 
@@ -786,6 +885,7 @@ onBeforeUnmount(() => {
               :asset="asset"
               :shape="shape"
               :selected="selectedSet.has(asset.id)"
+              :dragging="assetDrag.active && selectedSet.has(asset.id)"
               :show-extension="showExtension"
               :show-name="showName"
               :show-size="showSize"
@@ -802,6 +902,7 @@ onBeforeUnmount(() => {
               :asset="asset"
               :shape="shape"
               :selected="selectedSet.has(asset.id)"
+              :dragging="assetDrag.active && selectedSet.has(asset.id)"
               :show-extension="showExtension"
               :show-name="showName"
               :show-size="showSize"

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/vvb13a/godam/domain"
+	"github.com/vvb13a/godam/service"
 )
 
 func (s *Server) handleListSmartCollections(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +72,32 @@ func (s *Server) handleUpdateSmartCollection(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, collection)
+}
+
+type smartCollectionSortRequest struct {
+	LibraryID string                        `json:"library_id"`
+	Items     []service.SmartCollectionSort `json:"items"`
+}
+
+// handleReorderSmartCollections applies sort positions in bulk for a drag
+// reorder of the flat smart collections list.
+func (s *Server) handleReorderSmartCollections(w http.ResponseWriter, r *http.Request) {
+	var req smartCollectionSortRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.LibraryID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
+		return
+	}
+	if !s.requireOwnedLibrary(w, r, req.LibraryID) {
+		return
+	}
+	if err := s.deps.SmartCollections.Reorder(r.Context(), req.LibraryID, req.Items); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleDeleteSmartCollection(w http.ResponseWriter, r *http.Request) {

@@ -20,12 +20,11 @@ func NewTagService(db *gorm.DB) *TagService {
 	return &TagService{db: db}
 }
 
-// GetOrCreate normalizes the name (lowercased, trimmed, no leading #) and
-// returns the matching tag within the library, inserting it when it does not
-// exist yet. Names are unique per library, not globally.
+// GetOrCreate trims the name and returns the matching tag within the library,
+// inserting it when it does not exist yet. The name is preserved as the user
+// typed it; names are unique per library.
 func (s *TagService) GetOrCreate(ctx context.Context, libraryID, name string) (*domain.Tag, error) {
-	cleaned := strings.ToLower(strings.TrimSpace(name))
-	cleaned = strings.TrimPrefix(cleaned, "#")
+	cleaned := strings.TrimSpace(name)
 	if cleaned == "" {
 		return nil, domain.ErrNotFound
 	}
@@ -111,11 +110,10 @@ func (s *TagService) GetByID(ctx context.Context, id string) (*domain.Tag, error
 }
 
 // Update sets a tag's name, group (nil for uncategorized) and starred flag.
-// Callers send the complete desired state. The name is normalized the same way
-// as on creation so case variants cannot become separate tags.
+// Callers send the complete desired state. The name is trimmed the same way as
+// on creation, preserving the casing the user chose.
 func (s *TagService) Update(ctx context.Context, id, name string, groupID *string, starred bool) (*domain.Tag, error) {
-	cleaned := strings.ToLower(strings.TrimSpace(name))
-	cleaned = strings.TrimPrefix(cleaned, "#")
+	cleaned := strings.TrimSpace(name)
 	if cleaned == "" {
 		return nil, domain.ErrNotFound
 	}

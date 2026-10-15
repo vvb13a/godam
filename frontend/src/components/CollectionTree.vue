@@ -651,7 +651,7 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
   }
   if (!ids.length) return
   try {
-    await Promise.all(ids.map((id) => api.addToCollection(id, collection.id)))
+    await api.addAssetsToCollection(collection.id, ids)
     notifyLibraryChanged()
     toast.add({
       severity: 'success',
@@ -677,7 +677,9 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
     @dragover.capture="onAssetDragOver"
     @drop.capture="onAssetDrop"
   >
-    <div class="flex items-center justify-between pt-2 pb-0 pr-3 pl-[1.375rem]">
+    <div
+      class="sticky top-0 z-10 flex items-center justify-between bg-white pt-2 pb-0 pr-3 pl-[1.375rem]"
+    >
       <span class="text-xs font-semibold tracking-wide text-slate-400 uppercase">
         Collections
         <template v-if="library.collections.length">

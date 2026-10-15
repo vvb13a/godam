@@ -10,6 +10,7 @@ const props = withDefaults(
     asset: Asset
     shape?: CardShape
     selected?: boolean
+    dragging?: boolean
     showExtension?: boolean
     showName?: boolean
     showSize?: boolean
@@ -18,6 +19,7 @@ const props = withDefaults(
   {
     shape: 'square',
     selected: false,
+    dragging: false,
     showExtension: false,
     showName: false,
     showSize: false,
@@ -83,6 +85,13 @@ function onImageLoad(event: Event): void {
 }
 
 const cardClass = computed(() => {
+  // While an asset is being dragged it gets a dotted outline (and, when it is
+  // part of a larger selection, the ring is softened) so the source is clear.
+  if (props.dragging) {
+    return props.fill
+      ? 'h-full rounded border border-dashed border-violet-500 bg-white opacity-60'
+      : 'rounded border border-dashed border-violet-500 bg-white opacity-60'
+  }
   const base = props.selected
     ? 'rounded border border-violet-500 bg-white ring-2 ring-violet-500'
     : 'rounded border border-slate-200 bg-white hover:border-violet-300 hover:shadow-sm'

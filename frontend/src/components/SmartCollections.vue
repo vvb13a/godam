@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import ContextMenu from 'primevue/contextmenu'
+import Popover from 'primevue/popover'
 import { useToast } from 'primevue/usetoast'
 import type { MenuItem } from 'primevue/menuitem'
-import { Check, Filter, Palette, Pencil, Plus } from '@primeicons/vue'
+import { Check, Filter, Palette, Pencil, Plus, SortAlt } from '@primeicons/vue'
 import type { Component } from 'vue'
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as api from '../api/client'
 import { library } from '../lib/library'
@@ -18,7 +19,30 @@ interface SmartMenuItem extends MenuItem {
   colorOption?: boolean
 }
 
+type SortMode = 'custom' | 'name-asc' | 'name-desc' | 'count-asc' | 'count-desc'
+
 const DEFAULT_SMART_COLOR = '8b5cf6'
+const SORT_STORAGE_KEY = 'godam:smart-collections:sort'
+const SORT_MODES: SortMode[] = [
+  'custom',
+  'name-asc',
+  'name-desc',
+  'count-asc',
+  'count-desc',
+]
+
+const SORT_OPTIONS: { value: SortMode; label: string }[] = [
+  { value: 'custom', label: 'Custom (drag & drop)' },
+  { value: 'name-asc', label: 'Name A–Z' },
+  { value: 'name-desc', label: 'Name Z–A' },
+  { value: 'count-desc', label: 'Most assets' },
+  { value: 'count-asc', label: 'Fewest assets' },
+]
+
+function loadSortMode(): SortMode {
+  const raw = localStorage.getItem(SORT_STORAGE_KEY)
+  return SORT_MODES.includes(raw as SortMode) ? (raw as SortMode) : 'custom'
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -26,11 +50,24 @@ const toast = useToast()
 
 const root = ref<HTMLElement | null>(null)
 const menu = ref<InstanceType<typeof ContextMenu> | null>(null)
+const sortPopover = ref<InstanceType<typeof Popover> | null>(null)
 const contextItem = ref<SmartCollection | null>(null)
 const editingId = ref<string | null>(null)
 const editingName = ref('')
 const creating = ref(false)
 const draftName = ref('')
+const sortMode = ref<SortMode>(loadSortMode())
+const dragIndex = ref<number | null>(null)
+const dragList = ref<SmartCollection[] | null>(null)
+const suppressClick = ref(false)
+
+watch(sortMode, (value) => {
+  try {
+    localStorage.setItem(SORT_STORAGE_KEY, value)
+  } catch {
+    // Storage unavailable: the choice simply won't persist.
+  }
+})
 
 function toMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
@@ -39,6 +76,34 @@ function toMessage(e: unknown): string {
 function colorOf(item: SmartCollection): string {
   return libraryColorHex(item.color)
 }
+
+// Sibling order depends on the chosen display mode; "custom" keeps the stored
+// drag-and-drop order.
+function compareSmartCollections(
+  a: SmartCollection,
+  b: SmartCollection,
+): number {
+  switch (sortMode.value) {
+    case 'name-asc':
+      return a.name.localeCompare(b.name)
+    case 'name-desc':
+      return b.name.localeCompare(a.name)
+    case 'count-asc':
+      return a.asset_count - b.asset_count || a.name.localeCompare(b.name)
+    case 'count-desc':
+      return b.asset_count - a.asset_count || a.name.localeCompare(b.name)
+    default:
+      return a.sort - b.sort || a.name.localeCompare(b.name)
+  }
+}
+
+const sortedItems = computed(() =>
+  [...library.smartCollections].sort(compareSmartCollections),
+)
+
+// While dragging in custom mode the live order lives here so the rows can
+// reflow under the pointer; otherwise the computed sorted order is shown.
+const displayItems = computed(() => dragList.value ?? sortedItems.value)
 
 // The smart collection is a preset link: it stores the current asset-view
 // filters (and sort), and selecting it just navigates with those query params.
@@ -63,9 +128,8 @@ const hasFilters = computed(() => {
   )
 })
 
-function isActive(item: SmartCollection): boolean {
+function isFilterActive(f: SmartCollectionFilter): boolean {
   const current = currentFilter()
-  const f = item.filter
   return (
     (f.collection ?? '') === (current.collection ?? '') &&
     (f.tag ?? '') === (current.tag ?? '') &&
@@ -74,15 +138,26 @@ function isActive(item: SmartCollection): boolean {
   )
 }
 
-function apply(item: SmartCollection): void {
+function isActive(item: SmartCollection): boolean {
+  return isFilterActive(item.filter)
+}
+
+function navigateFilter(f: SmartCollectionFilter): void {
   if (editingId.value) return
-  const f = item.filter
   const query: Record<string, string> = {}
   if (f.collection) query.collection = f.collection
   if (f.tag) query.tag = f.tag
   if (f.type) query.type = f.type
   if (f.sort) query.sort = f.sort
   void router.push({ name: 'all', query })
+}
+
+function apply(item: SmartCollection): void {
+  if (suppressClick.value) {
+    suppressClick.value = false
+    return
+  }
+  navigateFilter(item.filter)
 }
 
 function focusRename(id: string): void {
@@ -243,48 +318,167 @@ const menuItems = computed<SmartMenuItem[]>(() => {
     confirmDeleteMenuItem('Delete', () => void remove(item)),
   ]
 })
+
+function toggleSort(event: Event): void {
+  sortPopover.value?.toggle(event)
+}
+
+function setSort(mode: SortMode): void {
+  sortMode.value = mode
+  sortPopover.value?.hide()
+}
+
+function onDragStart(index: number, event: DragEvent): void {
+  if (sortMode.value !== 'custom' || editingId.value) {
+    event.preventDefault()
+    return
+  }
+  dragList.value = [...sortedItems.value]
+  dragIndex.value = index
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', displayItems.value[index]?.id ?? '')
+  }
+}
+
+// As the pointer passes over another row the dragged row takes its place, so
+// the list reflows live instead of only highlighting a drop target.
+function onDragEnter(index: number): void {
+  const list = dragList.value
+  const from = dragIndex.value
+  if (!list || from === null || from === index) return
+  const next = [...list]
+  const [moved] = next.splice(from, 1)
+  if (!moved) return
+  next.splice(index, 0, moved)
+  dragList.value = next
+  dragIndex.value = index
+}
+
+function onDrop(): void {
+  void commitDrag()
+}
+
+function onDragEnd(): void {
+  // Fires after drop too; only reset here if the drag was cancelled.
+  if (dragList.value) {
+    dragList.value = null
+    dragIndex.value = null
+  }
+}
+
+async function commitDrag(): Promise<void> {
+  const list = dragList.value
+  dragList.value = null
+  dragIndex.value = null
+  if (!list) return
+  // The drop is followed by a click on the row; suppress navigation once.
+  suppressClick.value = true
+  setTimeout(() => {
+    suppressClick.value = false
+  }, 0)
+  // Reflect the new order locally so the list does not snap back before the
+  // reorder round-trips (sort values feed the custom-order comparison).
+  list.forEach((item, position) => {
+    item.sort = position
+  })
+  library.smartCollections = list
+  const libraryId = library.currentId
+  if (!libraryId) return
+  try {
+    await api.reorderSmartCollections(
+      libraryId,
+      list.map((item, position) => ({ id: item.id, sort: position })),
+    )
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: 'Reorder failed',
+      detail: toMessage(e),
+      life: 4000,
+    })
+  }
+}
 </script>
 
 <template>
   <div ref="root">
-    <div class="flex items-center justify-between pt-3 pb-0 pr-3 pl-[1.375rem]">
+    <div
+      class="sticky top-0 z-10 flex items-center justify-between bg-white pt-3 pb-0 pr-3 pl-[1.375rem]"
+    >
       <span class="text-xs font-semibold tracking-wide text-slate-400 uppercase">
         Smart Collections
         <template v-if="library.smartCollections.length">
           ({{ library.smartCollections.length }})
         </template>
       </span>
-      <button
-        class="inline-flex"
-        :class="
-          hasFilters
-            ? 'text-slate-400 hover:text-violet-600'
-            : 'cursor-not-allowed text-slate-300'
-        "
-        :disabled="!hasFilters"
-        :title="
-          hasFilters
-            ? 'Save the current filters as a smart collection'
-            : 'Apply some filters first'
-        "
-        @click="startCreate"
-      >
-        <Plus :size="14" />
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          class="inline-flex text-slate-400 hover:text-violet-600"
+          title="Sort smart collections"
+          @click="toggleSort"
+        >
+          <SortAlt :size="14" />
+        </button>
+        <button
+          class="inline-flex"
+          :class="
+            hasFilters
+              ? 'text-slate-400 hover:text-violet-600'
+              : 'cursor-not-allowed text-slate-300'
+          "
+          :disabled="!hasFilters"
+          :title="
+            hasFilters
+              ? 'Save the current filters as a smart collection'
+              : 'Apply some filters first'
+          "
+          @click="startCreate"
+        >
+          <Plus :size="14" />
+        </button>
+      </div>
     </div>
+
+    <Popover ref="sortPopover">
+      <div class="w-56">
+        <button
+          v-for="option in SORT_OPTIONS"
+          :key="option.value"
+          type="button"
+          class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
+          :class="
+            sortMode === option.value
+              ? 'bg-violet-50 text-violet-700'
+              : 'text-slate-600 hover:bg-slate-100'
+          "
+          @click="setSort(option.value)"
+        >
+          <span class="flex-1 text-left">{{ option.label }}</span>
+          <Check v-if="sortMode === option.value" :size="12" class="shrink-0" />
+        </button>
+      </div>
+    </Popover>
 
     <div class="space-y-0.5 px-[0.875rem] py-1">
       <div
-        v-for="item in library.smartCollections"
+        v-for="(item, index) in displayItems"
         :key="item.id"
+        :draggable="sortMode === 'custom' && editingId !== item.id"
         class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 select-none"
-        :class="
+        :class="[
           isActive(item)
             ? 'bg-violet-50 text-violet-700'
-            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-        "
+            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+          dragIndex === index ? 'opacity-40' : '',
+        ]"
         @click="apply(item)"
         @contextmenu.prevent="openMenu($event, item)"
+        @dragstart="onDragStart(index, $event)"
+        @dragenter="onDragEnter(index)"
+        @dragover.prevent
+        @drop.prevent="onDrop"
+        @dragend="onDragEnd"
       >
         <Filter :size="18" class="shrink-0" :style="{ color: colorOf(item) }" />
         <input
@@ -294,12 +488,19 @@ const menuItems = computed<SmartMenuItem[]>(() => {
           type="text"
           class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 outline-none"
           @click.stop
+          @dragstart.stop.prevent
           @keydown.stop
           @keydown.enter="commitRename"
           @keydown.esc="cancelRename"
           @blur="commitRename"
         />
         <span v-else class="min-w-0 flex-1 truncate text-sm">{{ item.name }}</span>
+        <span
+          v-if="item.asset_count"
+          class="shrink-0 text-xs text-slate-400"
+        >
+          {{ item.asset_count }}
+        </span>
       </div>
 
       <div v-if="creating" class="flex items-center gap-2 rounded-md px-2 py-1">

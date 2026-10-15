@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/vvb13a/godam/domain"
 	"github.com/vvb13a/godam/store"
@@ -124,12 +125,23 @@ func TestSmartCollections(t *testing.T) {
 		t.Fatalf("create smart collection: %v", err)
 	}
 
+	// Creating a library seeds the built-in Uncategorized/Untagged presets, so
+	// the created collection is listed alongside them.
 	list, err := smart.List(ctx, lib.ID)
-	if err != nil || len(list) != 1 {
+	if err != nil || len(list) != 3 {
 		t.Fatalf("list: n=%d err=%v", len(list), err)
 	}
-	if list[0].Filter.Type != "video" || list[0].Filter.Sort != "name-asc" {
-		t.Fatalf("filter not persisted: %+v", list[0].Filter)
+	var videos *domain.SmartCollection
+	for i := range list {
+		if list[i].Name == "Videos" {
+			videos = &list[i]
+		}
+	}
+	if videos == nil {
+		t.Fatalf("created smart collection missing from list: %+v", list)
+	}
+	if videos.Filter.Type != "video" || videos.Filter.Sort != "name-asc" {
+		t.Fatalf("filter not persisted: %+v", videos.Filter)
 	}
 
 	if _, err := smart.Create(ctx, lib.ID, "Videos", "3b82f6", domain.SmartCollectionFilter{Type: "video"}); err != nil {
@@ -215,5 +227,92 @@ func TestCollectionHierarchy(t *testing.T) {
 	}
 	if firstRoot.ID != grandchild.ID {
 		t.Fatalf("expected moved node first, got %s", firstRoot.ID)
+	}
+}
+
+func TestBulkAssetRelations(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	users := NewUserService(db)
+	libs := NewLibraryService(db, nil)
+	cols := NewCollectionService(db)
+	tags := NewTagService(db)
+	assets := &AssetService{db: db}
+
+	user, err := users.Create(ctx, "U", "bulk@example.com", "password1")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	lib, err := libs.Create(ctx, user.ID, "L", "", 0)
+	if err != nil {
+		t.Fatalf("create library: %v", err)
+	}
+	col, err := cols.Create(ctx, lib.ID, nil, "C", "")
+	if err != nil {
+		t.Fatalf("create collection: %v", err)
+	}
+	tag1, err := tags.GetOrCreate(ctx, lib.ID, "One")
+	if err != nil {
+		t.Fatalf("create tag1: %v", err)
+	}
+	tag2, err := tags.GetOrCreate(ctx, lib.ID, "Two")
+	if err != nil {
+		t.Fatalf("create tag2: %v", err)
+	}
+	for _, id := range []string{"a1", "a2"} {
+		if err := db.Create(&store.Asset{
+			ID: id, LibraryID: lib.ID, Filename: id + ".jpg",
+			StorageDriver: "local", StorageKey: id, MimeType: "image/jpeg",
+			ByteSize: 1, CreatedAt: time.Now().UTC(),
+		}).Error; err != nil {
+			t.Fatalf("create asset %s: %v", id, err)
+		}
+	}
+
+	countRows := func(table, column, value string) int64 {
+		t.Helper()
+		var n int64
+		if err := db.Table(table).Where(column+" = ?", value).Count(&n).Error; err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		return n
+	}
+
+	// Bulk add to collection links both assets in one call.
+	if err := assets.AddToCollectionBulk(ctx, col.ID, []string{"a1", "a2"}); err != nil {
+		t.Fatalf("add to collection bulk: %v", err)
+	}
+	if n := countRows("asset_collections", "collection_id", col.ID); n != 2 {
+		t.Fatalf("expected 2 collection links, got %d", n)
+	}
+
+	// Bulk add tags merges the tag into both assets and is idempotent.
+	if err := assets.AddTagsBulk(ctx, lib.ID, []string{"a1", "a2"}, []string{tag1.ID}); err != nil {
+		t.Fatalf("add tags bulk: %v", err)
+	}
+	if err := assets.AddTagsBulk(ctx, lib.ID, []string{"a1", "a2"}, []string{tag1.ID}); err != nil {
+		t.Fatalf("add tags bulk repeat: %v", err)
+	}
+	if n := countRows("asset_tags", "tag_id", tag1.ID); n != 2 {
+		t.Fatalf("expected 2 tag links, got %d", n)
+	}
+
+	// Replace clears the old set then applies the new one.
+	if err := assets.ReplaceTagsBulk(ctx, lib.ID, []string{"a1", "a2"}, []string{tag2.ID}); err != nil {
+		t.Fatalf("replace tags bulk: %v", err)
+	}
+	if n := countRows("asset_tags", "tag_id", tag1.ID); n != 0 {
+		t.Fatalf("expected old tags cleared, got %d", n)
+	}
+	if n := countRows("asset_tags", "tag_id", tag2.ID); n != 2 {
+		t.Fatalf("expected 2 replacement tag links, got %d", n)
+	}
+
+	// An empty replacement clears every tag for the assets.
+	if err := assets.ReplaceTagsBulk(ctx, lib.ID, []string{"a1", "a2"}, nil); err != nil {
+		t.Fatalf("clear tags bulk: %v", err)
+	}
+	if n := countRows("asset_tags", "tag_id", tag2.ID); n != 0 {
+		t.Fatalf("expected cleared tags, got %d", n)
 	}
 }

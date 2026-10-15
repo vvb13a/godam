@@ -28,7 +28,7 @@ func (s *Server) handleCreateTag(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if strings.TrimSpace(strings.TrimPrefix(req.Name, "#")) == "" {
+	if strings.TrimSpace(req.Name) == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
 		return
 	}

@@ -565,19 +565,13 @@ async function saveAssetSelection(): Promise<void> {
     return
   }
   const assetId = tagsDialog.assetId
-  if (!assetId || !selectionLoaded.value) return
+  const libraryId = library.currentId
+  if (!assetId || !libraryId || !selectionLoaded.value) return
   selectionLoaded.value = false
   try {
-    const asset = await api.getAsset(assetId)
-    const current = new Set((asset.tags ?? []).map((tag) => tag.id))
-    const target = new Set(selectedTagIds.value)
-    const toAdd = selectedTagIds.value.filter((id) => !current.has(id))
-    const toRemove = [...current].filter((id) => !target.has(id))
-    await Promise.all([
-      ...toAdd.map((id) => api.addTag(assetId, id)),
-      ...toRemove.map((id) => api.removeTag(assetId, id)),
-    ])
-    if (toAdd.length || toRemove.length) notifyLibraryChanged()
+    const target = selectedTagIds.value.slice()
+    await api.applyAssetsTags(libraryId, [assetId], target, 'replace')
+    notifyLibraryChanged()
   } catch (e) {
     toast.add({
       severity: 'error',
@@ -588,38 +582,18 @@ async function saveAssetSelection(): Promise<void> {
   }
 }
 
-// Applies the chosen tags to every selected asset: "replace" makes the
-// selection the exact tag set, "add" merges it into each asset's tags.
+// Applies the chosen tags to every selected asset in one request: "replace"
+// makes the selection the exact tag set, "add" merges it into each asset's tags.
 async function saveBulkSelection(): Promise<void> {
   if (!selectionLoaded.value) return
   selectionLoaded.value = false
   const ids = tagsDialog.assetIds
   const mode = tagsDialog.mode
+  const libraryId = library.currentId
   const target = selectedTagIds.value.slice()
-  if (!ids.length || !mode) return
+  if (!ids.length || !mode || !libraryId) return
   try {
-    if (mode === 'add') {
-      const ops: Promise<unknown>[] = []
-      for (const assetId of ids) {
-        for (const tagId of target) ops.push(api.addTag(assetId, tagId))
-      }
-      await Promise.all(ops)
-      if (target.length) notifyLibraryChanged()
-      return
-    }
-    for (const assetId of ids) {
-      const asset = await api.getAsset(assetId)
-      const current = new Set((asset.tags ?? []).map((tag) => tag.id))
-      const wanted = new Set(target)
-      const ops: Promise<unknown>[] = []
-      for (const tagId of target) {
-        if (!current.has(tagId)) ops.push(api.addTag(assetId, tagId))
-      }
-      for (const tagId of current) {
-        if (!wanted.has(tagId)) ops.push(api.removeTag(assetId, tagId))
-      }
-      await Promise.all(ops)
-    }
+    await api.applyAssetsTags(libraryId, ids, target, mode)
     notifyLibraryChanged()
   } catch (e) {
     toast.add({
