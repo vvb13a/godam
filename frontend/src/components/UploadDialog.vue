@@ -7,7 +7,9 @@ import ProgressBar from 'primevue/progressbar'
 import { Times, Upload } from '@primeicons/vue'
 import { computed, ref, watch } from 'vue'
 import * as api from '../api/client'
+import { formatSize } from '../lib/format'
 import { library, notifyLibraryChanged } from '../lib/library'
+import { ACCEPT_STRING } from '../lib/mimeTypes'
 import { upload } from '../lib/upload'
 
 const sourceUrl = ref('')
@@ -16,6 +18,11 @@ const progress = ref(0)
 const current = ref('')
 const error = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
+
+const currentLibrary = computed(
+  () => library.libraries.find((item) => item.id === library.currentId) ?? null,
+)
+const maxUploadBytes = computed(() => currentLibrary.value?.max_upload_bytes ?? 0)
 
 watch(
   () => upload.visible,
@@ -76,6 +83,14 @@ async function uploadFiles(): Promise<void> {
   if (!upload.files.length || uploading.value) return
   const libraryId = library.currentId
   if (!libraryId) return
+  const limit = maxUploadBytes.value
+  if (limit > 0) {
+    const tooLarge = upload.files.find((file) => file.size > limit)
+    if (tooLarge) {
+      error.value = `“${tooLarge.name}” exceeds the ${formatSize(limit)} limit for this library.`
+      return
+    }
+  }
   uploading.value = true
   error.value = null
   const total = upload.files.length
@@ -157,9 +172,13 @@ async function importUrl(): Promise<void> {
           ref="fileInput"
           type="file"
           multiple
+          :accept="ACCEPT_STRING"
           class="block w-full text-sm text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-violet-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-violet-700 hover:file:bg-violet-100"
           @change="onFiles"
         />
+        <p v-if="maxUploadBytes" class="mt-1 text-xs text-slate-400">
+          Max {{ formatSize(maxUploadBytes) }} per file in this library.
+        </p>
       </div>
 
       <div>

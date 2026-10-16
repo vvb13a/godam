@@ -22,7 +22,7 @@ func NewCollectionService(db *gorm.DB) *CollectionService {
 
 // Create inserts a folder, optionally under a parent, appended after its
 // siblings. Names are made unique within the library.
-func (s *CollectionService) Create(ctx context.Context, libraryID string, parentID *string, name, color string) (*domain.Collection, error) {
+func (s *CollectionService) Create(ctx context.Context, libraryID string, parentID *string, name, description, color string) (*domain.Collection, error) {
 	if err := ensureLibraryExists(ctx, s.db, libraryID); err != nil {
 		return nil, err
 	}
@@ -39,14 +39,15 @@ func (s *CollectionService) Create(ctx context.Context, libraryID string, parent
 	}
 	now := time.Now().UTC()
 	col := &domain.Collection{
-		ID:        uuid.New().String(),
-		LibraryID: libraryID,
-		ParentID:  parentID,
-		Name:      unique,
-		Color:     color,
-		Sort:      sort,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          uuid.New().String(),
+		LibraryID:   libraryID,
+		ParentID:    parentID,
+		Name:        unique,
+		Description: description,
+		Color:       color,
+		Sort:        sort,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 	if err := s.db.WithContext(ctx).Create(store.CollectionModel(col)).Error; err != nil {
 		return nil, err
@@ -54,14 +55,15 @@ func (s *CollectionService) Create(ctx context.Context, libraryID string, parent
 	return col, nil
 }
 
-func (s *CollectionService) Update(ctx context.Context, id, name, color string) (*domain.Collection, error) {
+func (s *CollectionService) Update(ctx context.Context, id, name, description, color string) (*domain.Collection, error) {
 	res := s.db.WithContext(ctx).
 		Model(&store.Collection{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
-			"name":       name,
-			"color":      color,
-			"updated_at": time.Now().UTC(),
+			"name":        name,
+			"description": description,
+			"color":       color,
+			"updated_at":  time.Now().UTC(),
 		})
 	if res.Error != nil {
 		return nil, res.Error

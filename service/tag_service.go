@@ -46,6 +46,7 @@ func (s *TagService) GetOrCreate(ctx context.Context, libraryID, name string) (*
 		LibraryID: libraryID,
 		Name:      cleaned,
 		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
 	}
 	if err := s.db.WithContext(ctx).Create(&tag).Error; err != nil {
 		return nil, err
@@ -109,10 +110,10 @@ func (s *TagService) GetByID(ctx context.Context, id string) (*domain.Tag, error
 	return tag, nil
 }
 
-// Update sets a tag's name, group (nil for uncategorized) and starred flag.
-// Callers send the complete desired state. The name is trimmed the same way as
-// on creation, preserving the casing the user chose.
-func (s *TagService) Update(ctx context.Context, id, name string, groupID *string, starred bool) (*domain.Tag, error) {
+// Update sets a tag's name, description, group (nil for uncategorized) and
+// starred flag. Callers send the complete desired state. The name is trimmed
+// the same way as on creation, preserving the casing the user chose.
+func (s *TagService) Update(ctx context.Context, id, name, description string, groupID *string, starred bool) (*domain.Tag, error) {
 	cleaned := strings.TrimSpace(name)
 	if cleaned == "" {
 		return nil, domain.ErrNotFound
@@ -124,7 +125,13 @@ func (s *TagService) Update(ctx context.Context, id, name string, groupID *strin
 	if err := s.db.WithContext(ctx).
 		Model(&store.Tag{}).
 		Where("id = ?", id).
-		Updates(map[string]any{"name": cleaned, "group_id": group, "starred": starred}).Error; err != nil {
+		Updates(map[string]any{
+			"name":        cleaned,
+			"description": strings.TrimSpace(description),
+			"group_id":    group,
+			"starred":     starred,
+			"updated_at":  time.Now().UTC(),
+		}).Error; err != nil {
 		return nil, err
 	}
 	return s.GetByID(ctx, id)

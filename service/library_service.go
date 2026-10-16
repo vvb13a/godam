@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -152,6 +154,84 @@ func (s *LibraryService) Update(ctx context.Context, id, userID, name, color str
 		})
 	if res.Error != nil {
 		return nil, res.Error
+	}
+	return s.GetByID(ctx, id)
+}
+
+// SetCover sets (or clears, when assetID is empty) the library's cover image.
+// The asset must belong to the same library.
+func (s *LibraryService) SetCover(ctx context.Context, id, userID, assetID string) (*domain.Library, error) {
+	return s.setAssetRef(ctx, id, userID, assetID, "cover_asset_id")
+}
+
+// SetWatermark sets (or clears) the library-wide default watermark asset shown
+// in the image editor's watermark tool. The asset must belong to the library.
+func (s *LibraryService) SetWatermark(ctx context.Context, id, userID, assetID string) (*domain.Library, error) {
+	return s.setAssetRef(ctx, id, userID, assetID, "watermark_asset_id")
+}
+
+// SetUploadSettings sets the library's upload policy: the allowed MIME types
+// (with "type/*" wildcards; empty means use the global default) and the max
+// upload size in bytes (0 means use the global default).
+func (s *LibraryService) SetUploadSettings(ctx context.Context, id, userID string, allowed []string, maxUploadBytes int64) (*domain.Library, error) {
+	if err := s.VerifyOwned(ctx, id, userID); err != nil {
+		return nil, err
+	}
+	encoded := ""
+	cleaned := make([]string, 0, len(allowed))
+	for _, m := range allowed {
+		if trimmed := strings.TrimSpace(m); trimmed != "" {
+			cleaned = append(cleaned, trimmed)
+		}
+	}
+	if len(cleaned) > 0 {
+		buf, err := json.Marshal(cleaned)
+		if err != nil {
+			return nil, err
+		}
+		encoded = string(buf)
+	}
+	if maxUploadBytes < 0 {
+		maxUploadBytes = 0
+	}
+	if err := s.db.WithContext(ctx).
+		Model(&store.Library{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"allowed_mime_types": encoded,
+			"max_upload_bytes":   maxUploadBytes,
+			"updated_at":         time.Now().UTC(),
+		}).Error; err != nil {
+		return nil, err
+	}
+	return s.GetByID(ctx, id)
+}
+
+func (s *LibraryService) setAssetRef(ctx context.Context, id, userID, assetID, column string) (*domain.Library, error) {
+	if err := s.VerifyOwned(ctx, id, userID); err != nil {
+		return nil, err
+	}
+	if assetID != "" {
+		var asset store.Asset
+		if err := s.db.WithContext(ctx).Select("library_id").First(&asset, "id = ?", assetID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, domain.ErrNotFound
+			}
+			return nil, err
+		}
+		if asset.LibraryID != id {
+			return nil, domain.ErrNotFound
+		}
+	}
+	var value any
+	if assetID != "" {
+		value = assetID
+	}
+	if err := s.db.WithContext(ctx).
+		Model(&store.Library{}).
+		Where("id = ?", id).
+		Updates(map[string]any{column: value, "updated_at": time.Now().UTC()}).Error; err != nil {
+		return nil, err
 	}
 	return s.GetByID(ctx, id)
 }

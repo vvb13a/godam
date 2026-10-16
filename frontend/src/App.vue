@@ -1,22 +1,57 @@
 <script setup lang="ts">
 import ConfirmDialog from 'primevue/confirmdialog'
+import ConfirmPopup from 'primevue/confirmpopup'
 import Toast from 'primevue/toast'
+import { useConfirm } from 'primevue/useconfirm'
 import { CloudUpload } from '@primeicons/vue'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import AppSidebar from './components/AppSidebar.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import LibraryOnboarding from './components/LibraryOnboarding.vue'
+import LibraryUploadSettingsDialog from './components/LibraryUploadSettingsDialog.vue'
 import TagsDialog from './components/TagsDialog.vue'
 import UploadDialog from './components/UploadDialog.vue'
 import { auth } from './lib/auth'
 import { commandMenu } from './lib/command'
+import { editorDirty, setLeaveConfirm } from './lib/editorState'
 import { initLibrary, library, resetLibrary } from './lib/library'
 import { openUpload } from './lib/upload'
 
 const route = useRoute()
+const confirm = useConfirm()
 const dragging = ref(false)
 let dragDepth = 0
+
+// A single app-native confirmation for leaving the editor with unsaved changes,
+// used by the router guard and the editor's Back control alike.
+setLeaveConfirm(
+  () =>
+    new Promise<boolean>((resolve) => {
+      confirm.require({
+        group: 'navigation',
+        header: 'Discard changes?',
+        message: 'You have unsaved changes. Leave without saving?',
+        acceptLabel: 'Discard',
+        rejectLabel: 'Cancel',
+        acceptProps: { severity: 'danger' },
+        rejectProps: { text: true },
+        accept: () => resolve(true),
+        reject: () => resolve(false),
+        // Dismissing (Escape/overlay) fires onHide rather than reject; resolve
+        // false so the navigation guard never hangs. resolve is idempotent.
+        onHide: () => resolve(false),
+      })
+    }),
+)
+
+// The browser's unload hook can only show its own generic prompt, not an app
+// dialog; use it to still protect tab close/reload while editing.
+function onBeforeUnload(event: BeforeUnloadEvent): void {
+  if (!editorDirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
 
 function hasFiles(event: DragEvent): boolean {
   const types = event.dataTransfer?.types
@@ -81,6 +116,7 @@ onMounted(() => {
   window.addEventListener('dragleave', onDragLeave)
   window.addEventListener('drop', onDrop)
   window.addEventListener('keydown', onKeydown)
+  window.addEventListener('beforeunload', onBeforeUnload)
 })
 
 // Load (or clear) the library scope whenever the signed-in user changes.
@@ -99,6 +135,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('dragleave', onDragLeave)
   window.removeEventListener('drop', onDrop)
   window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('beforeunload', onBeforeUnload)
 })
 </script>
 
@@ -143,9 +180,11 @@ onBeforeUnmount(() => {
       <UploadDialog />
       <CommandPalette />
       <TagsDialog />
+      <LibraryUploadSettingsDialog />
     </template>
 
-    <ConfirmDialog />
+    <ConfirmDialog group="navigation" />
+    <ConfirmPopup group="editor" />
     <Toast />
   </div>
 </template>

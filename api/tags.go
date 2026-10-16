@@ -48,13 +48,14 @@ func (s *Server) handleCreateTag(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateTagRequest struct {
-	Name    string  `json:"name"`
-	GroupID *string `json:"group_id"`
-	Starred *bool   `json:"starred"`
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	GroupID     *string `json:"group_id"`
+	Starred     *bool   `json:"starred"`
 }
 
-// handleUpdateTag sets a tag's name, group (null for uncategorized) and
-// starred flag.
+// handleUpdateTag sets a tag's name, description, group (null for
+// uncategorized) and starred flag.
 func (s *Server) handleUpdateTag(w http.ResponseWriter, r *http.Request) {
 	var req updateTagRequest
 	if !decodeJSON(w, r, &req) {
@@ -71,7 +72,7 @@ func (s *Server) handleUpdateTag(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.ownedTag(w, r, r.PathValue("id")); !ok {
 		return
 	}
-	tag, err := s.deps.Tags.Update(r.Context(), r.PathValue("id"), req.Name, req.GroupID, starred)
+	tag, err := s.deps.Tags.Update(r.Context(), r.PathValue("id"), req.Name, req.Description, req.GroupID, starred)
 	if err != nil {
 		writeError(w, err)
 		return

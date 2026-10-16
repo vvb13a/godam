@@ -12,9 +12,14 @@
     "@primeicons/vue": "^8.0.2",
     "@primeuix/themes": "^3.0.1",
     "@tailwindcss/vite": "^4.3.3",
+    "filerobot-image-editor": "^4.8.1",
+    "pdfjs-dist": "^6.4.299",
+    "plyr": "^3.8.5",
     "primevue": "^5.0.2",
+    "react-filerobot-image-editor": "^4.7.0",
     "vue": "^3.5.42",
-    "vue-router": "^5.3.1"
+    "vue-router": "^5.3.1",
+    "wavesurfer.js": "^8.0.2"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
@@ -24,5 +29,10 @@
     "typescript": "~6.0.2",
     "vite": "^8.3.0",
     "vue-tsc": "^3.3.11"
+  },
+  "overrides": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-konva": "18.2.16"
   }
 }

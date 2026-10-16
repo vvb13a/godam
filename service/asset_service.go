@@ -91,7 +91,43 @@ func (s *AssetService) GetByID(ctx context.Context, id string) (*domain.Asset, e
 	if err != nil {
 		return nil, err
 	}
-	return m.ToDomain(), nil
+	asset := m.ToDomain()
+	if asset.UploadedBy != "" {
+		asset.UploadedByName = s.uploaderNames(ctx, []string{asset.UploadedBy})[asset.UploadedBy]
+	}
+	return asset, nil
+}
+
+// uploaderNames resolves a set of user ids to display names in one query. A
+// missing or unknown id simply has no entry, so the caller leaves it blank.
+func (s *AssetService) uploaderNames(ctx context.Context, ids []string) map[string]string {
+	names := make(map[string]string, len(ids))
+	if len(ids) == 0 {
+		return names
+	}
+	unique := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	if len(unique) == 0 {
+		return names
+	}
+	var users []store.User
+	if err := s.db.WithContext(ctx).Select("id", "name").Where("id IN ?", unique).Find(&users).Error; err != nil {
+		return names
+	}
+	for i := range users {
+		names[users[i].ID] = users[i].Name
+	}
+	return names
 }
 
 func (s *AssetService) List(ctx context.Context, filter domain.AssetFilter) ([]domain.Asset, error) {
@@ -123,8 +159,14 @@ func (s *AssetService) List(ctx context.Context, filter domain.AssetFilter) ([]d
 		return nil, err
 	}
 	assets := make([]domain.Asset, 0, len(models))
+	uploaderIDs := make([]string, 0, len(models))
 	for i := range models {
 		assets = append(assets, *models[i].ToDomain())
+		uploaderIDs = append(uploaderIDs, assets[len(assets)-1].UploadedBy)
+	}
+	names := s.uploaderNames(ctx, uploaderIDs)
+	for i := range assets {
+		assets[i].UploadedByName = names[assets[i].UploadedBy]
 	}
 	return assets, nil
 }
@@ -141,9 +183,33 @@ func (s *AssetService) Open(ctx context.Context, id string) (io.ReadCloser, erro
 	return driver.Open(ctx, asset.StorageKey)
 }
 
-func (s *AssetService) OpenPreview(ctx context.Context, id string) (io.ReadCloser, error) {
-	previewKey := fmt.Sprintf("previews/%s.jpg", id)
-	return s.local.Open(ctx, previewKey)
+// OpenPreview opens an asset's generated preview, returning its content type.
+func (s *AssetService) OpenPreview(ctx context.Context, id string) (io.ReadCloser, string, error) {
+	if rc, err := s.local.Open(ctx, fmt.Sprintf("previews/%s.png", id)); err == nil {
+		return rc, "image/png", nil
+	}
+	if rc, err := s.local.Open(ctx, fmt.Sprintf("previews/%s.jpg", id)); err == nil {
+		return rc, "image/jpeg", nil
+	}
+	return nil, "", domain.ErrNotFound
+}
+
+// savePreview stores a generated preview under the extension for the MIME type,
+// removing the other extension so no stale preview lingers.
+func (s *AssetService) savePreview(ctx context.Context, id, mimeType string, reader io.Reader) {
+	ext := previewExtension(mimeType)
+	other := ".jpg"
+	if ext == ".jpg" {
+		other = ".png"
+	}
+	_ = s.local.Delete(ctx, fmt.Sprintf("previews/%s%s", id, other))
+	_ = s.local.Save(ctx, fmt.Sprintf("previews/%s%s", id, ext), reader)
+}
+
+// deletePreviews removes both possible preview files for an asset.
+func (s *AssetService) deletePreviews(ctx context.Context, id string) {
+	_ = s.local.Delete(ctx, fmt.Sprintf("previews/%s.jpg", id))
+	_ = s.local.Delete(ctx, fmt.Sprintf("previews/%s.png", id))
 }
 
 // UploadFromSource accepts either a local filesystem path or an http(s) URL,
@@ -224,16 +290,6 @@ func (s *AssetService) UploadFromSource(ctx context.Context, userID, libraryID, 
 }
 
 func (s *AssetService) Upload(ctx context.Context, userID, libraryID, driverName, filename, mimeType string, size int64, reader io.Reader) (*domain.Asset, error) {
-	cleanMime := strings.Split(mimeType, ";")[0]
-	if s.cfg != nil {
-		if !s.cfg.IsAllowedMime(cleanMime) {
-			return nil, fmt.Errorf("%w: %s", ErrUnsupportedFormat, cleanMime)
-		}
-		if s.cfg.MaxUploadSizeBytes > 0 && size > s.cfg.MaxUploadSizeBytes {
-			return nil, fmt.Errorf("%w: %d bytes (limit: %d)", ErrFileTooLarge, size, s.cfg.MaxUploadSizeBytes)
-		}
-	}
-
 	if err := s.ensureLibrary(ctx, libraryID); err != nil {
 		return nil, err
 	}
@@ -246,16 +302,26 @@ func (s *AssetService) Upload(ctx context.Context, userID, libraryID, driverName
 		driverName = "local"
 	}
 
-	id := uuid.New().String()
-	ext := filepath.Ext(filename)
-	storageKey := fmt.Sprintf("uploads/%s%s", id, ext)
-	previewKey := fmt.Sprintf("previews/%s.jpg", id)
-
 	buf := new(bytes.Buffer)
 	if _, err := io.Copy(buf, reader); err != nil {
 		return nil, err
 	}
 	bytesData := buf.Bytes()
+
+	// Sniff the real type, refine audio-only containers, then validate against
+	// the library's upload policy.
+	cleanMime := classifyContainerMime(sniffMime(mimeType, bytesData), bytesData)
+	allowed, maxBytes := s.uploadPolicy(ctx, libraryID)
+	if !mimeAllowed(cleanMime, allowed) {
+		return nil, fmt.Errorf("%w: %s", ErrUnsupportedFormat, cleanMime)
+	}
+	if maxBytes > 0 && int64(len(bytesData)) > maxBytes {
+		return nil, fmt.Errorf("%w: %d bytes (limit: %d)", ErrFileTooLarge, len(bytesData), maxBytes)
+	}
+
+	id := uuid.New().String()
+	ext := filepath.Ext(filename)
+	storageKey := fmt.Sprintf("uploads/%s%s", id, ext)
 
 	// 1. Save original to target storage driver (Local, SFTP, S3)
 	if err := driver.Save(ctx, storageKey, bytes.NewReader(bytesData)); err != nil {
@@ -263,14 +329,14 @@ func (s *AssetService) Upload(ctx context.Context, userID, libraryID, driverName
 	}
 
 	// 2. Save preview to local storage for zero-latency previews
-	previewReader, err := s.previewGen.Generate(ctx, cleanMime, bytes.NewReader(bytesData))
-	if err == nil && previewReader != nil {
-		_ = s.local.Save(ctx, previewKey, previewReader)
+	if previewReader, err := s.previewGen.Generate(ctx, cleanMime, bytes.NewReader(bytesData)); err == nil && previewReader != nil {
+		s.savePreview(ctx, id, cleanMime, previewReader)
 	}
 
 	// 3. Extract metadata
 	meta, _ := s.extractor.Extract(ctx, cleanMime, bytes.NewReader(bytesData), int64(len(bytesData)))
 
+	now := time.Now().UTC()
 	asset := &domain.Asset{
 		ID:            id,
 		LibraryID:     libraryID,
@@ -281,16 +347,142 @@ func (s *AssetService) Upload(ctx context.Context, userID, libraryID, driverName
 		MimeType:      cleanMime,
 		ByteSize:      int64(len(bytesData)),
 		Metadata:      meta,
-		CreatedAt:     time.Now().UTC(),
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 
 	if err := s.db.WithContext(ctx).Create(store.AssetModel(asset)).Error; err != nil {
 		_ = driver.Delete(ctx, storageKey)
-		_ = s.local.Delete(ctx, previewKey)
+		s.deletePreviews(ctx, id)
 		return nil, err
 	}
 
-	return asset, nil
+	return s.GetByID(ctx, id)
+}
+
+// Update changes the editable presentation fields of an asset. An empty title
+// means "fall back to the filename" in the UI, so it is stored as-is.
+func (s *AssetService) Update(ctx context.Context, id, title, note string) (*domain.Asset, error) {
+	res := s.db.WithContext(ctx).
+		Model(&store.Asset{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"title":      strings.TrimSpace(title),
+			"note":       strings.TrimSpace(note),
+			"updated_at": time.Now().UTC(),
+		})
+	if res.Error != nil {
+		return nil, res.Error
+	}
+	return s.GetByID(ctx, id)
+}
+
+// ReplaceContent overwrites the stored file of an asset with new bytes (for
+// example after an in-browser edit), regenerating the preview and metadata and
+// refreshing the derived columns. The storage key is kept, so the served
+// content type comes from the stored mime type.
+func (s *AssetService) ReplaceContent(ctx context.Context, id, mimeType string, reader io.Reader) (*domain.Asset, error) {
+	asset, err := s.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	driver, err := s.registry.Get(asset.StorageDriver)
+	if err != nil {
+		return nil, err
+	}
+
+	buf := new(bytes.Buffer)
+	if _, err := io.Copy(buf, reader); err != nil {
+		return nil, err
+	}
+	bytesData := buf.Bytes()
+
+	cleanMime := classifyContainerMime(sniffMime(mimeType, bytesData), bytesData)
+	allowed, maxBytes := s.uploadPolicy(ctx, asset.LibraryID)
+	if !mimeAllowed(cleanMime, allowed) {
+		return nil, fmt.Errorf("%w: %s", ErrUnsupportedFormat, cleanMime)
+	}
+	if maxBytes > 0 && int64(len(bytesData)) > maxBytes {
+		return nil, fmt.Errorf("%w: %d bytes (limit: %d)", ErrFileTooLarge, len(bytesData), maxBytes)
+	}
+
+	if err := driver.Save(ctx, asset.StorageKey, bytes.NewReader(bytesData)); err != nil {
+		return nil, fmt.Errorf("failed to save to %s storage: %w", asset.StorageDriver, err)
+	}
+
+	if previewReader, err := s.previewGen.Generate(ctx, cleanMime, bytes.NewReader(bytesData)); err == nil && previewReader != nil {
+		s.savePreview(ctx, id, cleanMime, previewReader)
+	}
+
+	meta, _ := s.extractor.Extract(ctx, cleanMime, bytes.NewReader(bytesData), int64(len(bytesData)))
+	if err := s.db.WithContext(ctx).
+		Model(&store.Asset{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"mime_type":    cleanMime,
+			"byte_size":    int64(len(bytesData)),
+			"width":        meta.Width,
+			"height":       meta.Height,
+			"duration_sec": meta.DurationSec,
+			"page_count":   meta.PageCount,
+			"raw_metadata": meta.RawJSON,
+			"updated_at":   time.Now().UTC(),
+		}).Error; err != nil {
+		return nil, err
+	}
+	return s.GetByID(ctx, id)
+}
+
+// RegeneratePreview re-renders the stored preview for an asset, e.g. after
+// preview settings change. The original file is untouched; updated_at is bumped
+// so clients re-fetch the (otherwise cached) preview.
+func (s *AssetService) RegeneratePreview(ctx context.Context, id string) (*domain.Asset, error) {
+	asset, err := s.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	driver, err := s.registry.Get(asset.StorageDriver)
+	if err != nil {
+		return nil, err
+	}
+	rc, err := driver.Open(ctx, asset.StorageKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return nil, err
+	}
+	// Re-detect the type so audio-only containers are corrected on regenerate
+	// too (this is how existing mis-classified assets get fixed).
+	mimeType := classifyContainerMime(sniffMime(asset.MimeType, data), data)
+
+	reader, err := s.previewGen.Generate(ctx, mimeType, bytes.NewReader(data))
+	if err != nil || reader == nil {
+		reader = s.previewGen.GetFallback(mimeType)
+	}
+	s.savePreview(ctx, id, mimeType, reader)
+
+	// Re-extract metadata too, so existing assets pick up new fields (e.g.
+	// audio/video duration and video dimensions).
+	meta, _ := s.extractor.Extract(ctx, mimeType, bytes.NewReader(data), int64(len(data)))
+	if err := s.db.WithContext(ctx).
+		Model(&store.Asset{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"mime_type":    mimeType,
+			"width":        meta.Width,
+			"height":       meta.Height,
+			"duration_sec": meta.DurationSec,
+			"page_count":   meta.PageCount,
+			"raw_metadata": meta.RawJSON,
+			"updated_at":   time.Now().UTC(),
+		}).Error; err != nil {
+		return nil, err
+	}
+	return s.GetByID(ctx, id)
 }
 
 func (s *AssetService) Download(ctx context.Context, assetID, destPath string, targetWidth int) error {
@@ -500,11 +692,21 @@ func (s *AssetService) Delete(ctx context.Context, id string) error {
 		return domain.ErrNotFound
 	}
 
+	// A deleted asset can no longer back a library cover or watermark.
+	_ = s.db.WithContext(ctx).
+		Model(&store.Library{}).
+		Where("cover_asset_id = ?", id).
+		Update("cover_asset_id", nil).Error
+	_ = s.db.WithContext(ctx).
+		Model(&store.Library{}).
+		Where("watermark_asset_id = ?", id).
+		Update("watermark_asset_id", nil).Error
+
 	driver, err := s.registry.Get(asset.StorageDriver)
 	if err == nil {
 		_ = driver.Delete(ctx, asset.StorageKey)
 	}
-	_ = s.local.Delete(ctx, fmt.Sprintf("previews/%s.jpg", id))
+	s.deletePreviews(ctx, id)
 
 	return nil
 }

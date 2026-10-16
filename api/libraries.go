@@ -79,3 +79,68 @@ func (s *Server) handleDeleteLibrary(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+type libraryCoverRequest struct {
+	AssetID string `json:"asset_id"`
+}
+
+// handleSetLibraryCover pins an asset's preview as the library cover (or clears
+// it when asset_id is empty).
+func (s *Server) handleSetLibraryCover(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !s.requireOwnedLibrary(w, r, id) {
+		return
+	}
+	var req libraryCoverRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	lib, err := s.deps.Libraries.SetCover(r.Context(), id, currentUser(r).ID, req.AssetID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, lib)
+}
+
+// handleSetLibraryWatermark sets the library-wide default watermark asset (or
+// clears it when asset_id is empty).
+func (s *Server) handleSetLibraryWatermark(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !s.requireOwnedLibrary(w, r, id) {
+		return
+	}
+	var req libraryCoverRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	lib, err := s.deps.Libraries.SetWatermark(r.Context(), id, currentUser(r).ID, req.AssetID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, lib)
+}
+
+type libraryUploadSettingsRequest struct {
+	AllowedMimeTypes []string `json:"allowed_mime_types"`
+	MaxUploadBytes   int64    `json:"max_upload_bytes"`
+}
+
+// handleSetLibraryUploadSettings sets the library's upload policy.
+func (s *Server) handleSetLibraryUploadSettings(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !s.requireOwnedLibrary(w, r, id) {
+		return
+	}
+	var req libraryUploadSettingsRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	lib, err := s.deps.Libraries.SetUploadSettings(r.Context(), id, currentUser(r).ID, req.AllowedMimeTypes, req.MaxUploadBytes)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, lib)
+}

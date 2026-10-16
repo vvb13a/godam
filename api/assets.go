@@ -1,9 +1,12 @@
 package api
 
 import (
+	"archive/zip"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/vvb13a/godam/domain"
 )
@@ -135,6 +138,68 @@ func (s *Server) handleDeleteAsset(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type updateAssetRequest struct {
+	Title string `json:"title"`
+	Note  string `json:"note"`
+}
+
+// handleUpdateAsset updates the editable title and note of an asset and
+// responds with the refreshed asset.
+func (s *Server) handleUpdateAsset(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := s.ownedAsset(w, r, id); !ok {
+		return
+	}
+	var req updateAssetRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	asset, err := s.deps.Assets.Update(r.Context(), id, req.Title, req.Note)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, asset)
+}
+
+// handleReplaceAssetContent overwrites an asset's stored file (for example
+// after an in-browser edit), regenerating its preview and metadata. The body is
+// a multipart form with a single "file" field.
+func (s *Server) handleReplaceAssetContent(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := s.ownedAsset(w, r, id); !ok {
+		return
+	}
+	if s.deps.MaxUploadBytes > 0 {
+		r.Body = http.MaxBytesReader(w, r.Body, s.deps.MaxUploadBytes+(1<<20))
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid upload"})
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing file"})
+		return
+	}
+	defer file.Close()
+
+	mimeType := header.Header.Get("Content-Type")
+	if mimeType == "" || mimeType == "application/octet-stream" {
+		buf := make([]byte, 512)
+		n, _ := file.Read(buf)
+		mimeType = http.DetectContentType(buf[:n])
+		_, _ = file.Seek(0, 0)
+	}
+
+	asset, err := s.deps.Assets.ReplaceContent(r.Context(), id, mimeType, file)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, asset)
+}
+
 // handleAssetContent streams the original stored file.
 func (s *Server) handleAssetContent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -151,7 +216,78 @@ func (s *Server) handleAssetContent(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", asset.MimeType)
 	w.Header().Set("Cache-Control", "private, max-age=3600")
+	// Media players need range requests (and a known length) to show duration
+	// and seek. ServeContent handles Range/Content-Length for seekable readers
+	// (local storage); other drivers fall back to a plain stream.
+	if seeker, ok := rc.(io.ReadSeeker); ok {
+		http.ServeContent(w, r, asset.Filename, time.Time{}, seeker)
+		return
+	}
 	_, _ = io.Copy(w, rc)
+}
+
+// handleDownloadAssetsZip streams the selected assets as a zip archive. All
+// ids are ownership-checked before the response starts so errors are reported
+// as JSON rather than a truncated archive.
+func (s *Server) handleDownloadAssetsZip(w http.ResponseWriter, r *http.Request) {
+	var ids []string
+	for _, part := range strings.Split(r.URL.Query().Get("ids"), ",") {
+		if id := strings.TrimSpace(part); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ids is required"})
+		return
+	}
+
+	names := make([]string, 0, len(ids))
+	for _, id := range ids {
+		asset, ok := s.ownedAsset(w, r, id)
+		if !ok {
+			return
+		}
+		names = append(names, asset.Filename)
+	}
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="godam-assets.zip"`)
+
+	zw := zip.NewWriter(w)
+	defer zw.Close()
+
+	used := make(map[string]int, len(names))
+	for i, id := range ids {
+		rc, err := s.deps.Assets.Open(r.Context(), id)
+		if err != nil {
+			continue
+		}
+		entry, err := zw.CreateHeader(&zip.FileHeader{
+			Name:   uniqueArchiveName(names[i], used),
+			Method: zip.Store,
+		})
+		if err != nil {
+			_ = rc.Close()
+			continue
+		}
+		_, _ = io.Copy(entry, rc)
+		_ = rc.Close()
+	}
+}
+
+// uniqueArchiveName appends " (2)", " (3)"… to repeated filenames so every zip
+// entry is unique.
+func uniqueArchiveName(name string, used map[string]int) string {
+	base, ext := name, ""
+	if dot := strings.LastIndex(name, "."); dot > 0 {
+		base, ext = name[:dot], name[dot:]
+	}
+	count := used[name]
+	used[name] = count + 1
+	if count == 0 {
+		return name
+	}
+	return fmt.Sprintf("%s (%d)%s", base, count+1, ext)
 }
 
 // handleAssetPreview streams the generated JPEG preview.
@@ -160,16 +296,30 @@ func (s *Server) handleAssetPreview(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.ownedAsset(w, r, id); !ok {
 		return
 	}
-	rc, err := s.deps.Assets.OpenPreview(r.Context(), id)
+	rc, contentType, err := s.deps.Assets.OpenPreview(r.Context(), id)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
 	defer rc.Close()
 
-	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	_, _ = io.Copy(w, rc)
+}
+
+// handleRegeneratePreview re-renders and stores the preview for an asset.
+func (s *Server) handleRegeneratePreview(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := s.ownedAsset(w, r, id); !ok {
+		return
+	}
+	asset, err := s.deps.Assets.RegeneratePreview(r.Context(), id)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, asset)
 }
 
 type tagRequest struct {

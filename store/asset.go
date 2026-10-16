@@ -14,6 +14,8 @@ type Asset struct {
 	LibraryID     string    `gorm:"column:library_id;type:text;not null;index"`
 	UploadedBy    *string   `gorm:"column:uploaded_by;type:text;index"`
 	Filename      string    `gorm:"column:filename;type:text;not null"`
+	Title         string    `gorm:"column:title;type:text;not null;default:''"`
+	Note          string    `gorm:"column:note;type:text;not null;default:''"`
 	StorageDriver string    `gorm:"column:storage_driver;type:text;not null;default:local"`
 	StorageKey    string    `gorm:"column:storage_key;type:text;not null"`
 	MimeType      string    `gorm:"column:mime_type;type:text;not null"`
@@ -24,6 +26,7 @@ type Asset struct {
 	PageCount     *int      `gorm:"column:page_count"`
 	RawMetadata   string    `gorm:"column:raw_metadata;type:text"`
 	CreatedAt     time.Time `gorm:"column:created_at"`
+	UpdatedAt     time.Time `gorm:"column:updated_at"`
 
 	Tags []Tag `gorm:"many2many:asset_tags;"`
 
@@ -43,6 +46,8 @@ func AssetModel(a *domain.Asset) *Asset {
 		LibraryID:     a.LibraryID,
 		UploadedBy:    uploadedBy,
 		Filename:      a.Filename,
+		Title:         a.Title,
+		Note:          a.Note,
 		StorageDriver: a.StorageDriver,
 		StorageKey:    a.StorageKey,
 		MimeType:      a.MimeType,
@@ -53,6 +58,7 @@ func AssetModel(a *domain.Asset) *Asset {
 		PageCount:     a.Metadata.PageCount,
 		RawMetadata:   a.Metadata.RawJSON,
 		CreatedAt:     a.CreatedAt,
+		UpdatedAt:     a.UpdatedAt,
 	}
 }
 
@@ -74,6 +80,8 @@ func (m *Asset) ToDomain() *domain.Asset {
 		LibraryID:     m.LibraryID,
 		UploadedBy:    uploadedBy,
 		Filename:      m.Filename,
+		Title:         m.Title,
+		Note:          m.Note,
 		StorageDriver: m.StorageDriver,
 		StorageKey:    m.StorageKey,
 		MimeType:      m.MimeType,
@@ -88,5 +96,6 @@ func (m *Asset) ToDomain() *domain.Asset {
 		Tags:        tags,
 		Collections: collections,
 		CreatedAt:   m.CreatedAt,
+		UpdatedAt:   m.UpdatedAt,
 	}
 }

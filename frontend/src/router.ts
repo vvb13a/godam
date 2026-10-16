@@ -1,10 +1,7 @@
-import {
-  createRouter,
-  createWebHistory,
-  type RouteRecordRaw,
-} from 'vue-router'
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import * as api from './api/client'
 import { auth, loadMe } from './lib/auth'
+import { leaveEditor } from './lib/editorState'
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/all' },
@@ -44,6 +41,12 @@ router.beforeEach(async (to) => {
     return { name: 'login', query: redirect }
   }
   return true
+})
+
+// Protect unsaved edits in the detail editor on every navigation (sidebar
+// collections/tags, other routes, …), matching the editor's Back control.
+router.beforeEach(async () => {
+  return await leaveEditor()
 })
 
 // A 401 from any non-auth API call means the session expired; drop the user and

@@ -11,6 +11,10 @@ export interface Library {
   name: string
   color: string
   sort: number
+  cover_asset_id?: string
+  watermark_asset_id?: string
+  allowed_mime_types?: string[]
+  max_upload_bytes?: number
   created_at: string
   updated_at: string
 }
@@ -19,10 +23,12 @@ export interface Tag {
   id: string
   library_id: string
   name: string
+  description: string
   group_id?: string
   starred: boolean
   asset_count: number
   created_at: string
+  updated_at: string
 }
 
 export interface TagGroup {
@@ -41,6 +47,7 @@ export interface Collection {
   library_id: string
   parent_id?: string
   name: string
+  description: string
   color: string
   sort: number
   created_at: string
@@ -59,6 +66,7 @@ export interface SmartCollection {
   id: string
   library_id: string
   name: string
+  description: string
   color: string
   sort: number
   filter: SmartCollectionFilter
@@ -79,7 +87,10 @@ export interface Asset {
   id: string
   library_id: string
   uploaded_by?: string
+  uploaded_by_name?: string
   filename: string
+  title?: string
+  note?: string
   storage_driver: string
   storage_key: string
   mime_type: string
@@ -88,6 +99,7 @@ export interface Asset {
   tags?: Tag[]
   collections?: Collection[]
   created_at: string
+  updated_at: string
 }
 
 export interface TypeCount {

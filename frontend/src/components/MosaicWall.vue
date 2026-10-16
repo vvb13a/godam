@@ -96,7 +96,7 @@ function extensionOf(asset: Asset): string {
       @dragend="$emit('dragend')"
     >
       <img
-        :src="api.assetPreviewUrl(asset.id)"
+        :src="api.assetPreviewUrl(asset.id, asset.updated_at)"
         :alt="asset.filename"
         loading="lazy"
         draggable="false"

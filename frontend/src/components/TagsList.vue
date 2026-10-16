@@ -24,6 +24,7 @@ import * as api from '../api/client'
 import { assetDrag } from '../lib/assetDrag'
 import { library, notifyLibraryChanged } from '../lib/library'
 import { confirmDeleteMenuItem } from '../lib/menu'
+import { clearSmartSelection } from '../lib/smartSelection'
 import { openTagsDialog } from '../lib/tagsDialog'
 import type { Tag } from '../types'
 import TagBadge from './TagBadge.vue'
@@ -211,6 +212,7 @@ function isActive(tag: Tag): boolean {
 }
 
 function filterByTag(tag: Tag): void {
+  clearSmartSelection()
   void router.push({ name: 'all', query: { tag: tag.id } })
 }
 
@@ -314,7 +316,13 @@ async function commitRename(): Promise<void> {
   if (!name || name === tag.name) return
   try {
     upsertTag(
-      await api.updateTag(id, name, tag.group_id ?? null, tag.starred),
+      await api.updateTag(
+        id,
+        name,
+        tag.group_id ?? null,
+        tag.starred,
+        tag.description,
+      ),
     )
   } catch (e) {
     toast.add({
@@ -329,7 +337,13 @@ async function commitRename(): Promise<void> {
 async function toggleStar(tag: Tag): Promise<void> {
   try {
     upsertTag(
-      await api.updateTag(tag.id, tag.name, tag.group_id ?? null, !tag.starred),
+      await api.updateTag(
+        tag.id,
+        tag.name,
+        tag.group_id ?? null,
+        !tag.starred,
+        tag.description,
+      ),
     )
   } catch (e) {
     toast.add({
@@ -343,7 +357,9 @@ async function toggleStar(tag: Tag): Promise<void> {
 
 async function assignGroup(tag: Tag, groupId: string | null): Promise<void> {
   try {
-    upsertTag(await api.updateTag(tag.id, tag.name, groupId, tag.starred))
+    upsertTag(
+      await api.updateTag(tag.id, tag.name, groupId, tag.starred, tag.description),
+    )
   } catch (e) {
     toast.add({
       severity: 'error',

@@ -24,10 +24,11 @@ func (s *Server) handleListSmartCollections(w http.ResponseWriter, r *http.Reque
 }
 
 type smartCollectionRequest struct {
-	LibraryID string                       `json:"library_id"`
-	Name      string                       `json:"name"`
-	Color     string                       `json:"color"`
-	Filter    domain.SmartCollectionFilter `json:"filter"`
+	LibraryID   string                       `json:"library_id"`
+	Name        string                       `json:"name"`
+	Description string                       `json:"description"`
+	Color       string                       `json:"color"`
+	Filter      domain.SmartCollectionFilter `json:"filter"`
 }
 
 func (s *Server) handleCreateSmartCollection(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +47,7 @@ func (s *Server) handleCreateSmartCollection(w http.ResponseWriter, r *http.Requ
 	if !s.requireOwnedLibrary(w, r, req.LibraryID) {
 		return
 	}
-	collection, err := s.deps.SmartCollections.Create(r.Context(), req.LibraryID, req.Name, req.Color, req.Filter)
+	collection, err := s.deps.SmartCollections.Create(r.Context(), req.LibraryID, req.Name, req.Description, req.Color, req.Filter)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -66,7 +67,7 @@ func (s *Server) handleUpdateSmartCollection(w http.ResponseWriter, r *http.Requ
 	if _, ok := s.ownedSmartCollection(w, r, r.PathValue("id")); !ok {
 		return
 	}
-	collection, err := s.deps.SmartCollections.Update(r.Context(), r.PathValue("id"), req.Name, req.Color)
+	collection, err := s.deps.SmartCollections.Update(r.Context(), r.PathValue("id"), req.Name, req.Description, req.Color)
 	if err != nil {
 		writeError(w, err)
 		return

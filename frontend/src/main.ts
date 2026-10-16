@@ -3,6 +3,7 @@ import Aura from '@primeuix/themes/aura'
 import PrimeVue from 'primevue/config'
 import ConfirmationService from 'primevue/confirmationservice'
 import ToastService from 'primevue/toastservice'
+import Tooltip from 'primevue/tooltip'
 import { createApp } from 'vue'
 import './style.css'
 import App from './App.vue'
@@ -43,6 +44,7 @@ app.use(PrimeVue, {
 app.use(router)
 app.use(ToastService)
 app.use(ConfirmationService)
+app.directive('tooltip', Tooltip)
 
 // Wait for the initial route to resolve before mounting so a deep link is not
 // redirected to the default view on load.

@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Cog,
   Database,
   GripVertical,
   Palette,
@@ -30,6 +31,7 @@ import {
   libraryColorHex,
 } from '../lib/libraryColors'
 import { confirmDeleteMenuItem } from '../lib/menu'
+import { openUploadSettings } from '../lib/uploadSettings'
 import type { Library } from '../types'
 
 interface LibraryMenuItem extends MenuItem {
@@ -192,6 +194,15 @@ const menuItems = computed<LibraryMenuItem[]>(() => {
         colorOption: true,
         command: () => void setColor(option.value),
       })),
+    },
+    { separator: true },
+    {
+      label: 'Upload settings',
+      menuIcon: Cog,
+      command: () => {
+        menu.value?.hide()
+        openUploadSettings(lib.id)
+      },
     },
     { separator: true },
     confirmDeleteMenuItem('Delete', () => void removeLib(lib)),

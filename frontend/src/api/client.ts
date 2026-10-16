@@ -127,6 +127,46 @@ export function deleteLibrary(id: string): Promise<void> {
   })
 }
 
+// setLibraryCover pins an asset's preview as the library cover; pass an empty
+// assetId to clear it.
+export function setLibraryCover(
+  id: string,
+  assetId: string,
+): Promise<Library> {
+  return sendJSON<Library>(
+    `/api/libraries/${encodeURIComponent(id)}/cover`,
+    'PUT',
+    { asset_id: assetId },
+  )
+}
+
+// setLibraryWatermark sets the library-wide default watermark asset used by the
+// image editor; pass an empty assetId to clear it.
+export function setLibraryWatermark(
+  id: string,
+  assetId: string,
+): Promise<Library> {
+  return sendJSON<Library>(
+    `/api/libraries/${encodeURIComponent(id)}/watermark`,
+    'PUT',
+    { asset_id: assetId },
+  )
+}
+
+// setLibraryUploadSettings sets the library's allowed MIME types (with "type/*"
+// wildcards) and max upload size in bytes (0 = global default).
+export function setLibraryUploadSettings(
+  id: string,
+  allowedMimeTypes: string[],
+  maxUploadBytes: number,
+): Promise<Library> {
+  return sendJSON<Library>(
+    `/api/libraries/${encodeURIComponent(id)}/upload-settings`,
+    'PUT',
+    { allowed_mime_types: allowedMimeTypes, max_upload_bytes: maxUploadBytes },
+  )
+}
+
 export function reorderLibraries(
   items: { id: string; sort: number }[],
 ): Promise<void> {
@@ -169,6 +209,20 @@ export function deleteAsset(id: string): Promise<void> {
   return requestVoid(`/api/assets/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   })
+}
+
+export interface UpdateAssetInput {
+  title: string
+  note: string
+}
+
+// updateAsset changes the editable title and note, returning the refreshed
+// asset so the caller can replace its copy without a reload.
+export function updateAsset(
+  id: string,
+  input: UpdateAssetInput,
+): Promise<Asset> {
+  return sendJSON<Asset>(`/api/assets/${encodeURIComponent(id)}`, 'PUT', input)
 }
 
 export function importAsset(libraryId: string, source: string): Promise<Asset> {
@@ -222,8 +276,41 @@ export function assetContentUrl(id: string): string {
   return `/api/assets/${encodeURIComponent(id)}/content`
 }
 
-export function assetPreviewUrl(id: string): string {
-  return `/api/assets/${encodeURIComponent(id)}/preview`
+// assetPreviewUrl builds the preview URL. Pass the asset's updated_at as the
+// version so an edited file (which regenerates the preview) is fetched fresh
+// instead of being served from the browser cache.
+export function assetPreviewUrl(id: string, version?: string): string {
+  const base = `/api/assets/${encodeURIComponent(id)}/preview`
+  return version ? `${base}?v=${encodeURIComponent(version)}` : base
+}
+
+// assetsZipUrl is the streaming download of many assets as a zip archive.
+export function assetsZipUrl(ids: string[]): string {
+  return `/api/assets/zip?ids=${ids.map(encodeURIComponent).join(',')}`
+}
+
+// regeneratePreview re-renders the stored preview for an asset and returns the
+// refreshed asset (its updated_at changes so caches are bust).
+export function regeneratePreview(id: string): Promise<Asset> {
+  return requestJSON<Asset>(
+    `/api/assets/${encodeURIComponent(id)}/preview`,
+    { method: 'POST' },
+  )
+}
+
+// replaceAssetContent overwrites the stored file with edited bytes (e.g. from
+// the in-browser image editor). The server regenerates the preview and metadata.
+export function replaceAssetContent(
+  assetId: string,
+  file: Blob,
+  filename?: string,
+): Promise<Asset> {
+  const form = new FormData()
+  form.append('file', file, filename ?? 'edited')
+  return requestJSON<Asset>(
+    `/api/assets/${encodeURIComponent(assetId)}/content`,
+    { method: 'PUT', body: form },
+  )
 }
 
 // ---- Asset tags & collections ----
@@ -311,9 +398,11 @@ export function updateTag(
   name: string,
   groupId: string | null,
   starred: boolean,
+  description: string,
 ): Promise<Tag> {
   return sendJSON<Tag>(`/api/tags/${encodeURIComponent(id)}`, 'PUT', {
     name,
+    description,
     group_id: groupId,
     starred,
   })
@@ -390,11 +479,12 @@ export function updateCollection(
   id: string,
   name: string,
   color: string,
+  description: string,
 ): Promise<Collection> {
   return sendJSON<Collection>(
     `/api/collections/${encodeURIComponent(id)}`,
     'PUT',
-    { name, color },
+    { name, description, color },
   )
 }
 
@@ -432,10 +522,12 @@ export function createSmartCollection(
   name: string,
   color: string,
   filter: SmartCollectionFilter,
+  description = '',
 ): Promise<SmartCollection> {
   return sendJSON<SmartCollection>('/api/smart-collections', 'POST', {
     library_id: libraryId,
     name,
+    description,
     color,
     filter,
   })
@@ -445,11 +537,12 @@ export function updateSmartCollection(
   id: string,
   name: string,
   color: string,
+  description: string,
 ): Promise<SmartCollection> {
   return sendJSON<SmartCollection>(
     `/api/smart-collections/${encodeURIComponent(id)}`,
     'PUT',
-    { name, color },
+    { name, description, color },
   )
 }
 

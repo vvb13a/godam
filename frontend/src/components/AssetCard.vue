@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import * as api from '../api/client'
 import type { CardShape } from '../lib/display'
-import { formatSize } from '../lib/format'
+import { formatDuration, formatSize } from '../lib/format'
 import type { Asset } from '../types'
 
 const props = withDefaults(
@@ -14,7 +14,11 @@ const props = withDefaults(
     showExtension?: boolean
     showName?: boolean
     showSize?: boolean
+    showDimensions?: boolean
+    showDuration?: boolean
     fill?: boolean
+    autoplayAudio?: boolean
+    autoplayVideo?: boolean
   }>(),
   {
     shape: 'square',
@@ -23,11 +27,15 @@ const props = withDefaults(
     showExtension: false,
     showName: false,
     showSize: false,
+    showDimensions: false,
+    showDuration: false,
     fill: false,
+    autoplayAudio: false,
+    autoplayVideo: false,
   },
 )
 
-defineEmits<{
+const emit = defineEmits<{
   open: [asset: Asset, event: MouseEvent]
   menu: [event: MouseEvent, asset: Asset]
   dragstart: [asset: Asset, event: DragEvent]
@@ -36,6 +44,110 @@ defineEmits<{
 
 const imageFailed = ref(false)
 const loadedAspect = ref(0)
+
+// Hover preview: play audio/video inline after a longer hover.
+const mediaEl = ref<HTMLMediaElement | null>(null)
+const seekBarEl = ref<HTMLElement | null>(null)
+const playing = ref(false)
+const currentTime = ref(0)
+const duration = ref(0)
+let hoverTimer: number | null = null
+let seeking = false
+const HOVER_DELAY = 700
+
+const isAudio = computed(() => props.asset.mime_type.startsWith('audio/'))
+const isVideo = computed(() => props.asset.mime_type.startsWith('video/'))
+const progress = computed(() =>
+  duration.value > 0 ? Math.min(1, currentTime.value / duration.value) : 0,
+)
+
+function onTimeUpdate(): void {
+  currentTime.value = mediaEl.value?.currentTime ?? 0
+}
+
+function onMetadata(): void {
+  duration.value = mediaEl.value?.duration ?? 0
+}
+
+function seekTo(event: MouseEvent): void {
+  const el = mediaEl.value
+  const bar = seekBarEl.value
+  if (!el || !bar || !duration.value) return
+  const rect = bar.getBoundingClientRect()
+  const fraction = Math.min(Math.max(0, (event.clientX - rect.left) / rect.width), 1)
+  el.currentTime = fraction * duration.value
+  currentTime.value = el.currentTime
+}
+
+function onSeekMove(event: MouseEvent): void {
+  if (seeking) seekTo(event)
+}
+
+function onSeekEnd(): void {
+  seeking = false
+  window.removeEventListener('mousemove', onSeekMove)
+  window.removeEventListener('mouseup', onSeekEnd)
+}
+
+function onSeekStart(event: MouseEvent): void {
+  if (!mediaEl.value || !duration.value) return
+  event.preventDefault()
+  seeking = true
+  seekTo(event)
+  window.addEventListener('mousemove', onSeekMove)
+  window.addEventListener('mouseup', onSeekEnd)
+}
+
+function startPlayback(): void {
+  const el = mediaEl.value
+  if (!el) return
+  el.currentTime = 0
+  el.play().catch(() => {
+    // Autoplay with sound may be blocked; video can at least play muted.
+    if (isVideo.value) {
+      el.muted = true
+      el.play().catch(() => undefined)
+    }
+  })
+}
+
+function onHoverStart(): void {
+  const enabled = isAudio.value
+    ? props.autoplayAudio
+    : isVideo.value
+      ? props.autoplayVideo
+      : false
+  if (!enabled) return
+  if (hoverTimer !== null) window.clearTimeout(hoverTimer)
+  hoverTimer = window.setTimeout(() => {
+    hoverTimer = null
+    playing.value = true
+    void nextTick(startPlayback)
+  }, HOVER_DELAY)
+}
+
+function stopPlayback(): void {
+  if (hoverTimer !== null) {
+    window.clearTimeout(hoverTimer)
+    hoverTimer = null
+  }
+  onSeekEnd()
+  const el = mediaEl.value
+  if (el) {
+    el.pause()
+    el.currentTime = 0
+  }
+  playing.value = false
+  currentTime.value = 0
+  duration.value = 0
+}
+
+function onDragStart(event: DragEvent): void {
+  stopPlayback()
+  emit('dragstart', props.asset, event)
+}
+
+onBeforeUnmount(stopPlayback)
 
 // Native shape keeps each preview's real aspect ratio (metadata first, then the
 // decoded image as a fallback).
@@ -54,6 +166,16 @@ const extension = computed(() => {
   }
   const slash = props.asset.mime_type.indexOf('/')
   return slash >= 0 ? props.asset.mime_type.slice(slash + 1).toUpperCase() : ''
+})
+
+const dimensions = computed(() => {
+  const { width, height } = props.asset.metadata ?? {}
+  return width && height ? `${width} × ${height}` : ''
+})
+
+const durationText = computed(() => {
+  const seconds = props.asset.metadata?.duration_sec
+  return seconds ? formatDuration(seconds) : ''
 })
 
 const mediaClass = computed(() => {
@@ -111,13 +233,15 @@ const extensionClass =
     :class="cardClass"
     @click.stop="$emit('open', asset, $event)"
     @contextmenu.prevent="$emit('menu', $event, asset)"
-    @dragstart="$emit('dragstart', asset, $event)"
+    @mouseenter="onHoverStart"
+    @mouseleave="stopPlayback"
+    @dragstart="onDragStart"
     @dragend="$emit('dragend')"
   >
     <div :class="mediaClass" :style="mediaStyle">
       <img
         v-if="!imageFailed"
-        :src="api.assetPreviewUrl(asset.id)"
+        :src="api.assetPreviewUrl(asset.id, asset.updated_at)"
         :alt="asset.filename"
         loading="lazy"
         draggable="false"
@@ -132,6 +256,51 @@ const extensionClass =
         No preview
       </div>
 
+      <video
+        v-if="playing && isVideo"
+        ref="mediaEl"
+        :src="api.assetContentUrl(asset.id)"
+        class="absolute inset-0 h-full w-full bg-black object-cover"
+        playsinline
+        @timeupdate="onTimeUpdate"
+        @loadedmetadata="onMetadata"
+        @durationchange="onMetadata"
+        @ended="stopPlayback"
+      />
+      <audio
+        v-else-if="playing && isAudio"
+        ref="mediaEl"
+        :src="api.assetContentUrl(asset.id)"
+        class="hidden"
+        @timeupdate="onTimeUpdate"
+        @loadedmetadata="onMetadata"
+        @durationchange="onMetadata"
+        @ended="stopPlayback"
+      />
+
+      <template v-if="playing && duration > 0">
+        <div
+          ref="seekBarEl"
+          class="absolute inset-x-0 bottom-0 z-10 flex h-3 cursor-pointer items-end"
+          @mousedown.stop.prevent="onSeekStart"
+          @click.stop
+        >
+          <div class="h-1.5 w-full bg-slate-900/25">
+            <div class="h-full bg-amber-500" :style="{ width: `${progress * 100}%` }" />
+          </div>
+        </div>
+        <span
+          class="pointer-events-none absolute bottom-2.5 left-1.5 z-10 rounded bg-slate-900/70 px-1.5 py-0.5 text-[10px] tabular-nums text-white"
+        >
+          {{ formatDuration(currentTime) }}
+        </span>
+        <span
+          class="pointer-events-none absolute right-1.5 bottom-2.5 z-10 rounded bg-slate-900/70 px-1.5 py-0.5 text-[10px] tabular-nums text-white"
+        >
+          {{ formatDuration(duration) }}
+        </span>
+      </template>
+
       <span
         v-if="showExtension && extension"
         :class="extensionClass"
@@ -140,7 +309,7 @@ const extensionClass =
       </span>
 
       <div
-        v-if="showName || showSize"
+        v-if="!playing && (showName || showSize || showDimensions)"
         class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-900/80 to-transparent px-2 pt-6 pb-1.5 text-white"
       >
         <p v-if="showName" class="truncate text-xs font-medium">
@@ -149,7 +318,17 @@ const extensionClass =
         <p v-if="showSize" class="text-[10px] text-white/70">
           {{ formatSize(asset.byte_size) }}
         </p>
+        <p v-if="showDimensions && dimensions" class="text-[10px] text-white/70">
+          {{ dimensions }}
+        </p>
       </div>
+
+      <span
+        v-if="showDuration && durationText && !playing"
+        class="pointer-events-none absolute right-1.5 bottom-1.5 z-10 rounded bg-slate-900/70 px-1.5 py-0.5 text-[10px] tabular-nums text-white"
+      >
+        {{ durationText }}
+      </span>
     </div>
   </button>
 </template>

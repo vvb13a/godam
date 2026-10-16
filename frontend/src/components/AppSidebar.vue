@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import Splitter from 'primevue/splitter'
 import SplitterPanel from 'primevue/splitterpanel'
-import { Images } from '@primeicons/vue'
+import { ChevronLeft, ChevronRight, Images } from '@primeicons/vue'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { library, refreshLibrary } from '../lib/library'
+import { panels, toggleLeftPanel } from '../lib/panels'
 import { sidebarPrefs } from '../lib/sidebar'
 import CollectionTree from './CollectionTree.vue'
 import LibrarySwitcher from './LibrarySwitcher.vue'
@@ -31,66 +32,94 @@ watch(
 </script>
 
 <template>
-  <aside class="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white">
-    <div class="p-3 pb-0">
-      <LibrarySwitcher />
-    </div>
-
-    <nav class="space-y-1 p-3">
-      <RouterLink
-        :to="{ name: 'all' }"
-        class="flex items-center gap-2 rounded px-3 py-2 text-sm font-medium"
-        :class="
-          allActive
-            ? 'bg-violet-50 text-violet-700'
-            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-        "
-      >
-        <Images :size="18" />
-        <span class="flex-1">All</span>
-        <span
-          v-if="library.stats?.assets"
-          class="shrink-0 text-xs text-slate-400"
-        >
-          {{ library.stats.assets }}
-        </span>
-      </RouterLink>
-    </nav>
-
-    <Splitter
-      layout="vertical"
-      state-key="godam:sidebar:sections"
-      state-storage="local"
-      :gutter-size="14"
-      class="min-h-0 flex-1"
+  <div
+    class="relative h-full shrink-0 pt-2 pb-2 pl-2 transition-[width] duration-200 ease-in-out"
+    :style="{ width: panels.leftCollapsed ? '0px' : '16.5rem' }"
+  >
+    <aside
+      class="h-full w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
     >
-      <SplitterPanel
-        v-if="sidebarPrefs.collections"
-        :size="45"
-        :min-size="8"
+      <div
+        class="flex h-full w-64 flex-col"
+        :inert="panels.leftCollapsed || undefined"
       >
-        <div class="h-full overflow-y-auto pb-2">
-          <CollectionTree />
+        <div class="p-3 pb-0">
+          <LibrarySwitcher />
         </div>
-      </SplitterPanel>
-      <SplitterPanel
-        v-if="sidebarPrefs.smartCollections"
-        :size="20"
-        :min-size="8"
-      >
-        <div class="h-full overflow-y-auto pb-2">
-          <SmartCollections />
-        </div>
-      </SplitterPanel>
-      <SplitterPanel v-if="sidebarPrefs.tags" :size="35" :min-size="8">
-        <div class="h-full overflow-y-auto pb-2">
-          <TagsList />
-        </div>
-      </SplitterPanel>
-    </Splitter>
 
-    <UserMenu />
-  </aside>
+        <nav class="space-y-1 p-3">
+          <RouterLink
+            :to="{ name: 'all' }"
+            class="flex items-center gap-2 rounded px-3 py-2 text-sm font-medium"
+            :class="
+              allActive
+                ? 'bg-violet-50 text-violet-700'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            "
+          >
+            <Images :size="18" />
+            <span class="flex-1">All</span>
+            <span
+              v-if="library.stats?.assets"
+              class="shrink-0 text-xs text-slate-400"
+            >
+              {{ library.stats.assets }}
+            </span>
+          </RouterLink>
+        </nav>
+
+        <Splitter
+          layout="vertical"
+          state-key="godam:sidebar:sections"
+          state-storage="local"
+          :gutter-size="14"
+          class="min-h-0 flex-1"
+        >
+          <SplitterPanel
+            v-if="sidebarPrefs.collections"
+            :size="45"
+            :min-size="8"
+          >
+            <div class="h-full overflow-y-auto pb-2">
+              <CollectionTree />
+            </div>
+          </SplitterPanel>
+          <SplitterPanel
+            v-if="sidebarPrefs.smartCollections"
+            :size="20"
+            :min-size="8"
+          >
+            <div class="h-full overflow-y-auto pb-2">
+              <SmartCollections />
+            </div>
+          </SplitterPanel>
+          <SplitterPanel v-if="sidebarPrefs.tags" :size="35" :min-size="8">
+            <div class="h-full overflow-y-auto pb-2">
+              <TagsList />
+            </div>
+          </SplitterPanel>
+        </Splitter>
+
+        <UserMenu />
+      </div>
+    </aside>
+
+    <button
+      type="button"
+      class="absolute top-1/2 left-full z-30 flex h-7 w-5 -translate-y-1/2 cursor-pointer items-center justify-center border border-slate-200/80 bg-white/80 text-slate-400 shadow-sm transition-[translate] duration-200 ease-in-out hover:bg-white hover:text-violet-600"
+      :class="
+        panels.leftCollapsed
+          ? 'translate-x-0 rounded-r-full'
+          : '-translate-x-1/2 rounded-full'
+      "
+      :title="panels.leftCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+      :aria-label="panels.leftCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+      @click="toggleLeftPanel"
+    >
+      <ChevronRight v-if="panels.leftCollapsed" :size="12" />
+      <ChevronLeft v-else :size="12" />
+    </button>
+  </div>
 </template>
 
 <style scoped>

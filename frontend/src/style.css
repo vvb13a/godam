@@ -1,1 +1,17 @@
 @import "tailwindcss";
+
+/* PrimeVue uses class-based dark mode and resolves its tokens with
+   light-dark(), which follows the used `color-scheme`. PDF.js's viewer CSS
+   (injected when a PDF is opened) sets `:root { color-scheme: light dark }`,
+   which would let the OS dark preference flip PrimeVue tokens app-wide. Pin the
+   root to light; scoped dark subtrees (e.g. a future .p-dark) still win. */
+html:root {
+  color-scheme: light;
+}
+
+/* Keep confirmation popups compact so long messages wrap instead of stretching
+   the overlay across the screen. Placed after the Tailwind import (unlayered)
+   so it wins over the themed component styles. */
+.p-confirmpopup {
+  max-width: 15rem;
+}

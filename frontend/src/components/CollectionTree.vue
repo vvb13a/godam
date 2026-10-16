@@ -28,6 +28,7 @@ import { assetDrag } from '../lib/assetDrag'
 import { library, notifyLibraryChanged } from '../lib/library'
 import { LIBRARY_COLORS, libraryColorHex } from '../lib/libraryColors'
 import { confirmDeleteMenuItem } from '../lib/menu'
+import { clearSmartSelection } from '../lib/smartSelection'
 import type { Collection } from '../types'
 
 interface CollectionNode {
@@ -387,7 +388,9 @@ async function commitRename(): Promise<void> {
   const name = editingName.value.trim()
   if (!collection || !name || name === collection.name) return
   try {
-    replaceLocal(await api.updateCollection(id, name, collection.color))
+    replaceLocal(
+      await api.updateCollection(id, name, collection.color, collection.description),
+    )
     notifyLibraryChanged()
   } catch (e) {
     toast.add({
@@ -404,7 +407,9 @@ async function setColor(color: string): Promise<void> {
   menu.value?.hide()
   if (!collection) return
   try {
-    replaceLocal(await api.updateCollection(collection.id, collection.name, color))
+    replaceLocal(
+      await api.updateCollection(collection.id, collection.name, color, collection.description),
+    )
     notifyLibraryChanged()
   } catch (e) {
     toast.add({
@@ -535,7 +540,9 @@ function toggleExpandAll(): void {
 
 function onSelect(node: TreeNode): void {
   if (editingId.value) return
-  // Selecting a collection resets the other filters (locking comes later).
+  // Selecting a collection drops any smart-collection Inspector selection and
+  // resets the other filters (locking comes later).
+  clearSmartSelection()
   const query: Record<string, string> = { collection: node.key }
   if (typeof route.query.sort === 'string' && route.query.sort) {
     query.sort = route.query.sort

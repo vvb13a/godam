@@ -11,6 +11,7 @@ import * as api from '../api/client'
 import { library } from '../lib/library'
 import { LIBRARY_COLORS, libraryColorHex } from '../lib/libraryColors'
 import { confirmDeleteMenuItem } from '../lib/menu'
+import { selectSmartCollection } from '../lib/smartSelection'
 import type { SmartCollection, SmartCollectionFilter } from '../types'
 
 interface SmartMenuItem extends MenuItem {
@@ -157,6 +158,9 @@ function apply(item: SmartCollection): void {
     suppressClick.value = false
     return
   }
+  // Smart collections are just saved filters; the Inspector tracks the selected
+  // one as client-side state rather than through a URL param.
+  selectSmartCollection(item.id, item.filter)
   navigateFilter(item.filter)
 }
 
@@ -241,7 +245,7 @@ async function commitRename(): Promise<void> {
   const name = editingName.value.trim()
   if (!item || !name || name === item.name) return
   try {
-    replaceLocal(await api.updateSmartCollection(id, name, item.color))
+    replaceLocal(await api.updateSmartCollection(id, name, item.color, item.description))
   } catch (e) {
     toast.add({
       severity: 'error',
@@ -257,7 +261,7 @@ async function setColor(color: string): Promise<void> {
   menu.value?.hide()
   if (!item) return
   try {
-    replaceLocal(await api.updateSmartCollection(item.id, item.name, color))
+    replaceLocal(await api.updateSmartCollection(item.id, item.name, color, item.description))
   } catch (e) {
     toast.add({
       severity: 'error',

@@ -7,17 +7,26 @@ import Popover from 'primevue/popover'
 import SelectButton from 'primevue/selectbutton'
 import Slider from 'primevue/slider'
 import ToggleSwitch from 'primevue/toggleswitch'
-import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 import type { MenuItem } from 'primevue/menuitem'
 import {
   AngleRight,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Eye,
+  EyeSlash,
   ExternalLink,
+  Images,
+  Pencil,
+  Refresh,
+  Save,
   SlidersH,
   Tag,
+  Times,
   Upload,
 } from '@primeicons/vue'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as api from '../api/client'
 import { assetDrag, endAssetDrag, startAssetDrag } from '../lib/assetDrag'
@@ -29,17 +38,28 @@ import {
   CARD_SIZE_MIN,
 } from '../lib/display'
 import type { CardShape } from '../lib/display'
-import { library, notifyLibraryChanged } from '../lib/library'
+import { editorDirty, leaveEditor, setEditorCloser } from '../lib/editorState'
+import { library, loadLibraries, notifyLibraryChanged } from '../lib/library'
+import { isTextMime } from '../lib/mimeTypes'
+import { panels, toggleRightPanel } from '../lib/panels'
+import { clearSmartSelection, smartSelection } from '../lib/smartSelection'
 import { openAssetTags, openBulkAssetTags } from '../lib/tagsDialog'
 import { openUpload } from '../lib/upload'
-import type { Asset } from '../types'
+import type {
+  Asset,
+  Collection,
+  SmartCollection,
+  Tag as TagModel,
+} from '../types'
 import AssetCard from './AssetCard.vue'
-import AssetDetailPanel from './AssetDetailPanel.vue'
+import AssetEditor from './AssetEditor.vue'
+import FilterInspector from './FilterInspector.vue'
+import Inspector from './Inspector.vue'
+import LibraryInspector from './LibraryInspector.vue'
 import MultiSelectionPanel from './MultiSelectionPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
-const confirm = useConfirm()
 const toast = useToast()
 
 const assets = ref<Asset[]>([])
@@ -57,6 +77,10 @@ interface DisplayPrefs {
   showExtension: boolean
   showName: boolean
   showSize: boolean
+  showDimensions: boolean
+  showDuration: boolean
+  playAudioOnHover: boolean
+  playVideoOnHover: boolean
 }
 
 function loadDisplayPrefs(): Partial<DisplayPrefs> {
@@ -87,10 +111,24 @@ const shape = ref<CardShape>(
 const showExtension = ref(savedPrefs.showExtension ?? false)
 const showName = ref(savedPrefs.showName ?? false)
 const showSize = ref(savedPrefs.showSize ?? false)
+const showDimensions = ref(savedPrefs.showDimensions ?? false)
+const showDuration = ref(savedPrefs.showDuration ?? false)
+const playAudioOnHover = ref(savedPrefs.playAudioOnHover ?? true)
+const playVideoOnHover = ref(savedPrefs.playVideoOnHover ?? true)
 const displayPopover = ref<InstanceType<typeof Popover> | null>(null)
 
 watch(
-  [size, shape, showExtension, showName, showSize],
+  [
+    size,
+    shape,
+    showExtension,
+    showName,
+    showSize,
+    showDimensions,
+    showDuration,
+    playAudioOnHover,
+    playVideoOnHover,
+  ],
   () => {
     const prefs: DisplayPrefs = {
       size: clampSize(size.value),
@@ -98,6 +136,10 @@ watch(
       showExtension: showExtension.value,
       showName: showName.value,
       showSize: showSize.value,
+      showDimensions: showDimensions.value,
+      showDuration: showDuration.value,
+      playAudioOnHover: playAudioOnHover.value,
+      playVideoOnHover: playVideoOnHover.value,
     }
     try {
       localStorage.setItem(DISPLAY_STORAGE_KEY, JSON.stringify(prefs))
@@ -106,6 +148,34 @@ watch(
     }
   },
 )
+
+const allPreviewOn = computed(
+  () =>
+    showExtension.value &&
+    showName.value &&
+    showSize.value &&
+    showDimensions.value &&
+    showDuration.value,
+)
+
+function toggleAllPreview(): void {
+  const next = !allPreviewOn.value
+  showExtension.value = next
+  showName.value = next
+  showSize.value = next
+  showDimensions.value = next
+  showDuration.value = next
+}
+
+const allAutoplayOn = computed(
+  () => playAudioOnHover.value && playVideoOnHover.value,
+)
+
+function toggleAllAutoplay(): void {
+  const next = !allAutoplayOn.value
+  playAudioOnHover.value = next
+  playVideoOnHover.value = next
+}
 
 const contextMenu = ref<{ show: (event: MouseEvent) => void } | null>(null)
 
@@ -156,6 +226,7 @@ const tagFilter = computed({
     return raw.split(',').filter(Boolean)
   },
   set: (values: string[]) => {
+    clearSmartSelection()
     const query = { ...route.query }
     if (values.length) query.tag = values.join(',')
     else delete query.tag
@@ -211,6 +282,7 @@ function mimeCategory(mime: string): string {
   if (mime.startsWith('image/')) return 'image'
   if (mime.startsWith('video/')) return 'video'
   if (mime.startsWith('audio/')) return 'audio'
+  if (mime === 'application/ogg') return 'audio'
   if (mime.startsWith('text/') || DOCUMENT_MIMES.has(mime)) return 'document'
   return 'other'
 }
@@ -219,6 +291,8 @@ function setQueryFilter(
   key: 'collection' | 'tag' | 'type' | 'sort',
   value: string,
 ): void {
+  // Changing a filter means we are no longer viewing a smart collection.
+  clearSmartSelection()
   const query = { ...route.query }
   if (value) query[key] = value
   else delete query[key]
@@ -247,6 +321,60 @@ const singleAsset = computed(() =>
   selectedIds.value.length === 1 ? (selectedAssets.value[0] ?? null) : null,
 )
 
+// The Inspector falls back to describing the active collection/tag when no
+// asset is selected. Only concrete ids count; the virtual 'uncategorized' /
+// 'untagged' filters have no entity to describe.
+const activeCollection = computed<Collection | null>(() => {
+  const id = collectionFilter.value
+  if (!id || id === 'uncategorized') return null
+  return library.collections.find((item) => item.id === id) ?? null
+})
+
+const activeTag = computed<TagModel | null>(() => {
+  const ids = tagFilter.value.filter((value) => value !== 'untagged')
+  if (ids.length !== 1) return null
+  return library.tags.find((item) => item.id === ids[0]) ?? null
+})
+
+// A smart collection is only "active" when it was explicitly opened from the
+// sidebar (tracked as client-side state); manually setting the same filters
+// does not select it. It also drops out once the filters no longer match.
+const activeSmartCollection = computed<SmartCollection | null>(() => {
+  const id = smartSelection.id
+  const filter = smartSelection.filter
+  if (!id || !filter) return null
+  const q = route.query
+  const matches =
+    (filter.collection ?? '') === (typeof q.collection === 'string' ? q.collection : '') &&
+    (filter.tag ?? '') === (typeof q.tag === 'string' ? q.tag : '') &&
+    (filter.type ?? '') === (typeof q.type === 'string' ? q.type : '') &&
+    (filter.sort ?? '') === (typeof q.sort === 'string' ? q.sort : '')
+  if (!matches) return null
+  return library.smartCollections.find((item) => item.id === id) ?? null
+})
+
+// Count and size describe the assets currently listed for the filter, i.e.
+// exactly what the grid shows.
+const filteredSize = computed(() =>
+  visibleAssets.value.reduce((total, asset) => total + asset.byte_size, 0),
+)
+
+// Detail/edit mode: the main area shows a single asset (in an editor/viewer)
+// instead of the grid. Tracked as local state; the Inspector is unchanged.
+const editingAssetId = ref<string | null>(null)
+const editingAsset = computed(() =>
+  editingAssetId.value
+    ? (assets.value.find((item) => item.id === editingAssetId.value) ?? null)
+    : null,
+)
+// Types the editor can save: raster images and editable text/code.
+const editingCanSave = computed(() => {
+  const mime = editingAsset.value?.mime_type
+  if (!mime) return false
+  return mime.startsWith('image/') || isTextMime(mime)
+})
+const assetEditorRef = ref<InstanceType<typeof AssetEditor> | null>(null)
+
 const visibleAssets = computed(() => {
   let list = assets.value
   if (typeFilter.value) {
@@ -269,6 +397,12 @@ const visibleAssets = computed(() => {
       break
     case 'size-desc':
       sorted.sort((a, b) => b.byte_size - a.byte_size)
+      break
+    case 'modified-asc':
+      sorted.sort((a, b) => a.updated_at.localeCompare(b.updated_at))
+      break
+    case 'modified-desc':
+      sorted.sort((a, b) => b.updated_at.localeCompare(a.updated_at))
       break
     default:
       sorted.sort((a, b) => b.created_at.localeCompare(a.created_at))
@@ -293,24 +427,85 @@ const cardWidth = computed(() =>
   Math.round(size.value * Math.max(1, shapeAspect.value)),
 )
 
-const gridStyle = computed(() => ({
-  gridTemplateColumns: `repeat(auto-fill, ${cardWidth.value}px)`,
-}))
+// Horizontal gap between cards. Mirrors the Tailwind gap classes on the grid
+// containers below (gap-3 = 12px, gap-2 = 8px) so the fit maths matches the CSS.
+const GRID_GAP = 12
+const NATIVE_GAP = 8
+
+// Content width of the grid container, kept in sync by a ResizeObserver. The
+// tracks are spread across it so a row reaches the right edge instead of
+// leaving the leftover width as a gap (which auto-fill with fixed tracks does).
+const containerWidth = ref(0)
+
+function measureGrid(): void {
+  const el = gridContainer.value
+  if (!el) return
+  const style = getComputedStyle(el)
+  const padding =
+    parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
+  containerWidth.value = Math.max(0, el.clientWidth - padding)
+}
+
+// Fit as many tracks of at least `target` px as possible, then widen them
+// evenly so the row fills the container exactly. Returns null before the
+// container has been measured so callers can fall back to plain auto-fill.
+function fitColumns(
+  target: number,
+  gap: number,
+): { count: number; width: number } | null {
+  const available = containerWidth.value
+  if (available <= 0) return null
+  const count = Math.max(1, Math.floor((available + gap) / (target + gap)))
+  const width = (available - (count - 1) * gap) / count
+  return { count, width }
+}
+
+const gridStyle = computed(() => {
+  const fit = fitColumns(cardWidth.value, GRID_GAP)
+  if (!fit) {
+    return { gridTemplateColumns: `repeat(auto-fill, ${cardWidth.value}px)` }
+  }
+  return {
+    gridTemplateColumns: `repeat(${fit.count}, ${fit.width}px)`,
+    columnGap: `${GRID_GAP}px`,
+  }
+})
 
 // Native uses a spanned grid so each preview keeps its real proportions. The
 // slider is the base cell: a square is 1x1, a landscape spans columns and a
-// portrait spans rows.
+// portrait spans rows. Columns and rows share the fitted unit so the cells stay
+// square, otherwise the spanned previews would be distorted.
 const nativeUnit = computed(() => Math.max(1, Math.round(size.value)))
-const nativeGridStyle = computed(() => ({
-  gridTemplateColumns: `repeat(auto-fill, ${nativeUnit.value}px)`,
-  gridAutoRows: `${nativeUnit.value}px`,
-  gridAutoFlow: 'dense',
-}))
+const nativeGridStyle = computed(() => {
+  const fit = fitColumns(nativeUnit.value, NATIVE_GAP)
+  const unit = fit ? fit.width : nativeUnit.value
+  const columns = fit
+    ? `repeat(${fit.count}, ${unit}px)`
+    : `repeat(auto-fill, ${unit}px)`
+  return {
+    gridTemplateColumns: columns,
+    gridAutoRows: `${unit}px`,
+    gridAutoFlow: 'dense',
+    columnGap: `${NATIVE_GAP}px`,
+    rowGap: `${NATIVE_GAP}px`,
+  }
+})
 
 function nativeItemStyle(asset: Asset): Record<string, string> {
   const w = asset.metadata?.width ?? 0
   const h = asset.metadata?.height ?? 0
-  const ratio = w > 0 && h > 0 ? w / h : 1
+  // Assets with no intrinsic dimensions default to a shape: PDFs read as pages
+  // (poster 2:3), audio reads as a wide waveform (landscape 16:9).
+  let ratio: number
+  if (w > 0 && h > 0) {
+    ratio = w / h
+  } else if (asset.mime_type === 'application/pdf') {
+    ratio = 2 / 3
+  } else if (asset.mime_type.startsWith('audio/')) {
+    ratio = 16 / 9
+  } else {
+    ratio = 1
+  }
   // Classify with thresholds so ratios near the 2:3 / 3:2 rounding midpoints
   // (e.g. 1 / 0.6667 = 1.5) land consistently instead of flipping between
   // 1x1 and the spanning box.
@@ -329,16 +524,51 @@ const menuItems = computed<MenuItem[]>(() => {
   const items: MenuItem[] = []
   if (count === 1) {
     items.push({
+      label: 'Open',
+      icon: Pencil,
+      command: openEditorForSelection,
+    })
+    items.push({
       label: 'Open original',
       icon: ExternalLink,
       command: openOriginal,
+    })
+    items.push({
+      label: 'Download',
+      icon: Download,
+      command: downloadAsset,
+    })
+    items.push({
+      label: 'Regenerate preview',
+      icon: Refresh,
+      command: () => void regeneratePreviews(selectedAssets.value.slice()),
     })
     items.push({
       label: 'Tags',
       icon: Tag,
       command: openTags,
     })
+    items.push({
+      label: 'Set as library cover',
+      icon: Images,
+      command: setAsLibraryCover,
+    })
+    items.push({
+      label: 'Set as library watermark',
+      icon: SlidersH,
+      command: setAsLibraryWatermark,
+    })
   } else if (count > 1) {
+    items.push({
+      label: `Download ${count} as zip`,
+      icon: Download,
+      command: downloadSelectionZip,
+    })
+    items.push({
+      label: `Regenerate ${count} previews`,
+      icon: Refresh,
+      command: () => void regeneratePreviews(selectedAssets.value.slice()),
+    })
     items.push({
       label: 'Tags',
       icon: Tag,
@@ -620,9 +850,105 @@ function openOriginal(): void {
   }
 }
 
+// Single asset downloads as its original file.
+function downloadAsset(): void {
+  const asset = selectedAssets.value[0]
+  if (!asset) return
+  const anchor = document.createElement('a')
+  anchor.href = api.assetContentUrl(asset.id)
+  anchor.download = asset.filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+}
+
+// Multiple assets download as a server-streamed zip. A hidden iframe keeps the
+// browser from navigating the app if the request errors.
+function downloadSelectionZip(): void {
+  const ids = selectedIds.value
+  if (!ids.length) return
+  const frame = document.createElement('iframe')
+  frame.style.display = 'none'
+  frame.src = api.assetsZipUrl(ids.slice())
+  document.body.appendChild(frame)
+  window.setTimeout(() => frame.remove(), 60000)
+}
+
 function openTags(): void {
   const asset = selectedAssets.value[0]
   if (asset) openAssetTags(asset.id)
+}
+
+// Re-renders previews one asset at a time (sequential, to avoid spawning many
+// media processes at once) and updates each card as it finishes.
+async function regeneratePreviews(assets: Asset[]): Promise<void> {
+  if (!assets.length) return
+  let ok = 0
+  let failed = 0
+  for (const asset of assets) {
+    try {
+      const updated = await api.regeneratePreview(asset.id)
+      onChanged(updated)
+      ok += 1
+    } catch {
+      failed += 1
+    }
+  }
+  toast.add({
+    severity: failed ? 'warn' : 'success',
+    summary: `Regenerated ${ok} preview${ok === 1 ? '' : 's'}${
+      failed ? ` · ${failed} failed` : ''
+    }`,
+    life: 3000,
+  })
+}
+
+// Pins the selected asset's preview as the library cover, shown in the default
+// (library) Inspector. The library list is reloaded so the cover propagates.
+async function setAsLibraryCover(): Promise<void> {
+  const asset = selectedAssets.value[0]
+  const libraryId = library.currentId
+  if (!asset || !libraryId) return
+  try {
+    await api.setLibraryCover(libraryId, asset.id)
+    await loadLibraries()
+    toast.add({
+      severity: 'success',
+      summary: 'Library cover updated',
+      life: 2500,
+    })
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: 'Could not set cover',
+      detail: toMessage(e),
+      life: 4000,
+    })
+  }
+}
+
+// Pins the selected asset as the library's default watermark, offered in the
+// image editor's watermark tool.
+async function setAsLibraryWatermark(): Promise<void> {
+  const asset = selectedAssets.value[0]
+  const libraryId = library.currentId
+  if (!asset || !libraryId) return
+  try {
+    await api.setLibraryWatermark(libraryId, asset.id)
+    await loadLibraries()
+    toast.add({
+      severity: 'success',
+      summary: 'Library watermark set',
+      life: 2500,
+    })
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: 'Could not set watermark',
+      detail: toMessage(e),
+      life: 4000,
+    })
+  }
 }
 
 async function performDelete(ids: string[]): Promise<void> {
@@ -646,35 +972,70 @@ async function performDelete(ids: string[]): Promise<void> {
   }
 }
 
-function confirmDelete(): void {
-  const ids = selectedIds.value.slice()
-  if (!ids.length) return
-  const single = ids.length === 1 ? selectedAssets.value[0] : null
-  confirm.require({
-    header: ids.length > 1 ? 'Delete assets' : 'Delete asset',
-    message: single
-      ? `Delete '${single.filename}'? This cannot be undone.`
-      : `Delete ${ids.length} assets? This cannot be undone.`,
-    acceptLabel: 'Delete',
-    rejectLabel: 'Cancel',
-    acceptProps: { severity: 'danger' },
-    rejectProps: { text: true },
-    accept: () => performDelete(ids),
-  })
-}
-
 function toggleDisplay(event: Event): void {
   displayPopover.value?.toggle(event)
 }
 
-// onChanged replaces the affected asset client-side (tags/collections
-// changed), avoiding a full library/asset reload.
+// onChanged replaces the affected asset client-side (title/note/tags/
+// collections changed), avoiding a full library/asset reload.
 function onChanged(asset: Asset): void {
   const index = assets.value.findIndex((item) => item.id === asset.id)
   if (index >= 0) assets.value[index] = asset
 }
 
-function onDeleted(): void {
+// Refreshes the sidebar/library after a collection or tag is edited in the
+// Inspector, so the tree, tag list and this panel all pick up the new values.
+function onSubjectChanged(): void {
+  notifyLibraryChanged()
+}
+
+function openEditor(asset: Asset): void {
+  selectedIds.value = [asset.id]
+  anchorId.value = asset.id
+  editingAssetId.value = asset.id
+}
+
+function openEditorForSelection(): void {
+  const asset = selectedAssets.value[0]
+  if (asset) openEditor(asset)
+}
+
+function closeEditor(): void {
+  editingAssetId.value = null
+}
+
+// The Back control and the global router guard both go through leaveEditor,
+// which asks for confirmation only when there are unsaved edits.
+function onEditorBack(): void {
+  void leaveEditor()
+}
+
+// Previous/next step through the list the editor was opened from (the current
+// filtered/sorted grid), so navigation matches how the user got here.
+const editingIndex = computed(() =>
+  visibleAssets.value.findIndex((item) => item.id === editingAssetId.value),
+)
+const canStepBack = computed(() => editingIndex.value > 0)
+const canStepForward = computed(
+  () =>
+    editingIndex.value >= 0 &&
+    editingIndex.value < visibleAssets.value.length - 1,
+)
+
+function stepEditor(delta: number): void {
+  const index = editingIndex.value
+  const target = visibleAssets.value[index + delta]
+  if (target) openEditor(target)
+}
+
+// Closing the Inspector also leaves the detail/edit mode.
+function closeInspector(): void {
+  closeEditor()
+  clearSelection()
+}
+
+function onAssetSaved(asset: Asset): void {
+  onChanged(asset)
   notifyLibraryChanged()
 }
 
@@ -697,13 +1058,55 @@ watch(
   },
 )
 
+// Re-measure once the grid content changes: a scrollbar appearing/disappearing
+// (or a different number of cards) changes the usable content width.
+watch(visibleAssets, () => {
+  void nextTick(measureGrid)
+})
+
+let gridResizeObserver: ResizeObserver | null = null
+
+// Ctrl/Cmd+A selects every asset in the current view. Guarded so it never
+// hijacks select-all inside text fields, while editing, or when a modal is open.
+function isEditableTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  if (!el) return false
+  return (
+    el.tagName === 'INPUT' ||
+    el.tagName === 'TEXTAREA' ||
+    el.tagName === 'SELECT' ||
+    el.isContentEditable
+  )
+}
+
+function onAssetsSelectAll(event: KeyboardEvent): void {
+  if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'a') {
+    return
+  }
+  if (isEditableTarget(event.target) || editingAssetId.value) return
+  if (document.querySelector('.p-dialog-mask')) return
+  event.preventDefault()
+  selectedIds.value = visibleAssets.value.map((asset) => asset.id)
+  anchorId.value = visibleAssets.value[0]?.id ?? null
+}
+
 onMounted(() => {
   void load()
+  measureGrid()
+  setEditorCloser(closeEditor)
+  window.addEventListener('keydown', onAssetsSelectAll)
+  if (gridContainer.value) {
+    gridResizeObserver = new ResizeObserver(measureGrid)
+    gridResizeObserver.observe(gridContainer.value)
+  }
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('mousemove', onLassoMove)
   window.removeEventListener('mouseup', onLassoEnd)
+  window.removeEventListener('keydown', onAssetsSelectAll)
+  gridResizeObserver?.disconnect()
+  setEditorCloser(null)
 })
 </script>
 
@@ -712,8 +1115,8 @@ onBeforeUnmount(() => {
     <Message v-if="error" severity="error" class="mx-6 mt-4">{{ error }}</Message>
 
     <div class="flex min-h-0 flex-1">
-      <div class="flex min-w-0 flex-1 flex-col">
-        <header class="flex flex-wrap items-center gap-3 px-6 py-4">
+      <div class="relative flex min-w-0 flex-1 flex-col">
+        <header v-if="!editingAsset" class="flex flex-wrap items-center gap-3 px-6 py-4">
           <select
             v-model="collectionFilter"
             class="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm"
@@ -770,6 +1173,8 @@ onBeforeUnmount(() => {
           >
             <option value="date-desc">Newest first</option>
             <option value="date-asc">Oldest first</option>
+            <option value="modified-desc">Recently modified</option>
+            <option value="modified-asc">Least recently modified</option>
             <option value="name-asc">Name A–Z</option>
             <option value="name-desc">Name Z–A</option>
             <option value="size-desc">Largest first</option>
@@ -836,11 +1241,21 @@ onBeforeUnmount(() => {
               </div>
 
               <div class="border-t border-slate-100 pt-3">
-                <p
-                  class="mb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
-                >
-                  On preview
-                </p>
+                <div class="mb-2 flex items-center justify-between">
+                  <p
+                    class="text-xs font-semibold tracking-wide text-slate-400 uppercase"
+                  >
+                    Preview
+                  </p>
+                  <button
+                    type="button"
+                    class="inline-flex items-center text-slate-400 transition-colors hover:text-violet-600"
+                    :title="allPreviewOn ? 'Hide all' : 'Show all'"
+                    @click="toggleAllPreview"
+                  >
+                    <component :is="allPreviewOn ? Eye : EyeSlash" :size="14" />
+                  </button>
+                </div>
                 <div class="space-y-2">
                   <div class="flex items-center justify-between">
                     <span class="text-sm font-medium">Extension</span>
@@ -854,13 +1269,64 @@ onBeforeUnmount(() => {
                     <span class="text-sm font-medium">Size</span>
                     <ToggleSwitch v-model="showSize" />
                   </div>
+                  <div class="flex items-center justify-between">
+                    <span class="text-sm font-medium">Dimensions</span>
+                    <ToggleSwitch v-model="showDimensions" />
+                  </div>
+                  <div class="flex items-center justify-between">
+                    <span class="text-sm font-medium">Duration</span>
+                    <ToggleSwitch v-model="showDuration" />
+                  </div>
                 </div>
+              </div>
+
+              <div class="border-t border-slate-100 pt-3">
+                <div class="mb-2 flex items-center justify-between">
+                  <p
+                    class="text-xs font-semibold tracking-wide text-slate-400 uppercase"
+                  >
+                    Autoplay
+                  </p>
+                  <button
+                    type="button"
+                    class="inline-flex items-center text-slate-400 transition-colors hover:text-violet-600"
+                    :title="allAutoplayOn ? 'Disable all' : 'Enable all'"
+                    @click="toggleAllAutoplay"
+                  >
+                    <component
+                      :is="allAutoplayOn ? Eye : EyeSlash"
+                      :size="14"
+                    />
+                  </button>
+                </div>
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between">
+                    <span class="text-sm font-medium">Audio</span>
+                    <ToggleSwitch v-model="playAudioOnHover" />
+                  </div>
+                  <div class="flex items-center justify-between">
+                    <span class="text-sm font-medium">Video</span>
+                    <ToggleSwitch v-model="playVideoOnHover" />
+                  </div>
+                </div>
+                <p class="mt-2 text-xs text-slate-400">
+                  Preview audio/video on hover.
+                </p>
               </div>
             </div>
           </Popover>
         </header>
 
+        <AssetEditor
+          v-if="editingAsset"
+          ref="assetEditorRef"
+          :asset="editingAsset"
+          @close="closeEditor"
+          @saved="onAssetSaved"
+        />
+
         <div
+          v-show="!editingAsset"
           ref="gridContainer"
           class="min-h-0 flex-1 overflow-y-auto px-6 pt-2 pb-6"
           @mousedown="onLassoStart"
@@ -889,7 +1355,12 @@ onBeforeUnmount(() => {
               :show-extension="showExtension"
               :show-name="showName"
               :show-size="showSize"
+              :show-dimensions="showDimensions"
+              :show-duration="showDuration"
+              :autoplay-audio="playAudioOnHover"
+              :autoplay-video="playVideoOnHover"
               @open="onSelect"
+              @dblclick="openEditor(asset)"
               @menu="onContextMenu"
               @dragstart="onDragStart"
               @dragend="onDragEnd"
@@ -906,38 +1377,123 @@ onBeforeUnmount(() => {
               :show-extension="showExtension"
               :show-name="showName"
               :show-size="showSize"
+              :show-dimensions="showDimensions"
+              :show-duration="showDuration"
+              :autoplay-audio="playAudioOnHover"
+              :autoplay-video="playVideoOnHover"
               @open="onSelect"
+              @dblclick="openEditor(asset)"
               @menu="onContextMenu"
               @dragstart="onDragStart"
               @dragend="onDragEnd"
             />
           </div>
         </div>
+
+        <!-- Bottom-right control cluster, left to right: Save, Cancel, then
+             navigation. The nav pill is last (right-anchored) so it never
+             shifts, whether or not a Save button is present. -->
+        <div
+          v-if="editingAsset"
+          class="absolute right-6 bottom-6 z-10 flex items-center gap-1"
+        >
+          <button
+            v-if="editingCanSave"
+            class="inline-flex h-7 items-center gap-1 rounded-full bg-emerald-600 px-3 text-xs font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Save changes"
+            :disabled="!editorDirty"
+            @click="assetEditorRef?.save($event)"
+          >
+            <Save :size="14" />
+            Save
+          </button>
+          <button
+            class="inline-flex h-7 items-center gap-1 rounded-full bg-slate-600 px-3 text-xs font-medium text-white hover:bg-slate-700"
+            title="Cancel"
+            @click="onEditorBack"
+          >
+            <Times :size="14" />
+            Cancel
+          </button>
+          <div
+            class="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-lg"
+          >
+            <button
+              class="inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+              title="Previous"
+              :disabled="!canStepBack"
+              @click="stepEditor(-1)"
+            >
+              <ChevronLeft :size="16" />
+            </button>
+            <span class="min-w-14 px-1 text-center text-xs tabular-nums text-slate-500">
+              {{ editingIndex + 1 }} / {{ visibleAssets.length }}
+            </span>
+            <button
+              class="inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+              title="Next"
+              :disabled="!canStepForward"
+              @click="stepEditor(1)"
+            >
+              <ChevronRight :size="16" />
+            </button>
+          </div>
+        </div>
       </div>
 
-      <aside
-        class="flex w-80 shrink-0 flex-col overflow-hidden border-l border-slate-200"
+      <div
+        class="relative h-full shrink-0 pt-2 pr-2 pb-2 transition-[width] duration-200 ease-in-out"
+        :style="{ width: panels.rightCollapsed ? '0px' : '20.5rem' }"
       >
-        <AssetDetailPanel
-          v-if="singleAsset"
-          :asset="singleAsset"
-          @close="clearSelection"
-          @changed="onChanged"
-          @deleted="onDeleted"
-        />
-        <MultiSelectionPanel
-          v-else-if="selectedAssets.length > 1"
-          :assets="selectedAssets"
-          @close="clearSelection"
-          @remove="confirmDelete"
-        />
-        <div
-          v-else
-          class="flex h-full items-center justify-center p-6 text-center text-sm text-slate-400"
+        <aside
+          class="h-full w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
         >
-          Select an asset to view its details.
-        </div>
-      </aside>
+          <div
+            class="flex h-full w-80 flex-col"
+            :inert="panels.rightCollapsed || undefined"
+          >
+            <Inspector
+              v-if="singleAsset"
+              :asset="singleAsset"
+              @close="closeInspector"
+              @changed="onChanged"
+            />
+            <MultiSelectionPanel
+              v-else-if="selectedAssets.length > 1"
+              :assets="selectedAssets"
+              @close="clearSelection"
+            />
+            <FilterInspector
+              v-else-if="activeSmartCollection || activeCollection || activeTag"
+              :collection="activeCollection ?? undefined"
+              :smart-collection="activeSmartCollection ?? undefined"
+              :tag="activeTag ?? undefined"
+              :assets="visibleAssets"
+              :size="filteredSize"
+              @changed="onSubjectChanged"
+            />
+            <LibraryInspector v-else />
+          </div>
+        </aside>
+
+        <button
+          type="button"
+          class="absolute top-1/2 right-full z-30 flex h-7 w-5 -translate-y-1/2 cursor-pointer items-center justify-center border border-slate-200/80 bg-white/80 text-slate-400 shadow-sm transition-[translate] duration-200 ease-in-out hover:bg-white hover:text-violet-600"
+          :class="
+            panels.rightCollapsed
+              ? 'translate-x-0 rounded-l-full'
+              : 'translate-x-1/2 rounded-full'
+          "
+          :title="panels.rightCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+          :aria-label="
+            panels.rightCollapsed ? 'Expand sidebar' : 'Collapse sidebar'
+          "
+          @click="toggleRightPanel"
+        >
+          <ChevronLeft v-if="panels.rightCollapsed" :size="12" />
+          <ChevronRight v-else :size="12" />
+        </button>
+      </div>
     </div>
 
     <ContextMenu ref="contextMenu" :model="menuItems">

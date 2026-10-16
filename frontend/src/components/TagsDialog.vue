@@ -792,6 +792,7 @@ async function toggleStar(tag: Tag): Promise<void> {
       tag.name,
       tag.group_id ?? null,
       !tag.starred,
+      tag.description,
     )
     upsertTag(updated)
   } catch (e) {
@@ -820,7 +821,13 @@ function filterByGroup(group: TagGroup): void {
 
 async function assignGroup(tag: Tag, groupId: string | null): Promise<void> {
   try {
-    const updated = await api.updateTag(tag.id, tag.name, groupId, tag.starred)
+    const updated = await api.updateTag(
+      tag.id,
+      tag.name,
+      groupId,
+      tag.starred,
+      tag.description,
+    )
     upsertTag(updated)
   } catch (e) {
     toast.add({
@@ -913,6 +920,7 @@ async function addTag(): Promise<void> {
         tag.name,
         view.slice('group:'.length),
         false,
+        tag.description,
       )
     }
     upsertTag(tag)
@@ -980,6 +988,7 @@ async function commitTagRename(): Promise<void> {
       name,
       tag.group_id ?? null,
       tag.starred,
+      tag.description,
     )
     upsertTag(updated)
   } catch (e) {

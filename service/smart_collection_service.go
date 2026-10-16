@@ -177,7 +177,7 @@ func (s *SmartCollectionService) GetByID(ctx context.Context, id string) (*domai
 }
 
 // Create stores a new filter preset, appended after its siblings.
-func (s *SmartCollectionService) Create(ctx context.Context, libraryID, name, color string, filter domain.SmartCollectionFilter) (*domain.SmartCollection, error) {
+func (s *SmartCollectionService) Create(ctx context.Context, libraryID, name, description, color string, filter domain.SmartCollectionFilter) (*domain.SmartCollection, error) {
 	if err := ensureLibraryExists(ctx, s.db, libraryID); err != nil {
 		return nil, err
 	}
@@ -191,14 +191,15 @@ func (s *SmartCollectionService) Create(ctx context.Context, libraryID, name, co
 	}
 	now := time.Now().UTC()
 	collection := &domain.SmartCollection{
-		ID:        uuid.New().String(),
-		LibraryID: libraryID,
-		Name:      unique,
-		Color:     color,
-		Sort:      sort,
-		Filter:    filter,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          uuid.New().String(),
+		LibraryID:   libraryID,
+		Name:        unique,
+		Description: description,
+		Color:       color,
+		Sort:        sort,
+		Filter:      filter,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 	if err := s.db.WithContext(ctx).Create(store.SmartCollectionModel(collection)).Error; err != nil {
 		return nil, err
@@ -206,14 +207,17 @@ func (s *SmartCollectionService) Create(ctx context.Context, libraryID, name, co
 	return collection, nil
 }
 
-func (s *SmartCollectionService) Update(ctx context.Context, id, name, color string) (*domain.SmartCollection, error) {
+// Update sets a smart collection's name, description and colour. Callers send
+// the complete desired state; the filter is immutable here.
+func (s *SmartCollectionService) Update(ctx context.Context, id, name, description, color string) (*domain.SmartCollection, error) {
 	res := s.db.WithContext(ctx).
 		Model(&store.SmartCollection{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
-			"name":       name,
-			"color":      color,
-			"updated_at": time.Now().UTC(),
+			"name":        name,
+			"description": description,
+			"color":       color,
+			"updated_at":  time.Now().UTC(),
 		})
 	if res.Error != nil {
 		return nil, res.Error

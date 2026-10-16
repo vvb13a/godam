@@ -117,7 +117,7 @@ func TestSmartCollections(t *testing.T) {
 		t.Fatalf("create library: %v", err)
 	}
 
-	created, err := smart.Create(ctx, lib.ID, "Videos", "3b82f6", domain.SmartCollectionFilter{
+	created, err := smart.Create(ctx, lib.ID, "Videos", "", "3b82f6", domain.SmartCollectionFilter{
 		Type: "video",
 		Sort: "name-asc",
 	})
@@ -144,11 +144,11 @@ func TestSmartCollections(t *testing.T) {
 		t.Fatalf("filter not persisted: %+v", videos.Filter)
 	}
 
-	if _, err := smart.Create(ctx, lib.ID, "Videos", "3b82f6", domain.SmartCollectionFilter{Type: "video"}); err != nil {
+	if _, err := smart.Create(ctx, lib.ID, "Videos", "", "3b82f6", domain.SmartCollectionFilter{Type: "video"}); err != nil {
 		t.Fatalf("duplicate name should be auto-suffixed: %v", err)
 	}
 
-	updated, err := smart.Update(ctx, created.ID, "Clips", "ef4444")
+	updated, err := smart.Update(ctx, created.ID, "Clips", "", "ef4444")
 	if err != nil || updated.Name != "Clips" || updated.Color != "ef4444" {
 		t.Fatalf("update: %+v err=%v", updated, err)
 	}
@@ -177,20 +177,20 @@ func TestCollectionHierarchy(t *testing.T) {
 		t.Fatalf("create library: %v", err)
 	}
 
-	root, err := cols.Create(ctx, lib.ID, nil, "Root", "8b5cf6")
+	root, err := cols.Create(ctx, lib.ID, nil, "Root", "", "8b5cf6")
 	if err != nil {
 		t.Fatalf("create root: %v", err)
 	}
-	child, err := cols.Create(ctx, lib.ID, &root.ID, "Child", "")
+	child, err := cols.Create(ctx, lib.ID, &root.ID, "Child", "", "")
 	if err != nil {
 		t.Fatalf("create child: %v", err)
 	}
-	grandchild, err := cols.Create(ctx, lib.ID, &child.ID, "Grandchild", "")
+	grandchild, err := cols.Create(ctx, lib.ID, &child.ID, "Grandchild", "", "")
 	if err != nil {
 		t.Fatalf("create grandchild: %v", err)
 	}
 
-	if _, err := cols.Create(ctx, lib.ID, nil, "Root", ""); err != nil {
+	if _, err := cols.Create(ctx, lib.ID, nil, "Root", "", ""); err != nil {
 		t.Fatalf("duplicate name should be auto-suffixed: %v", err)
 	}
 	list, err := cols.List(ctx, lib.ID)
@@ -247,7 +247,7 @@ func TestBulkAssetRelations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create library: %v", err)
 	}
-	col, err := cols.Create(ctx, lib.ID, nil, "C", "")
+	col, err := cols.Create(ctx, lib.ID, nil, "C", "", "")
 	if err != nil {
 		t.Fatalf("create collection: %v", err)
 	}

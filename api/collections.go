@@ -19,10 +19,11 @@ func (s *Server) handleListCollections(w http.ResponseWriter, r *http.Request) {
 }
 
 type collectionRequest struct {
-	LibraryID string  `json:"library_id"`
-	ParentID  *string `json:"parent_id"`
-	Name      string  `json:"name"`
-	Color     string  `json:"color"`
+	LibraryID   string  `json:"library_id"`
+	ParentID    *string `json:"parent_id"`
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	Color       string  `json:"color"`
 }
 
 func (s *Server) handleCreateCollection(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +42,7 @@ func (s *Server) handleCreateCollection(w http.ResponseWriter, r *http.Request) 
 	if !s.requireOwnedLibrary(w, r, req.LibraryID) {
 		return
 	}
-	collection, err := s.deps.Collections.Create(r.Context(), req.LibraryID, req.ParentID, req.Name, req.Color)
+	collection, err := s.deps.Collections.Create(r.Context(), req.LibraryID, req.ParentID, req.Name, req.Description, req.Color)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -61,7 +62,7 @@ func (s *Server) handleUpdateCollection(w http.ResponseWriter, r *http.Request) 
 	if _, ok := s.ownedCollection(w, r, r.PathValue("id")); !ok {
 		return
 	}
-	collection, err := s.deps.Collections.Update(r.Context(), r.PathValue("id"), req.Name, req.Color)
+	collection, err := s.deps.Collections.Update(r.Context(), r.PathValue("id"), req.Name, req.Description, req.Color)
 	if err != nil {
 		writeError(w, err)
 		return
