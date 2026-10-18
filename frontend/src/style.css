@@ -17,3 +17,25 @@ html.dark {
 .p-confirmpopup {
   max-width: 15rem;
 }
+
+/* Keep the MultiSelect filter input and Select All checkbox on one row. */
+.p-multiselect-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+}
+
+.p-multiselect-header .p-checkbox {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+}
+
+.p-multiselect-filter-container {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.p-multiselect-filter-container .p-inputtext {
+  min-width: 0;
+}

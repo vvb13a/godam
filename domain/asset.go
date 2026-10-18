@@ -21,29 +21,47 @@ type Asset struct {
 	UpdatedAt      time.Time    `json:"updated_at"`
 }
 
-// AssetFilter narrows an asset listing. CollectionID restricts to a single
-// collection; TagIDs selects assets carrying any of the given tags;
-// Uncategorized and Untagged select assets belonging to no collection or
-// carrying no tags respectively. Search matches title, note and filename.
-// Sort is a frontend sort key; Cursor is the opaque keyset position. Filters
-// combine (AND).
+// AssetColor is one extracted palette entry.
 type AssetColor struct {
 	Hex        string  `json:"hex"`
 	Bucket     string  `json:"bucket"`
 	Percentage float64 `json:"percentage"`
 }
 
+// AssetFilter narrows an asset listing. List-valued filters (collections,
+// tags, types, colors, MIME types and uploaders) use OR within the list;
+// different filters combine with AND. Uncategorized and Untagged include
+// assets with no collection or tags in the corresponding OR group. Search
+// matches title, note and filename. Sort is a frontend sort key; Cursor is the
+// opaque keyset position.
+
 type AssetFilter struct {
-	CollectionID  *string
-	TagIDs        []string
-	Uncategorized bool
-	Untagged      bool
-	Search        string
-	Type          string
-	Color         string
-	Sort          string
-	Cursor        string
-	Limit         int
+	CollectionIDs  []string
+	TagIDs         []string
+	Uncategorized  bool
+	Untagged       bool
+	Search         string
+	Types          []string
+	Colors         []string
+	MimeTypes      []string
+	UploadedBy     []string
+	MinDuration    *float64
+	MaxDuration    *float64
+	MinPages       *int
+	MaxPages       *int
+	MinWidth       *int
+	MaxWidth       *int
+	MinHeight      *int
+	MaxHeight      *int
+	MinSize        *int64
+	MaxSize        *int64
+	AddedAfter     *time.Time
+	AddedBefore    *time.Time
+	ModifiedAfter  *time.Time
+	ModifiedBefore *time.Time
+	Sort           string
+	Cursor         string
+	Limit          int
 }
 
 // AssetPage is one cursor-paginated slice of assets. Total is capped at 1000

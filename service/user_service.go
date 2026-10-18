@@ -115,6 +115,19 @@ func (s *UserService) GetByID(ctx context.Context, id string) (*domain.User, err
 	return user, nil
 }
 
+// List returns all users ordered by name.
+func (s *UserService) List(ctx context.Context) ([]domain.User, error) {
+	var models []store.User
+	if err := s.db.WithContext(ctx).Order("name ASC").Find(&models).Error; err != nil {
+		return nil, err
+	}
+	users := make([]domain.User, 0, len(models))
+	for i := range models {
+		users = append(users, *models[i].ToDomain())
+	}
+	return users, nil
+}
+
 // Create inserts a user with a bcrypt-hashed password.
 func (s *UserService) Create(ctx context.Context, name, email, password string) (*domain.User, error) {
 	name = strings.TrimSpace(name)

@@ -83,6 +83,24 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, currentUser(r))
 }
 
+type userOption struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
+	users, err := s.deps.Users.List(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	options := make([]userOption, 0, len(users))
+	for _, user := range users {
+		options = append(options, userOption{ID: user.ID, Name: user.Name})
+	}
+	writeJSON(w, http.StatusOK, options)
+}
+
 type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`

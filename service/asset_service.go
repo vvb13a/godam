@@ -193,38 +193,111 @@ func escapeLike(value string) string {
 }
 
 func (s *AssetService) applyAssetFilters(query *gorm.DB, filter domain.AssetFilter) *gorm.DB {
-	if filter.CollectionID != nil {
-		query = query.
-			Joins("JOIN asset_collections ON asset_collections.asset_id = assets.id").
-			Where("asset_collections.collection_id = ?", *filter.CollectionID)
-	}
-	if filter.Uncategorized {
-		query = query.Where("assets.id NOT IN (SELECT asset_id FROM asset_collections)")
-	}
-	if len(filter.TagIDs) > 0 {
-		query = query.Where(
-			"assets.id IN (SELECT asset_id FROM asset_tags WHERE tag_id IN ?)",
-			filter.TagIDs,
-		)
-	}
-	if filter.Untagged {
-		query = query.Where("assets.id NOT IN (SELECT asset_id FROM asset_tags)")
-	}
-	if filter.Color != "" {
-		color := filter.Color
-		if color == "teal" {
-			color = "green"
+	if len(filter.CollectionIDs) > 0 || filter.Uncategorized {
+		clauses := make([]string, 0, 2)
+		args := make([]any, 0, 1)
+		if len(filter.CollectionIDs) > 0 {
+			clauses = append(clauses,
+				"assets.id IN (SELECT asset_id FROM asset_collections WHERE collection_id IN ?)")
+			args = append(args, filter.CollectionIDs)
 		}
-		query = query.Where(
-			`assets.id IN (
-				SELECT asset_id FROM asset_colors
-				WHERE bucket = ?
-				GROUP BY asset_id
-				HAVING SUM(percentage) >= ?
-			)`,
-			color, minColorFilterPct,
-		)
+		if filter.Uncategorized {
+			clauses = append(clauses,
+				"assets.id NOT IN (SELECT asset_id FROM asset_collections)")
+		}
+		query = query.Where("("+strings.Join(clauses, " OR ")+")", args...)
 	}
+
+	if len(filter.TagIDs) > 0 || filter.Untagged {
+		clauses := make([]string, 0, 2)
+		args := make([]any, 0, 1)
+		if len(filter.TagIDs) > 0 {
+			clauses = append(clauses,
+				"assets.id IN (SELECT asset_id FROM asset_tags WHERE tag_id IN ?)")
+			args = append(args, filter.TagIDs)
+		}
+		if filter.Untagged {
+			clauses = append(clauses,
+				"assets.id NOT IN (SELECT asset_id FROM asset_tags)")
+		}
+		query = query.Where("("+strings.Join(clauses, " OR ")+")", args...)
+	}
+
+	if len(filter.Colors) > 0 {
+		colors := make([]string, 0, len(filter.Colors))
+		seen := make(map[string]bool, len(filter.Colors))
+		for _, color := range filter.Colors {
+			if color == "teal" {
+				color = "green"
+			}
+			if color != "" && !seen[color] {
+				seen[color] = true
+				colors = append(colors, color)
+			}
+		}
+		if len(colors) > 0 {
+			query = query.Where(
+				`assets.id IN (
+					SELECT asset_id FROM asset_colors
+					WHERE bucket IN ?
+					GROUP BY asset_id, bucket
+					HAVING SUM(percentage) >= ?
+				)`,
+				colors, minColorFilterPct,
+			)
+		}
+	}
+
+	if len(filter.MimeTypes) > 0 {
+		query = query.Where("assets.mime_type IN ?", filter.MimeTypes)
+	}
+	if len(filter.UploadedBy) > 0 {
+		query = query.Where("assets.uploaded_by IN ?", filter.UploadedBy)
+	}
+
+	if filter.MinDuration != nil {
+		query = query.Where("assets.duration_sec >= ?", *filter.MinDuration)
+	}
+	if filter.MaxDuration != nil {
+		query = query.Where("assets.duration_sec <= ?", *filter.MaxDuration)
+	}
+	if filter.MinPages != nil {
+		query = query.Where("assets.page_count >= ?", *filter.MinPages)
+	}
+	if filter.MaxPages != nil {
+		query = query.Where("assets.page_count <= ?", *filter.MaxPages)
+	}
+	if filter.MinWidth != nil {
+		query = query.Where("assets.width >= ?", *filter.MinWidth)
+	}
+	if filter.MaxWidth != nil {
+		query = query.Where("assets.width <= ?", *filter.MaxWidth)
+	}
+	if filter.MinHeight != nil {
+		query = query.Where("assets.height >= ?", *filter.MinHeight)
+	}
+	if filter.MaxHeight != nil {
+		query = query.Where("assets.height <= ?", *filter.MaxHeight)
+	}
+	if filter.MinSize != nil {
+		query = query.Where("assets.byte_size >= ?", *filter.MinSize)
+	}
+	if filter.MaxSize != nil {
+		query = query.Where("assets.byte_size <= ?", *filter.MaxSize)
+	}
+	if filter.AddedAfter != nil {
+		query = query.Where("assets.created_at >= ?", *filter.AddedAfter)
+	}
+	if filter.AddedBefore != nil {
+		query = query.Where("assets.created_at < ?", *filter.AddedBefore)
+	}
+	if filter.ModifiedAfter != nil {
+		query = query.Where("assets.updated_at >= ?", *filter.ModifiedAfter)
+	}
+	if filter.ModifiedBefore != nil {
+		query = query.Where("assets.updated_at < ?", *filter.ModifiedBefore)
+	}
+
 	if term := strings.TrimSpace(filter.Search); term != "" {
 		if utf8.RuneCountInString(term) >= 3 {
 			match := `"` + strings.ReplaceAll(term, `"`, `""`) + `"`
@@ -240,26 +313,38 @@ func (s *AssetService) applyAssetFilters(query *gorm.DB, filter domain.AssetFilt
 			)
 		}
 	}
-	switch filter.Type {
-	case "image":
-		query = query.Where("assets.mime_type LIKE 'image/%'")
-	case "video":
-		query = query.Where("assets.mime_type LIKE 'video/%'")
-	case "audio":
-		query = query.Where("(assets.mime_type LIKE 'audio/%' OR assets.mime_type = 'application/ogg')")
-	case "document":
-		query = query.Where("(assets.mime_type LIKE 'text/%' OR assets.mime_type IN ?)", documentMimes)
-	case "other":
-		query = query.Where(
-			`assets.mime_type NOT LIKE 'image/%'
-			 AND assets.mime_type NOT LIKE 'video/%'
-			 AND assets.mime_type NOT LIKE 'audio/%'
-			 AND assets.mime_type NOT LIKE 'text/%'
-			 AND assets.mime_type <> 'application/ogg'
-			 AND assets.mime_type NOT IN ?`,
-			documentMimes,
-		)
+
+	if len(filter.Types) > 0 {
+		clauses := make([]string, 0, len(filter.Types))
+		args := make([]any, 0, 2)
+		for _, kind := range filter.Types {
+			switch kind {
+			case "image":
+				clauses = append(clauses, "assets.mime_type LIKE 'image/%'")
+			case "video":
+				clauses = append(clauses, "assets.mime_type LIKE 'video/%'")
+			case "audio":
+				clauses = append(clauses,
+					"(assets.mime_type LIKE 'audio/%' OR assets.mime_type = 'application/ogg')")
+			case "document":
+				clauses = append(clauses,
+					"(assets.mime_type LIKE 'text/%' OR assets.mime_type IN ?)")
+				args = append(args, documentMimes)
+			case "other":
+				clauses = append(clauses, `(assets.mime_type NOT LIKE 'image/%'
+				 AND assets.mime_type NOT LIKE 'video/%'
+				 AND assets.mime_type NOT LIKE 'audio/%'
+				 AND assets.mime_type NOT LIKE 'text/%'
+				 AND assets.mime_type <> 'application/ogg'
+				 AND assets.mime_type NOT IN ?)`)
+				args = append(args, documentMimes)
+			}
+		}
+		if len(clauses) > 0 {
+			query = query.Where("("+strings.Join(clauses, " OR ")+")", args...)
+		}
 	}
+
 	return query
 }
 

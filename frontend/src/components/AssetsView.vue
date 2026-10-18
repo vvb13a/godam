@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import Button from 'primevue/button'
+import DatePicker from 'primevue/datepicker'
 import ContextMenu from 'primevue/contextmenu'
 import Message from 'primevue/message'
 import IconField from 'primevue/iconfield'
 import InputIcon from 'primevue/inputicon'
+import InputNumber from 'primevue/inputnumber'
 import InputText from 'primevue/inputtext'
 import MultiSelect from 'primevue/multiselect'
 import Select from 'primevue/select'
@@ -25,10 +27,12 @@ import {
   ExternalLink,
   Images,
   Pencil,
+  Plus,
   Refresh,
   Save,
   Search,
   SlidersH,
+  SortAlt,
   Tag,
   Times,
   Upload,
@@ -61,7 +65,7 @@ import {
   toggleRightPanel,
   toggleTopPanel,
 } from '../lib/panels'
-import { sidebarPrefs } from '../lib/sidebar'
+import { SIDEBAR_TOGGLES, sidebarPrefs } from '../lib/sidebar'
 import { clearSmartSelection, smartSelection } from '../lib/smartSelection'
 import { openAssetTags, openBulkAssetTags } from '../lib/tagsDialog'
 import { openUpload } from '../lib/upload'
@@ -70,6 +74,7 @@ import type {
   Collection,
   SmartCollection,
   Tag as TagModel,
+  UserOption,
 } from '../types'
 import AssetCard from './AssetCard.vue'
 import AssetEditor from './AssetEditor.vue'
@@ -270,6 +275,31 @@ const showDuration = ref(savedPrefs.showDuration ?? false)
 const playAudioOnHover = ref(savedPrefs.playAudioOnHover ?? true)
 const playVideoOnHover = ref(savedPrefs.playVideoOnHover ?? true)
 const displayPopover = ref<InstanceType<typeof Popover> | null>(null)
+const sortPopover = ref<InstanceType<typeof Popover> | null>(null)
+const showSidebar = computed({
+  get: () => !panels.leftCollapsed,
+  set: (value: boolean) => {
+    panels.leftCollapsed = !value
+  },
+})
+const showToolbar = computed({
+  get: () => !panels.topCollapsed,
+  set: (value: boolean) => {
+    panels.topCollapsed = !value
+  },
+})
+const showBottombar = computed({
+  get: () => !panels.bottomCollapsed,
+  set: (value: boolean) => {
+    panels.bottomCollapsed = !value
+  },
+})
+const showInspector = computed({
+  get: () => !panels.rightCollapsed,
+  set: (value: boolean) => {
+    panels.rightCollapsed = !value
+  },
+})
 
 watch(
   [
@@ -356,6 +386,7 @@ interface LassoSession {
 
 const gridContainer = ref<HTMLElement | null>(null)
 const showBackToTop = ref(false)
+const transitionScrollTop = ref(0)
 const lasso = ref<LassoRect | null>(null)
 let lassoSession: LassoSession | null = null
 const LASSO_THRESHOLD = 4
@@ -374,29 +405,219 @@ const lassoStyle = computed(() => {
 // Collection and tag filters live in the route query so the sidebar and the
 // toolbar stay in sync and the selection is shareable. Special values
 // 'uncategorized' and 'untagged' select assets with no collection/tags.
-const collectionFilter = computed({
-  get: () => (route.query.collection as string | undefined) ?? '',
-  set: (value: string) => setQueryFilter('collection', value),
-})
-const tagFilter = computed({
-  get: () => {
-    const raw = route.query.tag
-    if (typeof raw !== 'string' || !raw) return [] as string[]
-    return raw.split(',').filter(Boolean)
-  },
-  set: (values: string[]) => {
-    clearSmartSelection()
-    const query = { ...route.query }
-    if (values.length) query.tag = values.join(',')
-    else delete query.tag
-    void router.push({ name: 'all', query })
-  },
-})
-const uploadCollectionId = computed(() =>
-  collectionFilter.value && collectionFilter.value !== 'uncategorized'
-    ? collectionFilter.value
-    : null,
+function parseList(value: unknown): string[] {
+  if (typeof value !== 'string' || !value) return []
+  return value.split(',').map((item) => item.trim()).filter(Boolean)
+}
+
+function queryValue(key: string): string {
+  const value = route.query[key]
+  return typeof value === 'string' ? value : ''
+}
+
+function updateQuery(values: Record<string, string>): void {
+  clearSmartSelection()
+  const query = { ...route.query }
+  for (const [key, value] of Object.entries(values)) {
+    if (value) query[key] = value
+    else delete query[key]
+  }
+  void router.push({ name: 'all', query })
+}
+
+function setQueryList(key: string, values: string[]): void {
+  updateQuery({ [key]: values.join(',') })
+}
+
+function setQueryValue(key: string, value: string): void {
+  updateQuery({ [key]: value })
+}
+
+function numberFilter(key: string) {
+  return computed<number | null>({
+    get: () => {
+      const raw = queryValue(key)
+      if (!raw) return null
+      const value = Number(raw)
+      return Number.isFinite(value) ? value : null
+    },
+    set: (value) => setQueryValue(key, value == null ? '' : String(value)),
+  })
+}
+
+function dateFilter(key: string) {
+  return computed<Date | null>({
+    get: () => {
+      const raw = queryValue(key)
+      if (!raw) return null
+      const value = new Date(`${raw}T00:00:00`)
+      return Number.isNaN(value.getTime()) ? null : value
+    },
+    set: (value) => setQueryValue(key, value ? formatDateKey(value) : ''),
+  })
+}
+
+function formatDateKey(value: Date | null): string {
+  if (!value) return ''
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+type OptionalFilterKey =
+  | 'color'
+  | 'mime'
+  | 'uploader'
+  | 'size'
+  | 'duration'
+  | 'pages'
+  | 'dimensions'
+  | 'added'
+  | 'modified'
+
+const OPTIONAL_FILTERS: { key: OptionalFilterKey; label: string }[] = [
+  { key: 'color', label: 'Color' },
+  { key: 'mime', label: 'MIME type' },
+  { key: 'uploader', label: 'Uploaded by' },
+  { key: 'size', label: 'Size' },
+  { key: 'duration', label: 'Duration' },
+  { key: 'pages', label: 'Pages' },
+  { key: 'dimensions', label: 'Dimensions' },
+  { key: 'added', label: 'Date added' },
+  { key: 'modified', label: 'Date modified' },
+]
+
+const OPTIONAL_FILTER_QUERY_KEYS: Record<OptionalFilterKey, string[]> = {
+  color: ['color'],
+  mime: ['mime'],
+  uploader: ['uploader'],
+  size: ['size_min', 'size_max'],
+  duration: ['duration_min', 'duration_max'],
+  pages: ['pages_min', 'pages_max'],
+  dimensions: ['width_min', 'width_max', 'height_min', 'height_max'],
+  added: ['added_after', 'added_before'],
+  modified: ['modified_after', 'modified_before'],
+}
+
+function hasFilterValue(key: OptionalFilterKey): boolean {
+  return OPTIONAL_FILTER_QUERY_KEYS[key].some((queryKey) => queryValue(queryKey) !== '')
+}
+
+const visibleFilters = ref<OptionalFilterKey[]>(
+  OPTIONAL_FILTERS.filter((filter) => hasFilterValue(filter.key)).map(
+    (filter) => filter.key,
+  ),
 )
+const availableOptionalFilters = computed(() =>
+  OPTIONAL_FILTERS.filter((filter) => !visibleFilters.value.includes(filter.key)),
+)
+const filterPopover = ref<InstanceType<typeof Popover> | null>(null)
+
+function toggleFilterPopover(event: Event): void {
+  filterPopover.value?.toggle(event)
+}
+
+function addFilter(key: OptionalFilterKey): void {
+  if (!visibleFilters.value.includes(key)) {
+    visibleFilters.value.push(key)
+  }
+  filterPopover.value?.hide()
+}
+
+function removeFilter(key: OptionalFilterKey): void {
+  const values: Record<string, string> = {}
+  for (const queryKey of OPTIONAL_FILTER_QUERY_KEYS[key]) {
+    values[queryKey] = ''
+  }
+  updateQuery(values)
+  visibleFilters.value = visibleFilters.value.filter((item) => item !== key)
+}
+
+watch(
+  () => route.query,
+  () => {
+    for (const filter of OPTIONAL_FILTERS) {
+      if (
+        hasFilterValue(filter.key) &&
+        !visibleFilters.value.includes(filter.key)
+      ) {
+        visibleFilters.value.push(filter.key)
+      }
+    }
+  },
+)
+
+const collectionFilter = computed<string[]>({
+  get: () => parseList(route.query.collection),
+  set: (values) => setQueryList('collection', values),
+})
+const tagFilter = computed<string[]>({
+  get: () => parseList(route.query.tag),
+  set: (values) => setQueryList('tag', values),
+})
+const typeFilter = computed<string[]>({
+  get: () => parseList(route.query.type),
+  set: (values) => setQueryList('type', values),
+})
+const colorFilter = computed<string[]>({
+  get: () => {
+    const values = parseList(route.query.color).map((value) =>
+      value === 'teal' ? 'green' : value,
+    )
+    return [...new Set(values)]
+  },
+  set: (values) => setQueryList('color', values),
+})
+const mimeFilter = computed<string[]>({
+  get: () => parseList(route.query.mime),
+  set: (values) => setQueryList('mime', values),
+})
+const uploaderFilter = computed<string[]>({
+  get: () => parseList(route.query.uploader),
+  set: (values) => setQueryList('uploader', values),
+})
+const sort = computed({
+  get: () => (route.query.sort as string | undefined) ?? 'date-desc',
+  set: (value: string) => setQueryValue('sort', value),
+})
+
+const sortField = computed({
+  get: () => {
+    const field = sort.value.split('-')[0]
+    return SORT_FIELDS.some((option) => option.value === field) ? field : 'date'
+  },
+  set: (value: string) => {
+    sort.value = `${value}-${sortDirection.value}`
+  },
+})
+
+const sortDirection = computed({
+  get: () => (sort.value.endsWith('-asc') ? 'asc' : 'desc'),
+  set: (value: string) => {
+    sort.value = `${sortField.value}-${value}`
+  },
+})
+
+const minSize = numberFilter('size_min')
+const maxSize = numberFilter('size_max')
+const minDuration = numberFilter('duration_min')
+const maxDuration = numberFilter('duration_max')
+const minPages = numberFilter('pages_min')
+const maxPages = numberFilter('pages_max')
+const minWidth = numberFilter('width_min')
+const maxWidth = numberFilter('width_max')
+const minHeight = numberFilter('height_min')
+const maxHeight = numberFilter('height_max')
+const addedAfter = dateFilter('added_after')
+const addedBefore = dateFilter('added_before')
+const modifiedAfter = dateFilter('modified_after')
+const modifiedBefore = dateFilter('modified_before')
+
+const uploadCollectionId = computed(() => {
+  const ids = collectionFilter.value.filter((value) => value !== 'uncategorized')
+  return ids.length === 1 ? ids[0] : null
+})
 // Only a single, concrete tag filter is auto-applied to uploads; multi-tag and
 // the virtual "untagged" filter are skipped.
 const uploadTagId = computed(() => {
@@ -405,37 +626,58 @@ const uploadTagId = computed(() => {
   return tags[0]
 })
 
-// The media-type and sort filters also live in the route query so a smart
-// collection (a saved preset) can restore them.
-const typeFilter = computed({
-  get: () => (route.query.type as string | undefined) ?? '',
-  set: (value: string) => setQueryFilter('type', value),
-})
-const colorFilter = computed({
-  get: () => {
-    const value = route.query.color
-    if (value === 'teal') return 'green'
-    return typeof value === 'string' ? value : ''
-  },
-  set: (value: string) => setQueryFilter('color', value),
-})
-const sort = computed({
-  get: () => (route.query.sort as string | undefined) ?? 'date-desc',
-  set: (value: string) => setQueryFilter('sort', value),
+const users = ref<UserOption[]>([])
+
+async function loadUsers(): Promise<void> {
+  try {
+    users.value = await api.listUsers()
+  } catch {
+    users.value = []
+  }
+}
+
+const uploaderOptions = computed(() =>
+  users.value.map((user) => ({ value: user.id, label: user.name })),
+)
+
+const DOCUMENT_MIMES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/rtf',
+])
+
+function mediaCategory(mime: string): string {
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime.startsWith('audio/') || mime === 'application/ogg') return 'audio'
+  if (mime.startsWith('text/') || DOCUMENT_MIMES.has(mime)) return 'document'
+  return 'other'
+}
+
+const typeCounts = computed(() => {
+  const counts = new Map<string, number>()
+  for (const item of library.stats?.types ?? []) {
+    const category = mediaCategory(item.mime_type)
+    counts.set(category, (counts.get(category) ?? 0) + item.count)
+  }
+  return counts
 })
 
 // Broad media categories used by both the type filter and smart collections.
-const TYPE_CATEGORIES = [
-  { value: '', label: 'All types' },
-  { value: 'image', label: 'Images' },
-  { value: 'video', label: 'Videos' },
-  { value: 'audio', label: 'Audio' },
-  { value: 'document', label: 'Documents' },
-  { value: 'other', label: 'Other' },
-]
+const TYPE_CATEGORIES = computed(() => [
+  { value: 'image', label: 'Images', count: typeCounts.value.get('image') ?? 0 },
+  { value: 'video', label: 'Videos', count: typeCounts.value.get('video') ?? 0 },
+  { value: 'audio', label: 'Audio', count: typeCounts.value.get('audio') ?? 0 },
+  { value: 'document', label: 'Documents', count: typeCounts.value.get('document') ?? 0 },
+  { value: 'other', label: 'Other', count: typeCounts.value.get('other') ?? 0 },
+])
 
 const COLOR_OPTIONS = [
-  { value: '', label: 'All colors' },
   { value: 'black', label: 'Black', hex: '#111827' },
   { value: 'blue', label: 'Blue', hex: '#3b82f6' },
   { value: 'brown', label: 'Brown', hex: '#764a1d' },
@@ -449,43 +691,67 @@ const COLOR_OPTIONS = [
   { value: 'yellow', label: 'Yellow', hex: '#eab308' },
 ]
 
-const SORT_OPTIONS = [
-  { value: 'date-desc', label: 'Newest first' },
-  { value: 'date-asc', label: 'Oldest first' },
-  { value: 'modified-desc', label: 'Recently modified' },
-  { value: 'modified-asc', label: 'Least recently modified' },
-  { value: 'name-asc', label: 'Name A–Z' },
-  { value: 'name-desc', label: 'Name Z–A' },
-  { value: 'size-desc', label: 'Largest first' },
-  { value: 'size-asc', label: 'Smallest first' },
+const mimeOptions = computed(() =>
+  (library.stats?.types ?? [])
+    .map((item) => ({
+      value: item.mime_type,
+      label: item.mime_type,
+      count: item.count,
+    }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
+)
+
+const filterFingerprint = computed(() =>
+  JSON.stringify({
+    collection: collectionFilter.value,
+    tag: tagFilter.value,
+    type: typeFilter.value,
+    color: colorFilter.value,
+    mime: mimeFilter.value,
+    uploader: uploaderFilter.value,
+    sort: sort.value,
+    minSize: minSize.value,
+    maxSize: maxSize.value,
+    minDuration: minDuration.value,
+    maxDuration: maxDuration.value,
+    minPages: minPages.value,
+    maxPages: maxPages.value,
+    minWidth: minWidth.value,
+    maxWidth: maxWidth.value,
+    minHeight: minHeight.value,
+    maxHeight: maxHeight.value,
+    addedAfter: formatDateKey(addedAfter.value),
+    addedBefore: formatDateKey(addedBefore.value),
+    modifiedAfter: formatDateKey(modifiedAfter.value),
+    modifiedBefore: formatDateKey(modifiedBefore.value),
+  }),
+)
+
+const SORT_FIELDS = [
+  { value: 'date', label: 'Date added' },
+  { value: 'modified', label: 'Date modified' },
+  { value: 'name', label: 'Name' },
+  { value: 'size', label: 'Size' },
 ]
+
+const SORT_DIRECTIONS = [
+  { value: 'asc', label: 'Ascending' },
+  { value: 'desc', label: 'Descending' },
+]
+
 
 const collectionOptions = computed(() => [
   {
-    value: '',
-    label: `All collections (${library.stats?.assets ?? 0})`,
-  },
-  {
     value: 'uncategorized',
-    label: `Uncategorized (${library.stats?.uncategorized ?? 0})`,
+    label: 'Uncategorized',
+    count: library.stats?.uncategorized ?? 0,
   },
   ...library.collections.map((collection) => ({
     value: collection.id,
-    label: `${collection.name} (${collection.asset_count})`,
+    label: collection.name,
+    count: collection.asset_count,
   })),
 ])
-
-function setQueryFilter(
-  key: 'collection' | 'tag' | 'type' | 'color' | 'sort',
-  value: string,
-): void {
-  // Changing a filter means we are no longer viewing a smart collection.
-  clearSmartSelection()
-  const query = { ...route.query }
-  if (value) query[key] = value
-  else delete query[key]
-  void router.push({ name: 'all', query })
-}
 
 const tagOptions = computed(() => [
   {
@@ -525,8 +791,9 @@ const singleAsset = computed(() => {
 // asset is selected. Only concrete ids count; the virtual 'uncategorized' /
 // 'untagged' filters have no entity to describe.
 const activeCollection = computed<Collection | null>(() => {
-  const id = collectionFilter.value
-  if (!id || id === 'uncategorized') return null
+  if (collectionFilter.value.length !== 1) return null
+  const id = collectionFilter.value[0]
+  if (id === 'uncategorized') return null
   return library.collections.find((item) => item.id === id) ?? null
 })
 
@@ -536,6 +803,11 @@ const activeTag = computed<TagModel | null>(() => {
   return library.tags.find((item) => item.id === ids[0]) ?? null
 })
 
+function singleQueryValue(value: unknown): string | null {
+  if (typeof value !== 'string' || !value) return ''
+  return value.includes(',') ? null : value
+}
+
 // A smart collection is only "active" when it was explicitly opened from the
 // sidebar (tracked as client-side state); manually setting the same filters
 // does not select it. It also drops out once the filters no longer match.
@@ -544,11 +816,21 @@ const activeSmartCollection = computed<SmartCollection | null>(() => {
   const filter = smartSelection.filter
   if (!id || !filter) return null
   const q = route.query
+  const collection = singleQueryValue(q.collection)
+  const tag = singleQueryValue(q.tag)
+  const type = singleQueryValue(q.type)
+  if (collection === null || tag === null || type === null) return null
+  if (
+    Object.values(OPTIONAL_FILTER_QUERY_KEYS).some((keys) =>
+      keys.some((key) => typeof q[key] === 'string' && q[key] !== ''),
+    )
+  ) {
+    return null
+  }
   const matches =
-    (filter.collection ?? '') === (typeof q.collection === 'string' ? q.collection : '') &&
-    (filter.tag ?? '') === (typeof q.tag === 'string' ? q.tag : '') &&
-    (filter.type ?? '') === (typeof q.type === 'string' ? q.type : '') &&
-    (q.color ?? '') === '' &&
+    (filter.collection ?? '') === collection &&
+    (filter.tag ?? '') === tag &&
+    (filter.type ?? '') === type &&
     (filter.sort ?? '') === (typeof q.sort === 'string' ? q.sort : '')
   if (!matches) return null
   return library.smartCollections.find((item) => item.id === id) ?? null
@@ -579,10 +861,26 @@ const visibleAssets = computed(() => assets.value)
 
 const hasActiveFilters = computed(
   () =>
-    Boolean(collectionFilter.value) ||
+    collectionFilter.value.length > 0 ||
     tagFilter.value.length > 0 ||
-    Boolean(typeFilter.value) ||
-    Boolean(colorFilter.value) ||
+    typeFilter.value.length > 0 ||
+    colorFilter.value.length > 0 ||
+    mimeFilter.value.length > 0 ||
+    uploaderFilter.value.length > 0 ||
+    minSize.value !== null ||
+    maxSize.value !== null ||
+    minDuration.value !== null ||
+    maxDuration.value !== null ||
+    minPages.value !== null ||
+    maxPages.value !== null ||
+    minWidth.value !== null ||
+    maxWidth.value !== null ||
+    minHeight.value !== null ||
+    maxHeight.value !== null ||
+    addedAfter.value !== null ||
+    addedBefore.value !== null ||
+    modifiedAfter.value !== null ||
+    modifiedBefore.value !== null ||
     Boolean(searchQuery.value.trim()),
 )
 
@@ -803,14 +1101,37 @@ function toMessage(e: unknown): string {
 function assetParams(): api.AssetListParams {
   const params: api.AssetListParams = {
     search: searchQuery.value.trim() || undefined,
-    type: typeFilter.value || undefined,
-    color: colorFilter.value || undefined,
+    types: typeFilter.value.length ? typeFilter.value : undefined,
+    colors: colorFilter.value.length ? colorFilter.value : undefined,
+    mimeTypes: mimeFilter.value.length ? mimeFilter.value : undefined,
+    uploadedBy: uploaderFilter.value.length ? uploaderFilter.value : undefined,
+    minDuration: minDuration.value ?? undefined,
+    maxDuration: maxDuration.value ?? undefined,
+    minPages: minPages.value ?? undefined,
+    maxPages: maxPages.value ?? undefined,
+    minWidth: minWidth.value ?? undefined,
+    maxWidth: maxWidth.value ?? undefined,
+    minHeight: minHeight.value ?? undefined,
+    maxHeight: maxHeight.value ?? undefined,
+    minSize:
+      minSize.value === null
+        ? undefined
+        : Math.round(minSize.value * 1024 * 1024),
+    maxSize:
+      maxSize.value === null
+        ? undefined
+        : Math.round(maxSize.value * 1024 * 1024),
+    addedAfter: formatDateKey(addedAfter.value) || undefined,
+    addedBefore: formatDateKey(addedBefore.value) || undefined,
+    modifiedAfter: formatDateKey(modifiedAfter.value) || undefined,
+    modifiedBefore: formatDateKey(modifiedBefore.value) || undefined,
     sort: sort.value || undefined,
     limit: 100,
   }
-  const collection = collectionFilter.value
-  if (collection === 'uncategorized') params.uncategorized = true
-  else if (collection) params.collectionId = collection
+  const collections = collectionFilter.value
+  if (collections.includes('uncategorized')) params.uncategorized = true
+  const collectionIds = collections.filter((value) => value !== 'uncategorized')
+  if (collectionIds.length) params.collectionIds = collectionIds
 
   const tags = tagFilter.value
   if (tags.includes('untagged')) params.untagged = true
@@ -820,6 +1141,7 @@ function assetParams(): api.AssetListParams {
 }
 
 async function load(): Promise<void> {
+  transitionScrollTop.value = gridContainer.value?.scrollTop ?? 0
   const seq = ++loadSeq
   const initial = !loadedOnce.value
   if (initial) loading.value = true
@@ -1297,6 +1619,10 @@ function toggleDisplay(event: Event): void {
   displayPopover.value?.toggle(event)
 }
 
+function toggleSort(event: Event): void {
+  sortPopover.value?.toggle(event)
+}
+
 // onChanged replaces the affected asset client-side (title/note/tags/
 // collections changed), avoiding a full library/asset reload.
 function onChanged(asset: Asset): void {
@@ -1367,13 +1693,10 @@ function onAssetSaved(asset: Asset): void {
   notifyLibraryChanged()
 }
 
-watch(
-  [collectionFilter, () => tagFilter.value.join(','), typeFilter, colorFilter, sort],
-  () => {
-    if (!embedPicker.value) clearSelection()
-    void load()
-  },
-)
+watch(filterFingerprint, () => {
+  if (!embedPicker.value) clearSelection()
+  void load()
+})
 
 watch(searchQuery, (value) => {
   if (searchTimer !== null) {
@@ -1473,6 +1796,7 @@ function onAssetsSelectAll(event: KeyboardEvent): void {
 
 onMounted(() => {
   void load()
+  void loadUsers()
   measureGrid()
   setEditorCloser(closeEditor)
   window.addEventListener('keydown', onAssetsSelectAll)
@@ -1517,20 +1841,35 @@ onBeforeUnmount(() => {
               v-if="!panels.topCollapsed"
               class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 shadow-lg"
             >
-          <Select
+          <MultiSelect
             v-model="collectionFilter"
             :options="collectionOptions"
             option-label="label"
             option-value="value"
-            size="small"
-            class="w-44"
+            display="chip"
+            placeholder="All collections"
+            filter
+            showClear
+            :max-selected-labels="2"
+            class="w-56"
             :disabled="embedCollectionLocked"
             :title="
               embedCollectionLocked
                 ? 'This collection is locked by the host application'
                 : undefined
             "
-          />
+          >
+            <template #option="slotProps">
+              <span class="flex w-full items-center gap-2">
+                <span class="min-w-0 flex-1 truncate">
+                  {{ slotProps.option.label }}
+                </span>
+                <span class="shrink-0 text-xs text-slate-400">
+                  {{ slotProps.option.count }}
+                </span>
+              </span>
+            </template>
+          </MultiSelect>
 
           <MultiSelect
             v-model="tagFilter"
@@ -1539,15 +1878,16 @@ onBeforeUnmount(() => {
             option-value="value"
             display="chip"
             placeholder="All tags"
-            :max-selected-labels="3"
+            filter
+            showClear
+            :max-selected-labels="2"
             :disabled="embedTagLocked"
             :title="
               embedTagLocked
                 ? 'Tags are locked by the host application'
                 : undefined
             "
-            size="small"
-            class="w-48 text-sm"
+            class="w-56"
           >
             <template #option="slotProps">
               <span class="flex w-full items-center gap-2">
@@ -1566,44 +1906,381 @@ onBeforeUnmount(() => {
             </template>
           </MultiSelect>
 
-          <Select
+          <MultiSelect
             v-model="typeFilter"
             :options="TYPE_CATEGORIES"
             option-label="label"
             option-value="value"
-            size="small"
-            class="w-36"
-          />
-
-          <Select
-            v-model="colorFilter"
-            :options="COLOR_OPTIONS"
-            option-label="label"
-            option-value="value"
-            size="small"
-            class="w-36"
-            title="Filter images where a color covers at least 10% of the image"
+            display="chip"
+            placeholder="All types"
+            filter
+            showClear
+            :max-selected-labels="2"
+            class="w-40"
           >
             <template #option="slotProps">
-              <span class="flex items-center gap-2">
-                <span
-                  v-if="slotProps.option.hex"
-                  class="h-3 w-3 shrink-0 rounded-full border border-slate-200 dark:border-slate-700"
-                  :style="{ backgroundColor: slotProps.option.hex }"
-                />
-                <span>{{ slotProps.option.label }}</span>
+              <span class="flex w-full items-center gap-2">
+                <span class="min-w-0 flex-1 truncate">
+                  {{ slotProps.option.label }}
+                </span>
+                <span class="shrink-0 text-xs text-slate-400">
+                  {{ slotProps.option.count }}
+                </span>
               </span>
             </template>
-          </Select>
+          </MultiSelect>
 
-          <Select
-            v-model="sort"
-            :options="SORT_OPTIONS"
-            option-label="label"
-            option-value="value"
-            size="small"
-            class="w-48"
-          />
+          <Button
+            severity="secondary"
+            title="Add filter"
+            aria-label="Add filter"
+            @click="toggleFilterPopover"
+          >
+            <template #icon><Plus :size="16" /></template>
+          </Button>
+
+          <Popover ref="filterPopover">
+            <div class="w-56 p-1">
+              <p
+                class="px-2 py-1 text-xs font-semibold tracking-wide text-slate-400 uppercase"
+              >
+                Add filter
+              </p>
+              <button
+                v-for="filter in availableOptionalFilters"
+                :key="filter.key"
+                type="button"
+                class="flex w-full items-center rounded px-2 py-1.5 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
+                @click="addFilter(filter.key)"
+              >
+                {{ filter.label }}
+              </button>
+              <p
+                v-if="!availableOptionalFilters.length"
+                class="px-2 py-1 text-sm text-slate-400"
+              >
+                All filters are shown.
+              </p>
+            </div>
+          </Popover>
+
+          <div
+            v-if="visibleFilters.includes('color')"
+            class="flex items-center gap-1"
+          >
+            <MultiSelect
+              v-model="colorFilter"
+              :options="COLOR_OPTIONS"
+              option-label="label"
+              option-value="value"
+              display="chip"
+              placeholder="Colors"
+              filter
+              showClear
+              :max-selected-labels="2"
+              class="w-40"
+              title="Filter images where a color covers at least 10% of the image"
+            >
+              <template #option="slotProps">
+                <span class="flex items-center gap-2">
+                  <span
+                    v-if="slotProps.option.hex"
+                    class="h-3 w-3 shrink-0 rounded-full border border-slate-200 dark:border-slate-700"
+                    :style="{ backgroundColor: slotProps.option.hex }"
+                  />
+                  <span>{{ slotProps.option.label }}</span>
+                </span>
+              </template>
+            </MultiSelect>
+            <button
+              type="button"
+              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+              title="Remove color filter"
+              @click="removeFilter('color')"
+            >
+              <Times :size="14" />
+            </button>
+          </div>
+
+          <div
+            v-if="visibleFilters.includes('mime')"
+            class="flex items-center gap-1"
+          >
+            <MultiSelect
+              v-model="mimeFilter"
+              :options="mimeOptions"
+              option-label="label"
+              option-value="value"
+              display="chip"
+              placeholder="MIME types"
+              filter
+              showClear
+              :max-selected-labels="2"
+              class="w-64"
+            >
+              <template #option="slotProps">
+                <span class="flex w-full items-center gap-2">
+                  <span class="min-w-0 flex-1 truncate">
+                    {{ slotProps.option.label }}
+                  </span>
+                  <span class="shrink-0 text-xs text-slate-400">
+                    {{ slotProps.option.count }}
+                  </span>
+                </span>
+              </template>
+            </MultiSelect>
+            <button
+              type="button"
+              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+              title="Remove MIME type filter"
+              @click="removeFilter('mime')"
+            >
+              <Times :size="14" />
+            </button>
+          </div>
+
+          <div
+            v-if="visibleFilters.includes('uploader')"
+            class="flex items-center gap-1"
+          >
+            <MultiSelect
+              v-model="uploaderFilter"
+              :options="uploaderOptions"
+              option-label="label"
+              option-value="value"
+              display="chip"
+              placeholder="Uploaded by"
+              filter
+              showClear
+              :max-selected-labels="2"
+              class="w-48"
+            />
+            <button
+              type="button"
+              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+              title="Remove uploader filter"
+              @click="removeFilter('uploader')"
+            >
+              <Times :size="14" />
+            </button>
+          </div>
+
+          <div
+            v-if="visibleFilters.includes('size')"
+            class="flex items-center gap-1"
+          >
+            <span class="text-xs font-medium text-slate-500">Size (MB)</span>
+            <InputNumber
+              v-model="minSize"
+              :min="0"
+              :max-fraction-digits="1"
+              :use-grouping="false"
+              showClear
+              placeholder="Min"
+              class="w-24"
+            />
+            <span class="text-slate-400">–</span>
+            <InputNumber
+              v-model="maxSize"
+              :min="0"
+              :max-fraction-digits="1"
+              :use-grouping="false"
+              showClear
+              placeholder="Max"
+              class="w-24"
+            />
+            <button
+              type="button"
+              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+              title="Remove size filter"
+              @click="removeFilter('size')"
+            >
+              <Times :size="14" />
+            </button>
+          </div>
+
+          <div
+            v-if="visibleFilters.includes('duration')"
+            class="flex items-center gap-1"
+          >
+            <span class="text-xs font-medium text-slate-500">Duration (s)</span>
+            <InputNumber
+              v-model="minDuration"
+              :min="0"
+              :max-fraction-digits="1"
+              :use-grouping="false"
+              showClear
+              placeholder="Min"
+              class="w-24"
+            />
+            <span class="text-slate-400">–</span>
+            <InputNumber
+              v-model="maxDuration"
+              :min="0"
+              :max-fraction-digits="1"
+              :use-grouping="false"
+              showClear
+              placeholder="Max"
+              class="w-24"
+            />
+            <button
+              type="button"
+              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+              title="Remove duration filter"
+              @click="removeFilter('duration')"
+            >
+              <Times :size="14" />
+            </button>
+          </div>
+
+          <div
+            v-if="visibleFilters.includes('pages')"
+            class="flex items-center gap-1"
+          >
+            <span class="text-xs font-medium text-slate-500">Pages</span>
+            <InputNumber
+              v-model="minPages"
+              :min="0"
+              :max-fraction-digits="0"
+              :use-grouping="false"
+              showClear
+              placeholder="Min"
+              class="w-20"
+            />
+            <span class="text-slate-400">–</span>
+            <InputNumber
+              v-model="maxPages"
+              :min="0"
+              :max-fraction-digits="0"
+              :use-grouping="false"
+              showClear
+              placeholder="Max"
+              class="w-20"
+            />
+            <button
+              type="button"
+              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+              title="Remove pages filter"
+              @click="removeFilter('pages')"
+            >
+              <Times :size="14" />
+            </button>
+          </div>
+
+          <div
+            v-if="visibleFilters.includes('dimensions')"
+            class="flex flex-wrap items-center gap-1"
+          >
+            <span class="text-xs font-medium text-slate-500">Dimensions</span>
+            <InputNumber
+              v-model="minWidth"
+              :min="0"
+              :max-fraction-digits="0"
+              :use-grouping="false"
+              showClear
+              placeholder="W min"
+              class="w-20"
+            />
+            <InputNumber
+              v-model="maxWidth"
+              :min="0"
+              :max-fraction-digits="0"
+              :use-grouping="false"
+              showClear
+              placeholder="W max"
+              class="w-20"
+            />
+            <InputNumber
+              v-model="minHeight"
+              :min="0"
+              :max-fraction-digits="0"
+              :use-grouping="false"
+              showClear
+              placeholder="H min"
+              class="w-20"
+            />
+            <InputNumber
+              v-model="maxHeight"
+              :min="0"
+              :max-fraction-digits="0"
+              :use-grouping="false"
+              showClear
+              placeholder="H max"
+              class="w-20"
+            />
+            <button
+              type="button"
+              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+              title="Remove dimensions filter"
+              @click="removeFilter('dimensions')"
+            >
+              <Times :size="14" />
+            </button>
+          </div>
+
+          <div
+            v-if="visibleFilters.includes('added')"
+            class="flex flex-wrap items-center gap-1"
+          >
+            <span class="text-xs font-medium text-slate-500">Added</span>
+            <DatePicker
+              v-model="addedAfter"
+              showClear
+              showIcon
+              date-format="yy-mm-dd"
+              placeholder="From"
+              class="w-36"
+            />
+            <span class="text-slate-400">–</span>
+            <DatePicker
+              v-model="addedBefore"
+              showClear
+              showIcon
+              date-format="yy-mm-dd"
+              placeholder="To"
+              class="w-36"
+            />
+            <button
+              type="button"
+              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+              title="Remove added date filter"
+              @click="removeFilter('added')"
+            >
+              <Times :size="14" />
+            </button>
+          </div>
+
+          <div
+            v-if="visibleFilters.includes('modified')"
+            class="flex flex-wrap items-center gap-1"
+          >
+            <span class="text-xs font-medium text-slate-500">Modified</span>
+            <DatePicker
+              v-model="modifiedAfter"
+              showClear
+              showIcon
+              date-format="yy-mm-dd"
+              placeholder="From"
+              class="w-36"
+            />
+            <span class="text-slate-400">–</span>
+            <DatePicker
+              v-model="modifiedBefore"
+              showClear
+              showIcon
+              date-format="yy-mm-dd"
+              placeholder="To"
+              class="w-36"
+            />
+            <button
+              type="button"
+              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+              title="Remove modified date filter"
+              @click="removeFilter('modified')"
+            >
+              <Times :size="14" />
+            </button>
+          </div>
 
           <IconField class="w-60">
             <InputIcon>
@@ -1611,7 +2288,6 @@ onBeforeUnmount(() => {
             </InputIcon>
             <InputText
               v-model="searchInput"
-              size="small"
               placeholder="Search assets…"
               title="Search title, note, and filename"
               class="w-full"
@@ -1641,6 +2317,50 @@ onBeforeUnmount(() => {
             class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-violet-600 dark:border-slate-700 dark:border-t-violet-400"
             title="Refreshing assets"
           ></span>
+
+          <Button
+            severity="secondary"
+            title="Sort"
+            aria-label="Sort"
+            @click="toggleSort"
+          >
+            <template #icon><SortAlt :size="16" /></template>
+          </Button>
+
+          <Popover ref="sortPopover">
+            <div class="w-56 space-y-3">
+              <div>
+                <p
+                  class="mb-1.5 text-xs font-semibold tracking-wide text-slate-400 uppercase"
+                >
+                  Sort by
+                </p>
+                <Select
+                  v-model="sortField"
+                  :options="SORT_FIELDS"
+                  option-label="label"
+                  option-value="value"
+                  class="w-full"
+                />
+              </div>
+              <div>
+                <p
+                  class="mb-1.5 text-xs font-semibold tracking-wide text-slate-400 uppercase"
+                >
+                  Direction
+                </p>
+                <SelectButton
+                  v-model="sortDirection"
+                  :options="SORT_DIRECTIONS"
+                  option-label="label"
+                  option-value="value"
+                  :allow-empty="false"
+                  size="small"
+                  class="w-full"
+                />
+              </div>
+            </div>
+          </Popover>
 
           <Button
             severity="secondary"
@@ -1695,7 +2415,7 @@ onBeforeUnmount(() => {
                 <div class="space-y-3">
                   <div>
                     <div class="mb-1 flex items-center justify-between">
-                      <span class="text-sm font-medium">Grid gap</span>
+                      <span class="text-xs font-medium">Grid gap</span>
                       <span class="text-xs text-slate-400">
                         {{ gridGapPx }}px
                       </span>
@@ -1712,7 +2432,7 @@ onBeforeUnmount(() => {
                   </div>
                   <div>
                     <div class="mb-1 flex items-center justify-between">
-                      <span class="text-sm font-medium">Around gap</span>
+                      <span class="text-xs font-medium">Around gap</span>
                       <span class="text-xs text-slate-400">
                         {{ aroundGapPx }}px
                       </span>
@@ -1748,24 +2468,68 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="space-y-2">
                   <div class="flex items-center justify-between">
-                    <span class="text-sm font-medium">Extension</span>
+                    <span class="text-xs font-medium">Extension</span>
                     <ToggleSwitch v-model="showExtension" />
                   </div>
                   <div class="flex items-center justify-between">
-                    <span class="text-sm font-medium">Name</span>
+                    <span class="text-xs font-medium">Name</span>
                     <ToggleSwitch v-model="showName" />
                   </div>
                   <div class="flex items-center justify-between">
-                    <span class="text-sm font-medium">Size</span>
+                    <span class="text-xs font-medium">Size</span>
                     <ToggleSwitch v-model="showSize" />
                   </div>
                   <div class="flex items-center justify-between">
-                    <span class="text-sm font-medium">Dimensions</span>
+                    <span class="text-xs font-medium">Dimensions</span>
                     <ToggleSwitch v-model="showDimensions" />
                   </div>
                   <div class="flex items-center justify-between">
-                    <span class="text-sm font-medium">Duration</span>
+                    <span class="text-xs font-medium">Duration</span>
                     <ToggleSwitch v-model="showDuration" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
+                <p
+                  class="mb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
+                >
+                  Panels
+                </p>
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-medium">Sidebar</span>
+                    <ToggleSwitch v-model="showSidebar" />
+                  </div>
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-medium">Toolbar</span>
+                    <ToggleSwitch v-model="showToolbar" />
+                  </div>
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-medium">Bottom bar</span>
+                    <ToggleSwitch v-model="showBottombar" />
+                  </div>
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-medium">Inspector</span>
+                    <ToggleSwitch v-model="showInspector" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
+                <p
+                  class="mb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
+                >
+                  Sidebar sections
+                </p>
+                <div class="space-y-2">
+                  <div
+                    v-for="toggle in SIDEBAR_TOGGLES"
+                    :key="toggle.key"
+                    class="flex items-center justify-between"
+                  >
+                    <span class="text-xs font-medium">{{ toggle.label }}</span>
+                    <ToggleSwitch v-model="sidebarPrefs[toggle.key]" />
                   </div>
                 </div>
               </div>
@@ -1791,11 +2555,11 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="space-y-2">
                   <div class="flex items-center justify-between">
-                    <span class="text-sm font-medium">Audio</span>
+                    <span class="text-xs font-medium">Audio</span>
                     <ToggleSwitch v-model="playAudioOnHover" />
                   </div>
                   <div class="flex items-center justify-between">
-                    <span class="text-sm font-medium">Video</span>
+                    <span class="text-xs font-medium">Video</span>
                     <ToggleSwitch v-model="playVideoOnHover" />
                   </div>
                 </div>
@@ -1832,7 +2596,7 @@ onBeforeUnmount(() => {
         <div v-show="!editingAsset" class="relative min-h-0 flex-1">
           <div
             ref="gridContainer"
-            class="h-full overflow-y-auto py-1.5"
+            class="relative h-full overflow-y-auto py-1.5"
             :style="{
               paddingLeft: `${aroundGapPx}px`,
               paddingRight: `${aroundGapPx}px`,
@@ -1840,12 +2604,14 @@ onBeforeUnmount(() => {
             @mousedown="onLassoStart"
             @scroll.passive="onGridScroll"
           >
-          <Transition
-            name="grid-fade"
-            mode="out-in"
-            @after-enter="updateLoadMoreObserver"
-          >
-            <div :key="gridRevision">
+          <Transition name="grid-fade" @after-enter="updateLoadMoreObserver">
+            <div
+              :key="gridRevision"
+              :style="{
+                '--grid-inline-gap': `${aroundGapPx}px`,
+                '--grid-scroll-top': `${transitionScrollTop}px`,
+              }"
+            >
               <div
                 v-if="loading && !loadedOnce"
                 class="flex items-center justify-center py-16"
@@ -2137,8 +2903,15 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.grid-fade-enter-active,
 .grid-fade-leave-active {
+  position: absolute;
+  inset-inline: var(--grid-inline-gap, 0);
+  top: calc(var(--grid-scroll-top, 0px) + 0.375rem);
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.grid-fade-enter-active {
   transition: opacity 120ms ease;
 }
 

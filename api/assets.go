@@ -18,27 +18,36 @@ import (
 func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	filter := domain.AssetFilter{
-		Search: q.Get("search"),
-		Type:   q.Get("type"),
-		Color:  q.Get("color"),
-		Sort:   q.Get("sort"),
-		Cursor: q.Get("cursor"),
+		Search:         q.Get("search"),
+		Sort:           q.Get("sort"),
+		Cursor:         q.Get("cursor"),
+		CollectionIDs:  append(parseCSV(q.Get("collection_ids")), parseCSV(q.Get("collection_id"))...),
+		Types:          append(parseCSV(q.Get("types")), parseCSV(q.Get("type"))...),
+		Colors:         append(parseCSV(q.Get("colors")), parseCSV(q.Get("color"))...),
+		MimeTypes:      append(parseCSV(q.Get("mime_types")), parseCSV(q.Get("mime"))...),
+		UploadedBy:     parseCSV(q.Get("uploaded_by")),
+		MinDuration:    parseFloatPtr(q.Get("min_duration")),
+		MaxDuration:    parseFloatPtr(q.Get("max_duration")),
+		MinPages:       parseIntPtr(q.Get("min_pages")),
+		MaxPages:       parseIntPtr(q.Get("max_pages")),
+		MinWidth:       parseIntPtr(q.Get("min_width")),
+		MaxWidth:       parseIntPtr(q.Get("max_width")),
+		MinHeight:      parseIntPtr(q.Get("min_height")),
+		MaxHeight:      parseIntPtr(q.Get("max_height")),
+		MinSize:        parseInt64Ptr(q.Get("min_size")),
+		MaxSize:        parseInt64Ptr(q.Get("max_size")),
+		AddedAfter:     parseDatePtr(q.Get("added_after"), false),
+		AddedBefore:    parseDatePtr(q.Get("added_before"), true),
+		ModifiedAfter:  parseDatePtr(q.Get("modified_after"), false),
+		ModifiedBefore: parseDatePtr(q.Get("modified_before"), true),
 	}
 	if value := q.Get("limit"); value != "" {
 		if limit, err := strconv.Atoi(value); err == nil {
 			filter.Limit = limit
 		}
 	}
-	if v := q.Get("collection_id"); v != "" {
-		filter.CollectionID = &v
-	}
 	for _, raw := range []string{q.Get("tag_ids"), q.Get("tag_id")} {
-		for _, id := range strings.Split(raw, ",") {
-			id = strings.TrimSpace(id)
-			if id != "" {
-				filter.TagIDs = append(filter.TagIDs, id)
-			}
-		}
+		filter.TagIDs = append(filter.TagIDs, parseCSV(raw)...)
 	}
 	filter.Uncategorized = q.Get("uncategorized") == "true"
 	filter.Untagged = q.Get("untagged") == "true"
@@ -49,6 +58,66 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+func parseCSV(raw string) []string {
+	values := make([]string, 0, 4)
+	seen := make(map[string]bool, 4)
+	for _, value := range strings.Split(raw, ",") {
+		value = strings.TrimSpace(value)
+		if value != "" && !seen[value] {
+			seen[value] = true
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
+func parseFloatPtr(raw string) *float64 {
+	if raw == "" {
+		return nil
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return nil
+	}
+	return &value
+}
+
+func parseIntPtr(raw string) *int {
+	if raw == "" {
+		return nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return nil
+	}
+	return &value
+}
+
+func parseInt64Ptr(raw string) *int64 {
+	if raw == "" {
+		return nil
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return nil
+	}
+	return &value
+}
+
+func parseDatePtr(raw string, endOfDay bool) *time.Time {
+	if raw == "" {
+		return nil
+	}
+	value, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return nil
+	}
+	if endOfDay {
+		value = value.Add(24 * time.Hour)
+	}
+	return &value
 }
 
 func (s *Server) handleGetAsset(w http.ResponseWriter, r *http.Request) {

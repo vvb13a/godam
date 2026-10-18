@@ -10,6 +10,7 @@ import type {
   Tag,
   TagGroup,
   User,
+  UserOption,
 } from '../types'
 
 // Auth endpoints legitimately return 401 (bad/absent credentials); every other
@@ -64,6 +65,10 @@ function sendJSON<T>(url: string, method: string, body: unknown): Promise<T> {
 
 export function getMe(): Promise<User> {
   return getJSON<User>('/api/auth/me')
+}
+
+export function listUsers(): Promise<UserOption[]> {
+  return getJSON<UserOption[]>('/api/users')
 }
 
 export function login(email: string, password: string): Promise<User> {
@@ -174,13 +179,29 @@ export function getStats(): Promise<Stats> {
 }
 
 export interface AssetListParams {
-  collectionId?: string
+  collectionIds?: string[]
   tagIds?: string[]
   uncategorized?: boolean
   untagged?: boolean
   search?: string
-  type?: string
-  color?: string
+  types?: string[]
+  colors?: string[]
+  mimeTypes?: string[]
+  uploadedBy?: string[]
+  minDuration?: number | null
+  maxDuration?: number | null
+  minPages?: number | null
+  maxPages?: number | null
+  minWidth?: number | null
+  maxWidth?: number | null
+  minHeight?: number | null
+  maxHeight?: number | null
+  minSize?: number | null
+  maxSize?: number | null
+  addedAfter?: string
+  addedBefore?: string
+  modifiedAfter?: string
+  modifiedBefore?: string
   sort?: string
   cursor?: string
   limit?: number
@@ -196,17 +217,47 @@ export interface AssetPage {
 
 export function listAssets(params: AssetListParams): Promise<AssetPage> {
   const query = new URLSearchParams()
-  if (params.collectionId) query.set('collection_id', params.collectionId)
+  if (params.collectionIds?.length) {
+    query.set('collection_ids', params.collectionIds.join(','))
+  }
   if (params.tagIds?.length) query.set('tag_ids', params.tagIds.join(','))
   if (params.uncategorized) query.set('uncategorized', 'true')
   if (params.untagged) query.set('untagged', 'true')
   if (params.search) query.set('search', params.search)
-  if (params.type) query.set('type', params.type)
-  if (params.color) query.set('color', params.color)
+  if (params.types?.length) query.set('types', params.types.join(','))
+  if (params.colors?.length) query.set('colors', params.colors.join(','))
+  if (params.mimeTypes?.length) query.set('mime_types', params.mimeTypes.join(','))
+  if (params.uploadedBy?.length) {
+    query.set('uploaded_by', params.uploadedBy.join(','))
+  }
+  setNumberParam(query, 'min_duration', params.minDuration)
+  setNumberParam(query, 'max_duration', params.maxDuration)
+  setNumberParam(query, 'min_pages', params.minPages)
+  setNumberParam(query, 'max_pages', params.maxPages)
+  setNumberParam(query, 'min_width', params.minWidth)
+  setNumberParam(query, 'max_width', params.maxWidth)
+  setNumberParam(query, 'min_height', params.minHeight)
+  setNumberParam(query, 'max_height', params.maxHeight)
+  setNumberParam(query, 'min_size', params.minSize)
+  setNumberParam(query, 'max_size', params.maxSize)
+  if (params.addedAfter) query.set('added_after', params.addedAfter)
+  if (params.addedBefore) query.set('added_before', params.addedBefore)
+  if (params.modifiedAfter) query.set('modified_after', params.modifiedAfter)
+  if (params.modifiedBefore) query.set('modified_before', params.modifiedBefore)
   if (params.sort) query.set('sort', params.sort)
   if (params.cursor) query.set('cursor', params.cursor)
   if (params.limit) query.set('limit', String(params.limit))
   return getJSON<AssetPage>(`/api/assets?${query.toString()}`)
+}
+
+function setNumberParam(
+  query: URLSearchParams,
+  key: string,
+  value: number | null | undefined,
+): void {
+  if (value !== null && value !== undefined && Number.isFinite(value)) {
+    query.set(key, String(value))
+  }
 }
 
 export async function listAllAssets(

@@ -115,7 +115,7 @@ func TestAssetListPagination(t *testing.T) {
 		{"document", 2},
 		{"other", 0},
 	} {
-		page, err := assets.List(ctx, domain.AssetFilter{Type: tc.kind})
+		page, err := assets.List(ctx, domain.AssetFilter{Types: []string{tc.kind}})
 		if err != nil {
 			t.Fatalf("type %q: %v", tc.kind, err)
 		}
@@ -261,7 +261,7 @@ func TestAssetListColorFilter(t *testing.T) {
 	})
 
 	for bucket, want := range map[string]string{"red": "color-red", "blue": "color-blue", "green": "color-mixed", "yellow": "color-mixed"} {
-		page, err := assets.List(ctx, domain.AssetFilter{Color: bucket})
+		page, err := assets.List(ctx, domain.AssetFilter{Colors: []string{bucket}})
 		if err != nil {
 			t.Fatalf("filter %s: %v", bucket, err)
 		}
@@ -270,9 +270,12 @@ func TestAssetListColorFilter(t *testing.T) {
 		}
 	}
 	for _, bucket := range []string{"black", "brown"} {
-		if page, err := assets.List(ctx, domain.AssetFilter{Color: bucket}); err != nil || page.Total != 0 {
+		if page, err := assets.List(ctx, domain.AssetFilter{Colors: []string{bucket}}); err != nil || page.Total != 0 {
 			t.Fatalf("%s filter = %+v err=%v", bucket, page, err)
 		}
+	}
+	if page, err := assets.List(ctx, domain.AssetFilter{Colors: []string{"red", "blue"}}); err != nil || page.Total != 2 {
+		t.Fatalf("red OR blue filter = %+v err=%v", page, err)
 	}
 }
 
@@ -297,7 +300,7 @@ func TestAssetListColorFilterAggregatesBucketPercentages(t *testing.T) {
 		{Hex: "#cc0000", Bucket: "red", Percentage: 4},
 	})
 
-	page, err := assets.List(ctx, domain.AssetFilter{Color: "red"})
+	page, err := assets.List(ctx, domain.AssetFilter{Colors: []string{"red"}})
 	if err != nil {
 		t.Fatalf("filter red: %v", err)
 	}
@@ -328,11 +331,11 @@ func TestAssetListColorFilterIgnoresMinorRedShare(t *testing.T) {
 		{Hex: "#351c20", Bucket: "black", Percentage: 0.9},
 	})
 
-	if page, err := assets.List(ctx, domain.AssetFilter{Color: "red"}); err != nil || page.Total != 0 {
+	if page, err := assets.List(ctx, domain.AssetFilter{Colors: []string{"red"}}); err != nil || page.Total != 0 {
 		t.Fatalf("red filter = %+v err=%v", page, err)
 	}
 	for _, bucket := range []string{"white", "gray"} {
-		if page, err := assets.List(ctx, domain.AssetFilter{Color: bucket}); err != nil || page.Total != 1 {
+		if page, err := assets.List(ctx, domain.AssetFilter{Colors: []string{bucket}}); err != nil || page.Total != 1 {
 			t.Fatalf("%s filter = %+v err=%v", bucket, page, err)
 		}
 	}
@@ -358,10 +361,10 @@ func TestAssetListColorFilterIgnoresMinorSecondaryBuckets(t *testing.T) {
 		{Hex: "#b79573", Bucket: "orange", Percentage: 2.0},
 	})
 
-	if page, err := assets.List(ctx, domain.AssetFilter{Color: "orange"}); err != nil || page.Total != 0 {
+	if page, err := assets.List(ctx, domain.AssetFilter{Colors: []string{"orange"}}); err != nil || page.Total != 0 {
 		t.Fatalf("orange filter = %+v err=%v", page, err)
 	}
-	if page, err := assets.List(ctx, domain.AssetFilter{Color: "brown"}); err != nil || page.Total != 1 {
+	if page, err := assets.List(ctx, domain.AssetFilter{Colors: []string{"brown"}}); err != nil || page.Total != 1 {
 		t.Fatalf("brown filter = %+v err=%v", page, err)
 	}
 }
@@ -391,4 +394,107 @@ func TestRecomputeColorBuckets(t *testing.T) {
 	if stored[0].Bucket != "black" || stored[1].Bucket != "white" {
 		t.Fatalf("buckets = %q, %q", stored[0].Bucket, stored[1].Bucket)
 	}
+}
+
+func TestAssetListMultiValueAndRangeFilters(t *testing.T) {
+	db := newTestDB(t)
+	assets := &AssetService{db: db}
+	ctx := context.Background()
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	u1, u2 := "u1", "u2"
+	d10, d20 := 10.0, 20.0
+	p5, p10 := 5, 10
+	w100, w200, w300 := 100, 200, 300
+	h50, h100, h150 := 50, 100, 150
+
+	rows := []store.Asset{
+		{ID: "a1", Filename: "a1.png", UploadedBy: &u1, MimeType: "image/png", ByteSize: 100, Width: &w100, Height: &h50, DurationSec: &d10, CreatedAt: base, UpdatedAt: base},
+		{ID: "a2", Filename: "a2.pdf", UploadedBy: &u2, MimeType: "application/pdf", ByteSize: 200, Width: &w200, Height: &h100, DurationSec: &d20, PageCount: &p5, CreatedAt: base.Add(24 * time.Hour), UpdatedAt: base.Add(24 * time.Hour)},
+		{ID: "a3", Filename: "a3.txt", UploadedBy: &u1, MimeType: "text/plain", ByteSize: 300, Width: &w300, Height: &h150, PageCount: &p10, CreatedAt: base.Add(48 * time.Hour), UpdatedAt: base.Add(48 * time.Hour)},
+	}
+	for i := range rows {
+		rows[i].StorageDriver = "local"
+		rows[i].StorageKey = rows[i].ID
+		if err := db.Create(&rows[i]).Error; err != nil {
+			t.Fatalf("create %s: %v", rows[i].ID, err)
+		}
+	}
+	for _, collection := range []store.Collection{
+		{ID: "c1", Name: "C1", CreatedAt: base, UpdatedAt: base},
+		{ID: "c2", Name: "C2", CreatedAt: base, UpdatedAt: base},
+	} {
+		if err := db.Create(&collection).Error; err != nil {
+			t.Fatalf("create collection: %v", err)
+		}
+	}
+	for _, tag := range []store.Tag{
+		{ID: "t1", Name: "T1", CreatedAt: base, UpdatedAt: base},
+		{ID: "t2", Name: "T2", CreatedAt: base, UpdatedAt: base},
+	} {
+		if err := db.Create(&tag).Error; err != nil {
+			t.Fatalf("create tag: %v", err)
+		}
+	}
+	for _, link := range []struct{ asset, collection string }{{"a1", "c1"}, {"a2", "c2"}} {
+		if err := db.Exec("INSERT INTO asset_collections (asset_id, collection_id) VALUES (?, ?)", link.asset, link.collection).Error; err != nil {
+			t.Fatalf("link collection: %v", err)
+		}
+	}
+	for _, link := range []struct{ asset, tag string }{{"a1", "t1"}, {"a2", "t2"}} {
+		if err := db.Exec("INSERT INTO asset_tags (asset_id, tag_id) VALUES (?, ?)", link.asset, link.tag).Error; err != nil {
+			t.Fatalf("link tag: %v", err)
+		}
+	}
+
+	ids := func(filter domain.AssetFilter) map[string]bool {
+		t.Helper()
+		page, err := assets.List(ctx, filter)
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		found := make(map[string]bool, len(page.Items))
+		for _, asset := range page.Items {
+			found[asset.ID] = true
+		}
+		return found
+	}
+	expect := func(filter domain.AssetFilter, want ...string) {
+		t.Helper()
+		got := ids(filter)
+		if len(got) != len(want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+		for _, id := range want {
+			if !got[id] {
+				t.Fatalf("got %v, want %v", got, want)
+			}
+		}
+	}
+
+	expect(domain.AssetFilter{CollectionIDs: []string{"c1", "c2"}}, "a1", "a2")
+	expect(domain.AssetFilter{CollectionIDs: []string{"c1"}, Uncategorized: true}, "a1", "a3")
+	expect(domain.AssetFilter{TagIDs: []string{"t1", "t2"}}, "a1", "a2")
+	expect(domain.AssetFilter{TagIDs: []string{"t1"}, Untagged: true}, "a1", "a3")
+	expect(domain.AssetFilter{Types: []string{"image", "video"}}, "a1")
+	expect(domain.AssetFilter{Types: []string{"image", "document"}}, "a1", "a2", "a3")
+	expect(domain.AssetFilter{MimeTypes: []string{"image/png", "application/pdf"}}, "a1", "a2")
+	expect(domain.AssetFilter{UploadedBy: []string{"u1"}}, "a1", "a3")
+
+	minSize, maxSize := int64(150), int64(250)
+	expect(domain.AssetFilter{MinSize: &minSize, MaxSize: &maxSize}, "a2")
+	minDuration := 15.0
+	expect(domain.AssetFilter{MinDuration: &minDuration}, "a2")
+	minPages, maxPages := 5, 5
+	expect(domain.AssetFilter{MinPages: &minPages, MaxPages: &maxPages}, "a2")
+	minWidth, maxWidth := 150, 250
+	expect(domain.AssetFilter{MinWidth: &minWidth, MaxWidth: &maxWidth}, "a2")
+	maxHeight := 100
+	expect(domain.AssetFilter{MaxHeight: &maxHeight}, "a1", "a2")
+
+	addedAfter := base.Add(24 * time.Hour)
+	expect(domain.AssetFilter{AddedAfter: &addedAfter}, "a2", "a3")
+	addedBefore := base.Add(48 * time.Hour)
+	expect(domain.AssetFilter{AddedBefore: &addedBefore}, "a1", "a2")
+	modifiedAfter := base.Add(24 * time.Hour)
+	expect(domain.AssetFilter{ModifiedAfter: &modifiedAfter}, "a2", "a3")
 }

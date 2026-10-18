@@ -4,14 +4,11 @@ import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Popover from 'primevue/popover'
 import SelectButton from 'primevue/selectbutton'
-import ToggleSwitch from 'primevue/toggleswitch'
 import { useToast } from 'primevue/usetoast'
 import {
-  ChevronRight,
   CloudUpload,
   Cog,
   SignOut,
-  SlidersH,
   UserEdit,
 } from '@primeicons/vue'
 import { computed, ref, watch } from 'vue'
@@ -20,7 +17,6 @@ import { auth, changePassword, logout, updateProfile } from '../lib/auth'
 import { openBackupSettings } from '../lib/backupSettings'
 import { openUploadSettings } from '../lib/uploadSettings'
 import { openCommandMenu } from '../lib/command'
-import { SIDEBAR_TOGGLES, sidebarPrefs } from '../lib/sidebar'
 import { openUserSettings, userSettingsDialog } from '../lib/userSettings'
 import {
   THEME_OPTIONS,
@@ -34,7 +30,6 @@ const router = useRouter()
 const toast = useToast()
 
 const menu = ref<InstanceType<typeof Popover> | null>(null)
-const displayMenu = ref<InstanceType<typeof Popover> | null>(null)
 
 const themeMode = computed<ThemeMode>({
   get: () => theme.mode,
@@ -59,11 +54,6 @@ function toMessage(e: unknown): string {
 
 function toggle(event: Event): void {
   menu.value?.toggle(event)
-}
-
-function openDisplayMenu(event: Event): void {
-  menu.value?.hide()
-  displayMenu.value?.toggle(event)
 }
 
 function openUploadSettingsMenu(): void {
@@ -197,15 +187,6 @@ async function doLogout(): Promise<void> {
           <CloudUpload :size="14" />
           <span>Storage &amp; backup</span>
         </button>
-        <button
-          type="button"
-          class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-          @click="openDisplayMenu"
-        >
-          <SlidersH :size="14" />
-          <span class="flex-1 text-left">Panel display</span>
-          <ChevronRight :size="12" class="shrink-0 text-slate-400" />
-        </button>
         <div class="my-1 border-t border-slate-100 dark:border-slate-800" />
         <div class="px-2 py-1">
           <p
@@ -232,24 +213,6 @@ async function doLogout(): Promise<void> {
           <SignOut :size="14" />
           <span>Sign out</span>
         </button>
-      </div>
-    </Popover>
-
-    <Popover ref="displayMenu">
-      <div class="w-56">
-        <p
-          class="px-2 pt-1 pb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
-        >
-          Panels
-        </p>
-        <div
-          v-for="toggle in SIDEBAR_TOGGLES"
-          :key="toggle.key"
-          class="flex items-center justify-between gap-3 rounded px-2 py-1.5"
-        >
-          <span class="text-sm text-slate-600 dark:text-slate-300">{{ toggle.label }}</span>
-          <ToggleSwitch v-model="sidebarPrefs[toggle.key]" />
-        </div>
       </div>
     </Popover>
 
