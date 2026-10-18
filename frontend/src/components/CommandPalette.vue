@@ -381,6 +381,7 @@ const emptyFilterMessage = computed(() =>
   <Dialog
     v-model:visible="commandMenu.visible"
     modal
+    dismissable-mask
     :show-header="false"
     :draggable="false"
     :style="{ width: '44rem' }"

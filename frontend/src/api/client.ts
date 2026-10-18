@@ -178,15 +178,49 @@ export interface AssetListParams {
   tagIds?: string[]
   uncategorized?: boolean
   untagged?: boolean
+  search?: string
+  type?: string
+  color?: string
+  sort?: string
+  cursor?: string
+  limit?: number
 }
 
-export function listAssets(params: AssetListParams): Promise<Asset[]> {
+export interface AssetPage {
+  items: Asset[]
+  next_cursor?: string
+  total: number
+  total_bytes: number
+  total_capped: boolean
+}
+
+export function listAssets(params: AssetListParams): Promise<AssetPage> {
   const query = new URLSearchParams()
   if (params.collectionId) query.set('collection_id', params.collectionId)
   if (params.tagIds?.length) query.set('tag_ids', params.tagIds.join(','))
   if (params.uncategorized) query.set('uncategorized', 'true')
   if (params.untagged) query.set('untagged', 'true')
-  return getJSON<Asset[]>(`/api/assets?${query.toString()}`)
+  if (params.search) query.set('search', params.search)
+  if (params.type) query.set('type', params.type)
+  if (params.color) query.set('color', params.color)
+  if (params.sort) query.set('sort', params.sort)
+  if (params.cursor) query.set('cursor', params.cursor)
+  if (params.limit) query.set('limit', String(params.limit))
+  return getJSON<AssetPage>(`/api/assets?${query.toString()}`)
+}
+
+export async function listAllAssets(
+  params: AssetListParams,
+  max = 2000,
+): Promise<Asset[]> {
+  const items: Asset[] = []
+  let cursor: string | undefined
+  do {
+    const page = await listAssets({ ...params, cursor, limit: 200 })
+    items.push(...page.items)
+    cursor = page.next_cursor || undefined
+  } while (cursor && items.length < max)
+  return items.slice(0, max)
 }
 
 export function getAsset(id: string): Promise<Asset> {

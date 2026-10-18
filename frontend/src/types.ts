@@ -72,6 +72,12 @@ export interface SmartCollection {
   updated_at: string
 }
 
+export interface AssetColor {
+  hex: string
+  bucket: string
+  percentage: number
+}
+
 export interface AssetMetadata {
   width?: number
   height?: number
@@ -92,6 +98,7 @@ export interface Asset {
   mime_type: string
   byte_size: number
   metadata: AssetMetadata
+  colors?: AssetColor[]
   tags?: Tag[]
   collections?: Collection[]
   created_at: string

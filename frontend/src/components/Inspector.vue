@@ -198,6 +198,43 @@ function removeCollection(collectionId: string): void {
         <p v-if="saving" class="text-xs text-slate-400">Saving…</p>
       </section>
 
+      <section
+        v-if="asset.mime_type.startsWith('image/') && asset.colors?.length"
+      >
+        <h3 class="mb-2 text-sm font-semibold">Colors</h3>
+        <div
+          class="flex h-3 overflow-hidden rounded-full ring-1 ring-slate-200 dark:ring-slate-800"
+        >
+          <span
+            v-for="(color, index) in asset.colors"
+            :key="`${color.hex}-${index}`"
+            :style="{
+              width: `${color.percentage}%`,
+              backgroundColor: color.hex,
+            }"
+            :title="`${color.bucket} · ${color.percentage.toFixed(1)}%`"
+          />
+        </div>
+        <ul class="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+          <li
+            v-for="(color, index) in asset.colors"
+            :key="`${color.hex}-row-${index}`"
+            class="flex min-w-0 items-center gap-1.5"
+          >
+            <span
+              class="h-2.5 w-2.5 shrink-0 rounded-sm border border-slate-200 dark:border-slate-700"
+              :style="{ backgroundColor: color.hex }"
+            />
+            <span class="font-mono uppercase text-slate-500">
+              {{ color.hex }}
+            </span>
+            <span class="ml-auto shrink-0 text-slate-400">
+              {{ color.percentage.toFixed(1) }}%
+            </span>
+          </li>
+        </ul>
+      </section>
+
       <section>
         <div class="mb-2 flex items-center justify-between">
           <h3 class="text-sm font-semibold">Tags</h3>

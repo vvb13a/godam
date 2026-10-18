@@ -40,10 +40,10 @@ export async function loadLibraries(): Promise<void> {
   await loadInstance()
 }
 
-export async function loadInstance(): Promise<void> {
+export async function loadInstance(markLoaded = true): Promise<void> {
   const instance = await api.getInstance()
   Object.assign(library, instance)
-  library.loaded = true
+  if (markLoaded) library.loaded = true
 }
 
 export async function loadCollections(): Promise<void> {
@@ -86,13 +86,8 @@ export function resetLibrary(): void {
   clearScopedData()
 }
 
-export async function refreshLibrary(): Promise<void> {
-  if (!library.id) {
-    clearScopedData()
-    return
-  }
+async function loadScopedData(): Promise<void> {
   await Promise.all([
-    loadInstance(),
     loadCollections(),
     loadSmartCollections(),
     loadTags(),
@@ -101,10 +96,20 @@ export async function refreshLibrary(): Promise<void> {
   ])
 }
 
+export async function refreshLibrary(): Promise<void> {
+  if (!library.id) {
+    clearScopedData()
+    return
+  }
+  await Promise.all([loadInstance(), loadScopedData()])
+}
+
 export async function initLibrary(): Promise<void> {
-  await loadInstance()
+  await loadInstance(false)
   clearScopedData()
   library.version++
+  library.loaded = true
+  await loadScopedData()
 }
 
 // notifyLibraryChanged bumps the version so mounted views reload scoped data.

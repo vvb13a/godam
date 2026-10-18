@@ -30,9 +30,29 @@ type Asset struct {
 	Tags []Tag `gorm:"many2many:asset_tags;"`
 
 	Collections []Collection `gorm:"many2many:asset_collections;"`
+
+	Colors []AssetColor `gorm:"foreignKey:AssetID"`
 }
 
 func (Asset) TableName() string { return "assets" }
+
+type AssetColor struct {
+	AssetID    string  `gorm:"column:asset_id;primaryKey;type:text"`
+	Position   int     `gorm:"column:position;primaryKey"`
+	Color      string  `gorm:"column:color;type:text;not null"`
+	Bucket     string  `gorm:"column:bucket;type:text;not null;index"`
+	Percentage float64 `gorm:"column:percentage;not null"`
+}
+
+func (AssetColor) TableName() string { return "asset_colors" }
+
+func (c *AssetColor) ToDomain() domain.AssetColor {
+	return domain.AssetColor{
+		Hex:        c.Color,
+		Bucket:     c.Bucket,
+		Percentage: c.Percentage,
+	}
+}
 
 // AssetModel converts a domain asset into its row model.
 func AssetModel(a *domain.Asset) *Asset {
@@ -69,6 +89,10 @@ func (m *Asset) ToDomain() *domain.Asset {
 	for i := range m.Collections {
 		collections = append(collections, *m.Collections[i].ToDomain())
 	}
+	colors := make([]domain.AssetColor, 0, len(m.Colors))
+	for i := range m.Colors {
+		colors = append(colors, m.Colors[i].ToDomain())
+	}
 	var uploadedBy string
 	if m.UploadedBy != nil {
 		uploadedBy = *m.UploadedBy
@@ -90,6 +114,7 @@ func (m *Asset) ToDomain() *domain.Asset {
 			PageCount:   m.PageCount,
 			RawJSON:     m.RawMetadata,
 		},
+		Colors:      colors,
 		Tags:        tags,
 		Collections: collections,
 		CreatedAt:   m.CreatedAt,

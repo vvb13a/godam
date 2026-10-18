@@ -13,8 +13,8 @@ import (
 	"github.com/vvb13a/godam/store"
 )
 
-// addr is the HTTP listen address for the API and embedded frontend.
-const addr = ":8080"
+// defaultAddr is the HTTP listen address for the API and embedded frontend.
+const defaultAddr = ":8080"
 
 // version is overridden at build time with -ldflags "-X main.version=...".
 var version = "dev"
@@ -34,8 +34,13 @@ var (
 )
 
 func main() {
+	addr := os.Getenv("GODAM_ADDR")
+	if addr == "" {
+		addr = defaultAddr
+	}
 	initDependencies()
-	runServer(api.Deps{
+	go assetService.BackfillColors(context.Background())
+	runServer(addr, api.Deps{
 		Assets:           assetService,
 		Collections:      collectionService,
 		SmartCollections: smartCollectionService,
@@ -53,7 +58,7 @@ func main() {
 
 // runServer starts the HTTP server that serves both the JSON API and the
 // embedded Vue frontend.
-func runServer(deps api.Deps) {
+func runServer(addr string, deps api.Deps) {
 	frontend, err := newFrontendHandler()
 	if err != nil {
 		log.Fatalf("frontend: %v", err)

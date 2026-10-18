@@ -15,6 +15,8 @@ const props = defineProps<{
   tag?: Tag
   assets: Asset[]
   size: number
+  total?: number
+  totalCapped?: boolean
 }>()
 
 const emit = defineEmits<{ changed: [] }>()
@@ -24,7 +26,10 @@ const error = ref<string | null>(null)
 const name = ref('')
 const description = ref('')
 
-const count = computed(() => props.assets.length)
+const count = computed(() => props.total ?? props.assets.length)
+const countLabel = computed(
+  () => `${count.value}${props.totalCapped ? '+' : ''}`,
+)
 
 function tagColor(tag?: Tag): string {
   if (!tag?.group_id) return '#94a3b8'
@@ -232,7 +237,7 @@ function setColor(color: string): void {
         <dl class="space-y-1.5 text-sm">
           <div class="flex justify-between gap-4">
             <dt class="text-slate-400">Assets</dt>
-            <dd class="text-right">{{ count }}</dd>
+            <dd class="text-right">{{ countLabel }}</dd>
           </div>
           <div class="flex justify-between gap-4">
             <dt class="text-slate-400">Size</dt>

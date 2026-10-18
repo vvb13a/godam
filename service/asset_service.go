@@ -3,6 +3,8 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -15,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/vvb13a/godam/domain"
@@ -87,7 +90,13 @@ func NewAssetService(
 
 func (s *AssetService) GetByID(ctx context.Context, id string) (*domain.Asset, error) {
 	var m store.Asset
-	err := s.db.WithContext(ctx).Preload("Tags").Preload("Collections").First(&m, "id = ?", id).Error
+	err := s.db.WithContext(ctx).
+		Preload("Tags").
+		Preload("Collections").
+		Preload("Colors", func(db *gorm.DB) *gorm.DB {
+			return db.Order("position ASC")
+		}).
+		First(&m, "id = ?", id).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, domain.ErrNotFound
 	}
@@ -133,11 +142,57 @@ func (s *AssetService) uploaderNames(ctx context.Context, ids []string) map[stri
 	return names
 }
 
-func (s *AssetService) List(ctx context.Context, filter domain.AssetFilter) ([]domain.Asset, error) {
-	query := s.db.WithContext(ctx).
-		Preload("Tags").
-		Preload("Collections").
-		Order("created_at DESC")
+const (
+	defaultAssetPageSize = 100
+	maxAssetPageSize     = 200
+	maxAssetTotal        = 1000
+	minColorFilterPct    = 10.0
+)
+
+type assetSortSpec struct {
+	key       string
+	column    string
+	expr      string
+	direction string
+	kind      string
+}
+
+type assetCursor struct {
+	Sort  string `json:"sort"`
+	Value string `json:"value,omitempty"`
+	Size  int64  `json:"size,omitempty"`
+	ID    string `json:"id"`
+}
+
+func assetSort(sort string) assetSortSpec {
+	switch sort {
+	case "date-asc":
+		return assetSortSpec{"date-asc", "created_at", "created_at", "ASC", "time"}
+	case "modified-desc":
+		return assetSortSpec{"modified-desc", "updated_at", "updated_at", "DESC", "time"}
+	case "modified-asc":
+		return assetSortSpec{"modified-asc", "updated_at", "updated_at", "ASC", "time"}
+	case "name-asc":
+		return assetSortSpec{"name-asc", "filename", "filename COLLATE NOCASE", "ASC", "name"}
+	case "name-desc":
+		return assetSortSpec{"name-desc", "filename", "filename COLLATE NOCASE", "DESC", "name"}
+	case "size-desc":
+		return assetSortSpec{"size-desc", "byte_size", "byte_size", "DESC", "size"}
+	case "size-asc":
+		return assetSortSpec{"size-asc", "byte_size", "byte_size", "ASC", "size"}
+	default:
+		return assetSortSpec{"date-desc", "created_at", "created_at", "DESC", "time"}
+	}
+}
+
+func escapeLike(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `%`, `\%`)
+	value = strings.ReplaceAll(value, `_`, `\_`)
+	return value
+}
+
+func (s *AssetService) applyAssetFilters(query *gorm.DB, filter domain.AssetFilter) *gorm.DB {
 	if filter.CollectionID != nil {
 		query = query.
 			Joins("JOIN asset_collections ON asset_collections.asset_id = assets.id").
@@ -155,22 +210,286 @@ func (s *AssetService) List(ctx context.Context, filter domain.AssetFilter) ([]d
 	if filter.Untagged {
 		query = query.Where("assets.id NOT IN (SELECT asset_id FROM asset_tags)")
 	}
+	if filter.Color != "" {
+		color := filter.Color
+		if color == "teal" {
+			color = "green"
+		}
+		query = query.Where(
+			`assets.id IN (
+				SELECT asset_id FROM asset_colors
+				WHERE bucket = ?
+				GROUP BY asset_id
+				HAVING SUM(percentage) >= ?
+			)`,
+			color, minColorFilterPct,
+		)
+	}
+	if term := strings.TrimSpace(filter.Search); term != "" {
+		if utf8.RuneCountInString(term) >= 3 {
+			match := `"` + strings.ReplaceAll(term, `"`, `""`) + `"`
+			query = query.Where(
+				"assets.rowid IN (SELECT rowid FROM asset_search WHERE asset_search MATCH ?)",
+				match,
+			)
+		} else {
+			like := "%" + escapeLike(strings.ToLower(term)) + "%"
+			query = query.Where(
+				`(LOWER(assets.filename) LIKE ? ESCAPE '\' OR LOWER(assets.title) LIKE ? ESCAPE '\' OR LOWER(assets.note) LIKE ? ESCAPE '\')`,
+				like, like, like,
+			)
+		}
+	}
+	switch filter.Type {
+	case "image":
+		query = query.Where("assets.mime_type LIKE 'image/%'")
+	case "video":
+		query = query.Where("assets.mime_type LIKE 'video/%'")
+	case "audio":
+		query = query.Where("(assets.mime_type LIKE 'audio/%' OR assets.mime_type = 'application/ogg')")
+	case "document":
+		query = query.Where("(assets.mime_type LIKE 'text/%' OR assets.mime_type IN ?)", documentMimes)
+	case "other":
+		query = query.Where(
+			`assets.mime_type NOT LIKE 'image/%'
+			 AND assets.mime_type NOT LIKE 'video/%'
+			 AND assets.mime_type NOT LIKE 'audio/%'
+			 AND assets.mime_type NOT LIKE 'text/%'
+			 AND assets.mime_type <> 'application/ogg'
+			 AND assets.mime_type NOT IN ?`,
+			documentMimes,
+		)
+	}
+	return query
+}
 
-	var models []store.Asset
-	if err := query.Find(&models).Error; err != nil {
+func encodeAssetCursor(cursor assetCursor) string {
+	encoded, _ := json.Marshal(cursor)
+	return base64.RawURLEncoding.EncodeToString(encoded)
+}
+
+func decodeAssetCursor(value string) (assetCursor, error) {
+	var cursor assetCursor
+	raw, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return cursor, fmt.Errorf("%w: invalid cursor", ErrInvalidInput)
+	}
+	if err := json.Unmarshal(raw, &cursor); err != nil {
+		return cursor, fmt.Errorf("%w: invalid cursor", ErrInvalidInput)
+	}
+	return cursor, nil
+}
+
+type assetListRow struct {
+	store.Asset
+	CreatedAtRaw string `gorm:"column:created_at_raw"`
+	UpdatedAtRaw string `gorm:"column:updated_at_raw"`
+}
+
+func cursorForAsset(row assetListRow, spec assetSortSpec) assetCursor {
+	cursor := assetCursor{Sort: spec.key, ID: row.ID}
+	switch spec.kind {
+	case "time":
+		if spec.column == "updated_at" {
+			cursor.Value = row.UpdatedAtRaw
+		} else {
+			cursor.Value = row.CreatedAtRaw
+		}
+	case "name":
+		cursor.Value = row.Filename
+	case "size":
+		cursor.Size = row.ByteSize
+	}
+	return cursor
+}
+
+func applyAssetCursor(query *gorm.DB, spec assetSortSpec, value string) (*gorm.DB, error) {
+	if value == "" {
+		return query, nil
+	}
+	cursor, err := decodeAssetCursor(value)
+	if err != nil {
 		return nil, err
 	}
-	assets := make([]domain.Asset, 0, len(models))
-	uploaderIDs := make([]string, 0, len(models))
+	if cursor.Sort != spec.key || cursor.ID == "" {
+		return nil, fmt.Errorf("%w: cursor does not match sort", ErrInvalidInput)
+	}
+	op := ">"
+	if spec.direction == "DESC" {
+		op = "<"
+	}
+	switch spec.kind {
+	case "time":
+		query = query.Where(
+			fmt.Sprintf("(%s %s ? OR (%s = ? AND id %s ?))", spec.column, op, spec.column, op),
+			cursor.Value, cursor.Value, cursor.ID,
+		)
+	case "name":
+		query = query.Where(
+			fmt.Sprintf("(filename COLLATE NOCASE %s ? OR (filename COLLATE NOCASE = ? AND id %s ?))", op, op),
+			cursor.Value, cursor.Value, cursor.ID,
+		)
+	case "size":
+		query = query.Where(
+			fmt.Sprintf("(byte_size %s ? OR (byte_size = ? AND id %s ?))", op, op),
+			cursor.Size, cursor.Size, cursor.ID,
+		)
+	}
+	return query, nil
+}
+
+func (s *AssetService) List(ctx context.Context, filter domain.AssetFilter) (*domain.AssetPage, error) {
+	spec := assetSort(filter.Sort)
+
+	countBase := s.applyAssetFilters(s.db.WithContext(ctx).Model(&store.Asset{}), filter)
+	var total int64
+	countSub := countBase.Session(&gorm.Session{}).Select("1").Limit(maxAssetTotal + 1)
+	if err := s.db.WithContext(ctx).Table("(?) as filtered_assets", countSub).Count(&total).Error; err != nil {
+		return nil, err
+	}
+	capped := total > maxAssetTotal
+	if capped {
+		total = maxAssetTotal
+	}
+	var sum struct {
+		TotalBytes int64
+	}
+	if err := countBase.Session(&gorm.Session{}).
+		Select("COALESCE(SUM(assets.byte_size), 0) as total_bytes").
+		Scan(&sum).Error; err != nil {
+		return nil, err
+	}
+
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = defaultAssetPageSize
+	}
+	if limit > maxAssetPageSize {
+		limit = maxAssetPageSize
+	}
+
+	query := s.applyAssetFilters(s.db.WithContext(ctx).Model(&store.Asset{}), filter)
+	query, err := applyAssetCursor(query, spec, filter.Cursor)
+	if err != nil {
+		return nil, err
+	}
+
+	var models []assetListRow
+	if err := query.
+		Select(
+			`assets.id, assets.uploaded_by, assets.filename, assets.title, assets.note,
+			 assets.mime_type, assets.byte_size, assets.width, assets.height,
+			 assets.duration_sec, assets.page_count, assets.created_at, assets.updated_at,
+			 CAST(assets.created_at AS TEXT) AS created_at_raw,
+			 CAST(assets.updated_at AS TEXT) AS updated_at_raw`,
+		).
+		Order(fmt.Sprintf("%s %s, id %s", spec.expr, spec.direction, spec.direction)).
+		Limit(limit + 1).
+		Find(&models).Error; err != nil {
+		return nil, err
+	}
+
+	next := ""
+	if len(models) > limit {
+		next = encodeAssetCursor(cursorForAsset(models[limit-1], spec))
+		models = models[:limit]
+	}
+
+	items := make([]domain.Asset, 0, len(models))
 	for i := range models {
-		assets = append(assets, *models[i].ToDomain())
-		uploaderIDs = append(uploaderIDs, assets[len(assets)-1].UploadedBy)
+		items = append(items, *models[i].ToDomain())
 	}
-	names := s.uploaderNames(ctx, uploaderIDs)
+	return &domain.AssetPage{
+		Items:       items,
+		NextCursor:  next,
+		Total:       total,
+		TotalBytes:  sum.TotalBytes,
+		TotalCapped: capped,
+	}, nil
+}
+
+func (s *AssetService) colorsForData(mimeType string, data []byte) []domain.AssetColor {
+	if !strings.HasPrefix(mimeType, "image/") {
+		return nil
+	}
+	colors, _ := extractImageColors(data)
+	return colors
+}
+
+func (s *AssetService) saveColors(ctx context.Context, id string, colors []domain.AssetColor) {
+	_ = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("asset_id = ?", id).Delete(&store.AssetColor{}).Error; err != nil {
+			return err
+		}
+		if len(colors) == 0 {
+			return nil
+		}
+		rows := make([]store.AssetColor, 0, len(colors))
+		for i, color := range colors {
+			rows = append(rows, store.AssetColor{
+				AssetID:    id,
+				Position:   i,
+				Color:      color.Hex,
+				Bucket:     color.Bucket,
+				Percentage: color.Percentage,
+			})
+		}
+		return tx.Create(&rows).Error
+	})
+}
+
+func (s *AssetService) BackfillColors(ctx context.Context) {
+	s.recomputeColorBuckets(ctx)
+	var assets []store.Asset
+	if err := s.db.WithContext(ctx).
+		Select("id, storage_driver, storage_key, mime_type").
+		Where("mime_type LIKE 'image/%'").
+		Where("id NOT IN (SELECT asset_id FROM asset_colors)").
+		Find(&assets).Error; err != nil {
+		return
+	}
 	for i := range assets {
-		assets[i].UploadedByName = names[assets[i].UploadedBy]
+		if ctx.Err() != nil {
+			return
+		}
+		driver, err := s.registry.Get(assets[i].StorageDriver)
+		if err != nil {
+			continue
+		}
+		rc, err := driver.Open(ctx, assets[i].StorageKey)
+		if err != nil {
+			continue
+		}
+		data, err := io.ReadAll(rc)
+		_ = rc.Close()
+		if err != nil {
+			continue
+		}
+		colors, err := extractImageColors(data)
+		if err != nil {
+			continue
+		}
+		s.saveColors(ctx, assets[i].ID, colors)
 	}
-	return assets, nil
+}
+
+func (s *AssetService) recomputeColorBuckets(ctx context.Context) {
+	var rows []store.AssetColor
+	if err := s.db.WithContext(ctx).
+		Select("asset_id", "position", "color", "bucket").
+		Find(&rows).Error; err != nil {
+		return
+	}
+	for _, row := range rows {
+		bucket, ok := bucketForHex(row.Color)
+		if !ok || bucket == row.Bucket {
+			continue
+		}
+		_ = s.db.WithContext(ctx).
+			Model(&store.AssetColor{}).
+			Where("asset_id = ? AND position = ?", row.AssetID, row.Position).
+			Update("bucket", bucket).Error
+	}
 }
 
 func (s *AssetService) Open(ctx context.Context, id string) (io.ReadCloser, error) {
@@ -331,8 +650,9 @@ func (s *AssetService) Upload(ctx context.Context, userID, driverName, filename,
 		s.savePreview(ctx, id, cleanMime, previewReader)
 	}
 
-	// 3. Extract metadata
+	// 3. Extract metadata and colors
 	meta, _ := s.extractor.Extract(ctx, cleanMime, bytes.NewReader(bytesData), int64(len(bytesData)))
+	colors := s.colorsForData(cleanMime, bytesData)
 
 	now := time.Now().UTC()
 	asset := &domain.Asset{
@@ -353,6 +673,7 @@ func (s *AssetService) Upload(ctx context.Context, userID, driverName, filename,
 		s.deletePreviews(ctx, id)
 		return nil, err
 	}
+	s.saveColors(ctx, id, colors)
 
 	if s.backup != nil {
 		_ = s.backup.EnqueueAsset(ctx, id, driverName, storageKey, int64(len(bytesData)))
@@ -416,6 +737,7 @@ func (s *AssetService) ReplaceContent(ctx context.Context, id, mimeType string, 
 	}
 
 	meta, _ := s.extractor.Extract(ctx, cleanMime, bytes.NewReader(bytesData), int64(len(bytesData)))
+	colors := s.colorsForData(cleanMime, bytesData)
 	if err := s.db.WithContext(ctx).
 		Model(&store.Asset{}).
 		Where("id = ?", id).
@@ -431,6 +753,7 @@ func (s *AssetService) ReplaceContent(ctx context.Context, id, mimeType string, 
 		}).Error; err != nil {
 		return nil, err
 	}
+	s.saveColors(ctx, id, colors)
 	if s.backup != nil {
 		_ = s.backup.EnqueueAsset(ctx, id, asset.StorageDriver, asset.StorageKey, int64(len(bytesData)))
 	}
@@ -472,6 +795,7 @@ func (s *AssetService) RegeneratePreview(ctx context.Context, id string) (*domai
 	// Re-extract metadata too, so existing assets pick up new fields (e.g.
 	// audio/video duration and video dimensions).
 	meta, _ := s.extractor.Extract(ctx, mimeType, bytes.NewReader(data), int64(len(data)))
+	colors := s.colorsForData(mimeType, data)
 	if err := s.db.WithContext(ctx).
 		Model(&store.Asset{}).
 		Where("id = ?", id).
@@ -486,6 +810,7 @@ func (s *AssetService) RegeneratePreview(ctx context.Context, id string) (*domai
 		}).Error; err != nil {
 		return nil, err
 	}
+	s.saveColors(ctx, id, colors)
 	return s.GetByID(ctx, id)
 }
 

@@ -52,6 +52,7 @@ import {
   markEmbedReady,
 } from '../lib/embed'
 import { editorDirty, leaveEditor, setEditorCloser } from '../lib/editorState'
+import { searchAssetWithGoogleLens } from '../lib/googleLens'
 import { library, loadLibraries, notifyLibraryChanged } from '../lib/library'
 import { isTextMime } from '../lib/mimeTypes'
 import {
@@ -156,12 +157,23 @@ const searchQuery = computed({
     void router.replace({ name: 'all', query })
   },
 })
+const searchInput = ref(searchQuery.value)
 const assets = ref<Asset[]>([])
+const nextCursor = ref<string | null>(null)
+const total = ref(0)
+const totalBytes = ref(0)
+const totalCapped = ref(false)
+const loadingMore = ref(false)
+const loadMoreSentinel = ref<HTMLElement | null>(null)
+const selectedDetail = ref<Asset | null>(null)
 const loading = ref(false)
 const refreshing = ref(false)
 const loadedOnce = ref(false)
 const gridRevision = ref(0)
 const error = ref<string | null>(null)
+let loadMoreObserver: IntersectionObserver | null = null
+let searchTimer: number | null = null
+let loadSeq = 0
 
 const localSelectedIds = ref<string[]>([])
 const selectedIds = computed<string[]>({
@@ -343,6 +355,7 @@ interface LassoSession {
 }
 
 const gridContainer = ref<HTMLElement | null>(null)
+const showBackToTop = ref(false)
 const lasso = ref<LassoRect | null>(null)
 let lassoSession: LassoSession | null = null
 const LASSO_THRESHOLD = 4
@@ -398,6 +411,14 @@ const typeFilter = computed({
   get: () => (route.query.type as string | undefined) ?? '',
   set: (value: string) => setQueryFilter('type', value),
 })
+const colorFilter = computed({
+  get: () => {
+    const value = route.query.color
+    if (value === 'teal') return 'green'
+    return typeof value === 'string' ? value : ''
+  },
+  set: (value: string) => setQueryFilter('color', value),
+})
 const sort = computed({
   get: () => (route.query.sort as string | undefined) ?? 'date-desc',
   set: (value: string) => setQueryFilter('sort', value),
@@ -411,6 +432,21 @@ const TYPE_CATEGORIES = [
   { value: 'audio', label: 'Audio' },
   { value: 'document', label: 'Documents' },
   { value: 'other', label: 'Other' },
+]
+
+const COLOR_OPTIONS = [
+  { value: '', label: 'All colors' },
+  { value: 'black', label: 'Black', hex: '#111827' },
+  { value: 'blue', label: 'Blue', hex: '#3b82f6' },
+  { value: 'brown', label: 'Brown', hex: '#764a1d' },
+  { value: 'gray', label: 'Gray', hex: '#9ca3af' },
+  { value: 'green', label: 'Green', hex: '#22c55e' },
+  { value: 'orange', label: 'Orange', hex: '#f97316' },
+  { value: 'pink', label: 'Pink', hex: '#ec4899' },
+  { value: 'purple', label: 'Purple', hex: '#8b5cf6' },
+  { value: 'red', label: 'Red', hex: '#ef4444' },
+  { value: 'white', label: 'White', hex: '#f8fafc' },
+  { value: 'yellow', label: 'Yellow', hex: '#eab308' },
 ]
 
 const SORT_OPTIONS = [
@@ -439,28 +475,8 @@ const collectionOptions = computed(() => [
   })),
 ])
 
-const DOCUMENT_MIMES = new Set([
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-powerpoint',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'application/rtf',
-])
-
-function mimeCategory(mime: string): string {
-  if (mime.startsWith('image/')) return 'image'
-  if (mime.startsWith('video/')) return 'video'
-  if (mime.startsWith('audio/')) return 'audio'
-  if (mime === 'application/ogg') return 'audio'
-  if (mime.startsWith('text/') || DOCUMENT_MIMES.has(mime)) return 'document'
-  return 'other'
-}
-
 function setQueryFilter(
-  key: 'collection' | 'tag' | 'type' | 'sort',
+  key: 'collection' | 'tag' | 'type' | 'color' | 'sort',
   value: string,
 ): void {
   // Changing a filter means we are no longer viewing a smart collection.
@@ -495,9 +511,15 @@ const selectedSet = computed(() => new Set(selectedIds.value))
 const selectedAssets = computed(() =>
   assets.value.filter((asset) => selectedSet.value.has(asset.id)),
 )
-const singleAsset = computed(() =>
-  selectedIds.value.length === 1 ? (selectedAssets.value[0] ?? null) : null,
+const singleAssetId = computed(() =>
+  selectedIds.value.length === 1 ? selectedIds.value[0] : null,
 )
+const singleAsset = computed(() => {
+  const id = singleAssetId.value
+  if (!id) return null
+  if (selectedDetail.value?.id === id) return selectedDetail.value
+  return assets.value.find((asset) => asset.id === id) ?? null
+})
 
 // The Inspector falls back to describing the active collection/tag when no
 // asset is selected. Only concrete ids count; the virtual 'uncategorized' /
@@ -526,25 +548,25 @@ const activeSmartCollection = computed<SmartCollection | null>(() => {
     (filter.collection ?? '') === (typeof q.collection === 'string' ? q.collection : '') &&
     (filter.tag ?? '') === (typeof q.tag === 'string' ? q.tag : '') &&
     (filter.type ?? '') === (typeof q.type === 'string' ? q.type : '') &&
+    (q.color ?? '') === '' &&
     (filter.sort ?? '') === (typeof q.sort === 'string' ? q.sort : '')
   if (!matches) return null
   return library.smartCollections.find((item) => item.id === id) ?? null
 })
 
-// Count and size describe the assets currently listed for the filter, i.e.
-// exactly what the grid shows.
-const filteredSize = computed(() =>
-  visibleAssets.value.reduce((total, asset) => total + asset.byte_size, 0),
-)
+// Count and size describe every asset matching the filter, not only the
+// currently loaded page.
+const filteredSize = computed(() => totalBytes.value)
 
 // Detail/edit mode: the main area shows a single asset (in an editor/viewer)
 // instead of the grid. Tracked as local state; the Inspector is unchanged.
 const editingAssetId = ref<string | null>(null)
-const editingAsset = computed(() =>
-  editingAssetId.value
-    ? (assets.value.find((item) => item.id === editingAssetId.value) ?? null)
-    : null,
-)
+const editingAsset = computed(() => {
+  const id = editingAssetId.value
+  if (!id) return null
+  if (selectedDetail.value?.id === id) return selectedDetail.value
+  return assets.value.find((item) => item.id === id) ?? null
+})
 // Types the editor can save: raster images and editable text/code.
 const editingCanSave = computed(() => {
   const mime = editingAsset.value?.mime_type
@@ -553,48 +575,20 @@ const editingCanSave = computed(() => {
 })
 const assetEditorRef = ref<InstanceType<typeof AssetEditor> | null>(null)
 
-const visibleAssets = computed(() => {
-  let list = assets.value
-  const query = searchQuery.value.trim().toLowerCase()
-  if (query) {
-    list = list.filter(
-      (asset) =>
-        asset.filename.toLowerCase().includes(query) ||
-        (asset.title ?? '').toLowerCase().includes(query) ||
-        (asset.note ?? '').toLowerCase().includes(query),
-    )
-  }
-  if (typeFilter.value) {
-    list = list.filter((a) => mimeCategory(a.mime_type) === typeFilter.value)
-  }
+const visibleAssets = computed(() => assets.value)
 
-  const sorted = [...list]
-  switch (sort.value) {
-    case 'date-asc':
-      sorted.sort((a, b) => a.created_at.localeCompare(b.created_at))
-      break
-    case 'name-asc':
-      sorted.sort((a, b) => a.filename.localeCompare(b.filename))
-      break
-    case 'name-desc':
-      sorted.sort((a, b) => b.filename.localeCompare(a.filename))
-      break
-    case 'size-asc':
-      sorted.sort((a, b) => a.byte_size - b.byte_size)
-      break
-    case 'size-desc':
-      sorted.sort((a, b) => b.byte_size - a.byte_size)
-      break
-    case 'modified-asc':
-      sorted.sort((a, b) => a.updated_at.localeCompare(b.updated_at))
-      break
-    case 'modified-desc':
-      sorted.sort((a, b) => b.updated_at.localeCompare(a.updated_at))
-      break
-    default:
-      sorted.sort((a, b) => b.created_at.localeCompare(a.created_at))
-  }
-  return sorted
+const hasActiveFilters = computed(
+  () =>
+    Boolean(collectionFilter.value) ||
+    tagFilter.value.length > 0 ||
+    Boolean(typeFilter.value) ||
+    Boolean(colorFilter.value) ||
+    Boolean(searchQuery.value.trim()),
+)
+
+const assetCountLabel = computed(() => {
+  if (selectedIds.value.length) return `${selectedIds.value.length} selected`
+  return `${total.value}${totalCapped.value ? '+' : ''} item(s)`
 })
 
 // The slider is the preview's shorter axis, so the grid column is widened for
@@ -636,6 +630,14 @@ watch([gridGap, aroundGap], () => {
 // Fit as many tracks of at least `target` px as possible, then widen them
 // evenly so the row fills the container exactly. Returns null before the
 // container has been measured so callers can fall back to plain auto-fill.
+function onGridScroll(): void {
+  showBackToTop.value = (gridContainer.value?.scrollTop ?? 0) > 400
+}
+
+function scrollGridToTop(): void {
+  gridContainer.value?.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
 function fitColumns(
   target: number,
   gap: number,
@@ -724,6 +726,16 @@ const menuItems = computed<MenuItem[]>(() => {
       icon: ExternalLink,
       command: openOriginal,
     })
+    if (selectedAssets.value[0]?.mime_type.startsWith('image/')) {
+      items.push({
+        label: 'Search with Google Lens',
+        icon: Search,
+        command: () => {
+          const asset = selectedAssets.value[0]
+          if (asset) void searchWithGoogleLens(asset)
+        },
+      })
+    }
     items.push({
       label: 'Download',
       icon: Download,
@@ -788,29 +800,50 @@ function toMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
+function assetParams(): api.AssetListParams {
+  const params: api.AssetListParams = {
+    search: searchQuery.value.trim() || undefined,
+    type: typeFilter.value || undefined,
+    color: colorFilter.value || undefined,
+    sort: sort.value || undefined,
+    limit: 100,
+  }
+  const collection = collectionFilter.value
+  if (collection === 'uncategorized') params.uncategorized = true
+  else if (collection) params.collectionId = collection
+
+  const tags = tagFilter.value
+  if (tags.includes('untagged')) params.untagged = true
+  const tagIds = tags.filter((value) => value !== 'untagged')
+  if (tagIds.length) params.tagIds = tagIds
+  return params
+}
+
 async function load(): Promise<void> {
+  const seq = ++loadSeq
   const initial = !loadedOnce.value
   if (initial) loading.value = true
   else refreshing.value = true
   error.value = null
+  nextCursor.value = null
+  loadingMore.value = false
   try {
-    const params: api.AssetListParams = {}
-    const c = collectionFilter.value
-    if (c === 'uncategorized') params.uncategorized = true
-    else if (c) params.collectionId = c
-
-    const tags = tagFilter.value
-    if (tags.includes('untagged')) params.untagged = true
-    const tagIds = tags.filter((value) => value !== 'untagged')
-    if (tagIds.length) params.tagIds = tagIds
-
-    assets.value = await api.listAssets(params)
+    const page = await api.listAssets(assetParams())
+    if (seq !== loadSeq) return
+    assets.value = page.items
+    nextCursor.value = page.next_cursor ?? null
+    total.value = page.total
+    totalBytes.value = page.total_bytes
+    totalCapped.value = page.total_capped
   } catch (e) {
-    error.value = toMessage(e)
+    if (seq === loadSeq) error.value = toMessage(e)
   } finally {
-    loading.value = false
-    refreshing.value = false
+    if (seq === loadSeq) {
+      loading.value = false
+      refreshing.value = false
+    }
   }
+  if (seq !== loadSeq) return
 
   if (!error.value) {
     loadedOnce.value = true
@@ -819,16 +852,55 @@ async function load(): Promise<void> {
 
   if (embed.active && !error.value) {
     if (!embed.selectionInitialized) {
-      const available = new Set(assets.value.map((asset) => asset.id))
       if (!embed.selectedIds.length && embed.preselectedIds.length) {
-        selectedIds.value = embed.preselectedIds.filter((id) =>
-          available.has(id),
-        )
+        selectedIds.value = [...embed.preselectedIds]
       }
       embed.selectionInitialized = true
     }
-    markEmbedReady(assets.value.length)
+    markEmbedReady(total.value)
   }
+}
+
+async function loadMore(): Promise<void> {
+  const cursor = nextCursor.value
+  if (!cursor || loadingMore.value || loading.value || refreshing.value) return
+  const seq = loadSeq
+  loadingMore.value = true
+  error.value = null
+  try {
+    const page = await api.listAssets({ ...assetParams(), cursor })
+    if (seq !== loadSeq) return
+    const existing = new Set(assets.value.map((asset) => asset.id))
+    assets.value.push(
+      ...page.items.filter((asset) => !existing.has(asset.id)),
+    )
+    nextCursor.value = page.next_cursor ?? null
+    total.value = page.total
+    totalBytes.value = page.total_bytes
+    totalCapped.value = page.total_capped
+    void nextTick(measureGrid)
+  } catch (e) {
+    if (seq === loadSeq) error.value = toMessage(e)
+  } finally {
+    loadingMore.value = false
+  }
+}
+
+function updateLoadMoreObserver(): void {
+  loadMoreObserver?.disconnect()
+  loadMoreObserver = null
+  if (!nextCursor.value || !loadMoreSentinel.value || !gridContainer.value) {
+    return
+  }
+  loadMoreObserver = new IntersectionObserver(
+    (entries) => {
+      if (!error.value && entries.some((entry) => entry.isIntersecting)) {
+        void loadMore()
+      }
+    },
+    { root: gridContainer.value, rootMargin: '300px' },
+  )
+  loadMoreObserver.observe(loadMoreSentinel.value)
 }
 
 function onSelect(asset: Asset, event: MouseEvent): void {
@@ -1082,6 +1154,25 @@ function openOriginal(): void {
   }
 }
 
+async function searchWithGoogleLens(asset: Asset): Promise<void> {
+  try {
+    await searchAssetWithGoogleLens(asset)
+    toast.add({
+      severity: 'success',
+      summary: 'Searching with Google Lens',
+      detail: 'The image is being sent to Google Lens.',
+      life: 3000,
+    })
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: 'Google Lens search failed',
+      detail: toMessage(e),
+      life: 4000,
+    })
+  }
+}
+
 // Single asset downloads as its original file.
 function downloadAsset(): void {
   const asset = selectedAssets.value[0]
@@ -1211,6 +1302,7 @@ function toggleDisplay(event: Event): void {
 function onChanged(asset: Asset): void {
   const index = assets.value.findIndex((item) => item.id === asset.id)
   if (index >= 0) assets.value[index] = asset
+  if (selectedDetail.value?.id === asset.id) selectedDetail.value = asset
 }
 
 // Refreshes the sidebar/library after a collection or tag is edited in the
@@ -1226,7 +1318,7 @@ function openEditor(asset: Asset): void {
 }
 
 function openEditorForSelection(): void {
-  const asset = selectedAssets.value[0]
+  const asset = singleAsset.value ?? selectedAssets.value[0]
   if (asset) openEditor(asset)
 }
 
@@ -1249,12 +1341,18 @@ const canStepBack = computed(() => editingIndex.value > 0)
 const canStepForward = computed(
   () =>
     editingIndex.value >= 0 &&
-    editingIndex.value < visibleAssets.value.length - 1,
+    (editingIndex.value < visibleAssets.value.length - 1 ||
+      Boolean(nextCursor.value)),
 )
 
-function stepEditor(delta: number): void {
+async function stepEditor(delta: number): Promise<void> {
   const index = editingIndex.value
-  const target = visibleAssets.value[index + delta]
+  if (index < 0) return
+  const targetIndex = index + delta
+  if (delta > 0 && targetIndex >= visibleAssets.value.length && nextCursor.value) {
+    await loadMore()
+  }
+  const target = visibleAssets.value[targetIndex]
   if (target) openEditor(target)
 }
 
@@ -1269,10 +1367,62 @@ function onAssetSaved(asset: Asset): void {
   notifyLibraryChanged()
 }
 
-watch([collectionFilter, tagFilter], () => {
+watch(
+  [collectionFilter, () => tagFilter.value.join(','), typeFilter, colorFilter, sort],
+  () => {
+    if (!embedPicker.value) clearSelection()
+    void load()
+  },
+)
+
+watch(searchQuery, (value) => {
+  if (searchTimer !== null) {
+    window.clearTimeout(searchTimer)
+    searchTimer = null
+  }
+  if (value !== searchInput.value) searchInput.value = value
+})
+
+watch(searchQuery, () => {
   if (!embedPicker.value) clearSelection()
   void load()
 })
+
+watch(searchInput, (value) => {
+  if (value === searchQuery.value) return
+  if (searchTimer !== null) window.clearTimeout(searchTimer)
+  searchTimer = window.setTimeout(() => {
+    searchTimer = null
+    if (value !== searchQuery.value) searchQuery.value = value
+  }, 300)
+})
+
+watch([nextCursor, loadingMore], () => {
+  void nextTick(updateLoadMoreObserver)
+})
+
+const detailRequestId = ref<string | null>(null)
+watch(
+  singleAssetId,
+  async (id) => {
+    if (!id) {
+      selectedDetail.value = null
+      detailRequestId.value = null
+      return
+    }
+    const requestId = id
+    detailRequestId.value = requestId
+    try {
+      const detail = await api.getAsset(id)
+      if (detailRequestId.value === requestId && singleAssetId.value === id) {
+        selectedDetail.value = detail
+      }
+    } catch {
+      if (detailRequestId.value === requestId) selectedDetail.value = null
+    }
+  },
+  { immediate: true },
+)
 
 watch(
   () => library.version,
@@ -1330,6 +1480,7 @@ onMounted(() => {
     gridResizeObserver = new ResizeObserver(measureGrid)
     gridResizeObserver.observe(gridContainer.value)
   }
+  void nextTick(updateLoadMoreObserver)
 })
 
 onBeforeUnmount(() => {
@@ -1337,6 +1488,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('mouseup', onLassoEnd)
   window.removeEventListener('keydown', onAssetsSelectAll)
   gridResizeObserver?.disconnect()
+  loadMoreObserver?.disconnect()
+  if (searchTimer !== null) window.clearTimeout(searchTimer)
   setEditorCloser(null)
 })
 </script>
@@ -1423,6 +1576,27 @@ onBeforeUnmount(() => {
           />
 
           <Select
+            v-model="colorFilter"
+            :options="COLOR_OPTIONS"
+            option-label="label"
+            option-value="value"
+            size="small"
+            class="w-36"
+            title="Filter images where a color covers at least 10% of the image"
+          >
+            <template #option="slotProps">
+              <span class="flex items-center gap-2">
+                <span
+                  v-if="slotProps.option.hex"
+                  class="h-3 w-3 shrink-0 rounded-full border border-slate-200 dark:border-slate-700"
+                  :style="{ backgroundColor: slotProps.option.hex }"
+                />
+                <span>{{ slotProps.option.label }}</span>
+              </span>
+            </template>
+          </Select>
+
+          <Select
             v-model="sort"
             :options="SORT_OPTIONS"
             option-label="label"
@@ -1436,7 +1610,7 @@ onBeforeUnmount(() => {
               <Search :size="14" />
             </InputIcon>
             <InputText
-              v-model="searchQuery"
+              v-model="searchInput"
               size="small"
               placeholder="Search assets…"
               title="Search title, note, and filename"
@@ -1460,11 +1634,7 @@ onBeforeUnmount(() => {
           </Button>
 
           <span class="ml-auto text-sm text-slate-400">
-            {{
-              selectedIds.length
-                ? `${selectedIds.length} selected`
-                : `${visibleAssets.length} item(s)`
-            }}
+            {{ assetCountLabel }}
           </span>
           <span
             v-if="refreshing"
@@ -1659,17 +1829,22 @@ onBeforeUnmount(() => {
           @saved="onAssetSaved"
         />
 
-        <div
-          v-show="!editingAsset"
-          ref="gridContainer"
-          class="min-h-0 flex-1 overflow-y-auto py-1.5"
-          :style="{
-            paddingLeft: `${aroundGapPx}px`,
-            paddingRight: `${aroundGapPx}px`,
-          }"
-          @mousedown="onLassoStart"
-        >
-          <Transition name="grid-fade" mode="out-in">
+        <div v-show="!editingAsset" class="relative min-h-0 flex-1">
+          <div
+            ref="gridContainer"
+            class="h-full overflow-y-auto py-1.5"
+            :style="{
+              paddingLeft: `${aroundGapPx}px`,
+              paddingRight: `${aroundGapPx}px`,
+            }"
+            @mousedown="onLassoStart"
+            @scroll.passive="onGridScroll"
+          >
+          <Transition
+            name="grid-fade"
+            mode="out-in"
+            @after-enter="updateLoadMoreObserver"
+          >
             <div :key="gridRevision">
               <div
                 v-if="loading && !loadedOnce"
@@ -1680,11 +1855,12 @@ onBeforeUnmount(() => {
                 ></span>
               </div>
               <p v-else-if="!assets.length" class="text-sm text-slate-400">
-                No assets yet.
+                {{
+                  hasActiveFilters
+                    ? 'No assets match the current filters.'
+                    : 'No assets yet.'
+                }}
               </p>
-          <p v-else-if="!visibleAssets.length" class="text-sm text-slate-400">
-            No assets match the current filters.
-          </p>
           <div
             v-else-if="shape === 'native'"
             class="grid"
@@ -1735,8 +1911,34 @@ onBeforeUnmount(() => {
               @dragend="onDragEnd"
             />
           </div>
+
+          <div
+            v-if="nextCursor"
+            ref="loadMoreSentinel"
+            class="flex justify-center py-4"
+          >
+            <Button
+              label="Load more"
+              severity="secondary"
+              size="small"
+              :loading="loadingMore"
+              @click="loadMore"
+            />
+          </div>
             </div>
           </Transition>
+          </div>
+
+          <button
+            v-if="showBackToTop"
+            type="button"
+            class="absolute bottom-4 right-4 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-500 shadow-lg backdrop-blur transition-colors hover:bg-white hover:text-violet-600 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-violet-400"
+            title="Back to top"
+            aria-label="Back to top"
+            @click="scrollGridToTop"
+          >
+            <ChevronUp :size="16" />
+          </button>
         </div>
 
         <div
@@ -1854,6 +2056,8 @@ onBeforeUnmount(() => {
               :tag="activeTag ?? undefined"
               :assets="visibleAssets"
               :size="filteredSize"
+              :total="total"
+              :total-capped="totalCapped"
               @changed="onSubjectChanged"
             />
             <LibraryInspector v-else />

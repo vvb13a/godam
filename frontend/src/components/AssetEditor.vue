@@ -157,7 +157,7 @@ async function openWatermarkPicker(
   watermarkPickerVisible.value = true
   watermarkLoading.value = true
   try {
-    const all = await api.listAssets({})
+    const all = await api.listAllAssets({ type: 'image' })
     watermarkAssets.value = all.filter((a) => a.mime_type.startsWith('image/'))
   } catch {
     watermarkAssets.value = []
@@ -177,7 +177,7 @@ async function libraryImageGallery(): Promise<
   { originalUrl: string; previewUrl: string }[]
 > {
   try {
-    const all = await api.listAssets({})
+    const all = await api.listAllAssets({ type: 'image' })
     return all
       .filter(
         (a) => a.mime_type.startsWith('image/') && a.id !== props.asset.id,

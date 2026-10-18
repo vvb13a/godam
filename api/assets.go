@@ -5,17 +5,30 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/vvb13a/godam/domain"
 )
 
-// handleListAssets returns assets, optionally filtered by collection
-// (collection_id or uncategorized=true), tag (tag_id or untagged=true).
+// handleListAssets returns one cursor-paginated slice of assets. Search matches
+// title, note and filename; type filters by media category; sort chooses the
+// keyset order.
 func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	filter := domain.AssetFilter{}
+	filter := domain.AssetFilter{
+		Search: q.Get("search"),
+		Type:   q.Get("type"),
+		Color:  q.Get("color"),
+		Sort:   q.Get("sort"),
+		Cursor: q.Get("cursor"),
+	}
+	if value := q.Get("limit"); value != "" {
+		if limit, err := strconv.Atoi(value); err == nil {
+			filter.Limit = limit
+		}
+	}
 	if v := q.Get("collection_id"); v != "" {
 		filter.CollectionID = &v
 	}
@@ -30,12 +43,12 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 	filter.Uncategorized = q.Get("uncategorized") == "true"
 	filter.Untagged = q.Get("untagged") == "true"
 
-	assets, err := s.deps.Assets.List(r.Context(), filter)
+	page, err := s.deps.Assets.List(r.Context(), filter)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, assets)
+	writeJSON(w, http.StatusOK, page)
 }
 
 func (s *Server) handleGetAsset(w http.ResponseWriter, r *http.Request) {
