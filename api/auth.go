@@ -15,6 +15,8 @@ var publicPaths = map[string]bool{
 	"/api/auth/login":     true,
 	"/api/auth/dev-login": true,
 	"/api/auth/logout":    true,
+	"/api/system/info":    true,
+	"/api/system/metrics": true,
 }
 
 // authMiddleware resolves the session cookie into a user and injects it into

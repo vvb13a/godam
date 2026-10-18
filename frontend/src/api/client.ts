@@ -2,6 +2,8 @@ import type {
   Asset,
   Collection,
   Library,
+  LibraryBackup,
+  LibraryBackupStatus,
   SmartCollection,
   SmartCollectionFilter,
   Stats,
@@ -164,6 +166,62 @@ export function setLibraryUploadSettings(
     `/api/libraries/${encodeURIComponent(id)}/upload-settings`,
     'PUT',
     { allowed_mime_types: allowedMimeTypes, max_upload_bytes: maxUploadBytes },
+  )
+}
+
+export interface LibraryBackupUpdate {
+  enabled: boolean
+  driver: string
+  host: string
+  port: number
+  user: string
+  password: string
+  clear_password: boolean
+  key_path: string
+  base_path: string
+  host_key_fingerprint: string
+}
+
+export function getLibraryBackup(id: string): Promise<LibraryBackup> {
+  return getJSON<LibraryBackup>(
+    `/api/libraries/${encodeURIComponent(id)}/backup`,
+  )
+}
+
+export function setLibraryBackup(
+  id: string,
+  payload: LibraryBackupUpdate,
+): Promise<LibraryBackup> {
+  return sendJSON<LibraryBackup>(
+    `/api/libraries/${encodeURIComponent(id)}/backup`,
+    'PUT',
+    payload,
+  )
+}
+
+export function testLibraryBackup(
+  id: string,
+  payload: LibraryBackupUpdate,
+): Promise<void> {
+  return requestVoid(`/api/libraries/${encodeURIComponent(id)}/backup/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function runLibraryBackup(id: string): Promise<{ queued: number }> {
+  return requestJSON<{ queued: number }>(
+    `/api/libraries/${encodeURIComponent(id)}/backup/run`,
+    { method: 'POST' },
+  )
+}
+
+export function getLibraryBackupStatus(
+  id: string,
+): Promise<LibraryBackupStatus> {
+  return getJSON<LibraryBackupStatus>(
+    `/api/libraries/${encodeURIComponent(id)}/backup/status`,
   )
 }
 

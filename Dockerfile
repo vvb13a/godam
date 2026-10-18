@@ -8,12 +8,13 @@ RUN npm run build
 
 # --- 2. Build the Go binary (embeds frontend/dist) --------------------------
 FROM golang:1.27-alpine AS build
+ARG VERSION=dev
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /app/frontend/dist ./frontend/dist
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /godam .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /godam .
 
 # --- 3. Runtime image with the external media tools -------------------------
 # ffmpeg/ffprobe are used for video frame previews (and can be extended to

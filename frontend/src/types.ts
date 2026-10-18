@@ -117,3 +117,27 @@ export interface Stats {
   storage_bytes: number
   types: TypeCount[]
 }
+
+export interface LibraryBackup {
+  enabled: boolean
+  driver: string
+  host: string
+  port: number
+  user: string
+  base_path: string
+  key_path: string
+  host_key_fingerprint: string
+  has_password: boolean
+  last_run_at?: string
+  last_error: string
+}
+
+export interface LibraryBackupStatus {
+  enabled: boolean
+  total: number
+  synced: number
+  pending: number
+  failed: number
+  last_error: string
+  last_run_at?: string
+}

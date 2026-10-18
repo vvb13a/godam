@@ -60,6 +60,7 @@ type AssetService struct {
 	extractor  *CompositeExtractor
 	previewGen *DefaultPreviewGenerator
 	tags       *TagService
+	backup     *BackupService
 }
 
 func NewAssetService(
@@ -70,6 +71,7 @@ func NewAssetService(
 	extractor *CompositeExtractor,
 	previewGen *DefaultPreviewGenerator,
 	tags *TagService,
+	backup *BackupService,
 ) *AssetService {
 	return &AssetService{
 		cfg:        cfg,
@@ -79,6 +81,7 @@ func NewAssetService(
 		extractor:  extractor,
 		previewGen: previewGen,
 		tags:       tags,
+		backup:     backup,
 	}
 }
 
@@ -357,6 +360,10 @@ func (s *AssetService) Upload(ctx context.Context, userID, libraryID, driverName
 		return nil, err
 	}
 
+	if s.backup != nil {
+		_ = s.backup.EnqueueAsset(ctx, libraryID, id, driverName, storageKey, int64(len(bytesData)))
+	}
+
 	return s.GetByID(ctx, id)
 }
 
@@ -429,6 +436,9 @@ func (s *AssetService) ReplaceContent(ctx context.Context, id, mimeType string, 
 			"updated_at":   time.Now().UTC(),
 		}).Error; err != nil {
 		return nil, err
+	}
+	if s.backup != nil {
+		_ = s.backup.EnqueueAsset(ctx, asset.LibraryID, id, asset.StorageDriver, asset.StorageKey, int64(len(bytesData)))
 	}
 	return s.GetByID(ctx, id)
 }
@@ -682,6 +692,10 @@ func (s *AssetService) Delete(ctx context.Context, id string) error {
 	asset, err := s.GetByID(ctx, id)
 	if err != nil {
 		return err
+	}
+
+	if s.backup != nil {
+		_ = s.backup.EnqueueDelete(ctx, asset.LibraryID, asset.ID, asset.StorageKey)
 	}
 
 	res := s.db.WithContext(ctx).Delete(&store.Asset{}, "id = ?", id)

@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  CloudUpload,
   Cog,
   Database,
   GripVertical,
@@ -31,6 +32,7 @@ import {
   libraryColorHex,
 } from '../lib/libraryColors'
 import { confirmDeleteMenuItem } from '../lib/menu'
+import { openBackupSettings } from '../lib/backupSettings'
 import { openUploadSettings } from '../lib/uploadSettings'
 import type { Library } from '../types'
 
@@ -202,6 +204,14 @@ const menuItems = computed<LibraryMenuItem[]>(() => {
       command: () => {
         menu.value?.hide()
         openUploadSettings(lib.id)
+      },
+    },
+    {
+      label: 'Backup settings',
+      menuIcon: CloudUpload,
+      command: () => {
+        menu.value?.hide()
+        openBackupSettings(lib.id)
       },
     },
     { separator: true },

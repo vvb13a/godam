@@ -8,6 +8,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import AppSidebar from './components/AppSidebar.vue'
 import CommandPalette from './components/CommandPalette.vue'
+import LibraryBackupDialog from './components/LibraryBackupDialog.vue'
 import LibraryOnboarding from './components/LibraryOnboarding.vue'
 import LibraryUploadSettingsDialog from './components/LibraryUploadSettingsDialog.vue'
 import TagsDialog from './components/TagsDialog.vue'
@@ -104,11 +105,43 @@ function onDrop(event: DragEvent): void {
   }
 }
 
+const DOUBLE_SHIFT_MS = 350
+let lastShiftAt = 0
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  if (!el) return false
+  return (
+    el.tagName === 'INPUT' ||
+    el.tagName === 'TEXTAREA' ||
+    el.tagName === 'SELECT' ||
+    el.isContentEditable
+  )
+}
+
 function onKeydown(event: KeyboardEvent): void {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault()
     commandMenu.visible = !commandMenu.visible
+    return
   }
+  if (event.key !== 'Shift') {
+    lastShiftAt = 0
+    return
+  }
+  if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return
+  if (isTypingTarget(event.target)) {
+    lastShiftAt = 0
+    return
+  }
+  const now = performance.now()
+  if (now - lastShiftAt <= DOUBLE_SHIFT_MS) {
+    lastShiftAt = 0
+    event.preventDefault()
+    commandMenu.visible = !commandMenu.visible
+    return
+  }
+  lastShiftAt = now
 }
 
 onMounted(() => {
@@ -197,6 +230,7 @@ onBeforeUnmount(() => {
       <CommandPalette />
       <TagsDialog />
       <LibraryUploadSettingsDialog />
+      <LibraryBackupDialog />
     </template>
 
     <ConfirmDialog group="navigation" />

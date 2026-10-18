@@ -24,6 +24,9 @@ type Deps struct {
 	Libraries        *service.LibraryService
 	Users            *service.UserService
 	Stats            *service.StatsService
+	Backups          *service.BackupService
+	System           *service.SystemService
+	ManagementToken  string
 	MaxUploadBytes   int64
 }
 
@@ -53,6 +56,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
+	s.mux.HandleFunc("GET /api/system/info", s.handleSystemInfo)
+	s.mux.HandleFunc("GET /api/system/metrics", s.handleSystemMetrics)
 
 	s.mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 	s.mux.HandleFunc("POST /api/auth/dev-login", s.handleDevLogin)
@@ -70,6 +75,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/libraries/{id}/cover", s.handleSetLibraryCover)
 	s.mux.HandleFunc("PUT /api/libraries/{id}/watermark", s.handleSetLibraryWatermark)
 	s.mux.HandleFunc("PUT /api/libraries/{id}/upload-settings", s.handleSetLibraryUploadSettings)
+	s.mux.HandleFunc("GET /api/libraries/{id}/backup", s.handleGetLibraryBackup)
+	s.mux.HandleFunc("PUT /api/libraries/{id}/backup", s.handleSetLibraryBackup)
+	s.mux.HandleFunc("POST /api/libraries/{id}/backup/test", s.handleTestLibraryBackup)
+	s.mux.HandleFunc("POST /api/libraries/{id}/backup/run", s.handleRunLibraryBackup)
+	s.mux.HandleFunc("GET /api/libraries/{id}/backup/status", s.handleLibraryBackupStatus)
 	s.mux.HandleFunc("DELETE /api/libraries/{id}", s.handleDeleteLibrary)
 
 	s.mux.HandleFunc("GET /api/assets", s.handleListAssets)

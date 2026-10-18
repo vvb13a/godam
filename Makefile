@@ -7,6 +7,7 @@
 
 DEV_PORT ?= 5173
 GOARCH ?= amd64
+VERSION ?= dev
 
 NPM := npm --prefix frontend
 
@@ -39,10 +40,10 @@ api: ## Run the Go server (the JSON API and Vue frontend are wired in main.go)
 	go run .
 
 build: ## Build the Go binary into bin/godam
-	go build -o bin/godam .
+	go build -ldflags="-X main.version=$(VERSION)" -o bin/godam .
 
 release: ## Cross-compile a static linux binary into bin/godam-linux-$(GOARCH)
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -trimpath -ldflags="-s -w" \
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -trimpath -ldflags="-s -w -X main.version=$(VERSION)" \
 		-o bin/godam-linux-$(GOARCH) .
 
 tidy: ## Tidy Go modules

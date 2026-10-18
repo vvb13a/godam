@@ -2,8 +2,10 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path"
 	"path/filepath"
@@ -16,12 +18,13 @@ import (
 )
 
 type SFTPConfig struct {
-	Host     string
-	Port     int
-	User     string
-	Password string
-	KeyPath  string
-	BasePath string
+	Host               string
+	Port               int
+	User               string
+	Password           string
+	KeyPath            string
+	BasePath           string
+	HostKeyFingerprint string
 }
 
 // SFTP stores blobs on a remote SFTP server, reconnecting lazily when the
@@ -79,10 +82,25 @@ func (s *SFTP) connect() error {
 		}
 	}
 
+	hostKeyCallback := ssh.InsecureIgnoreHostKey()
+	if s.cfg.HostKeyFingerprint != "" {
+		expected := s.cfg.HostKeyFingerprint
+		if !strings.HasPrefix(expected, "SHA256:") {
+			expected = "SHA256:" + expected
+		}
+		hostKeyCallback = func(_ string, _ net.Addr, key ssh.PublicKey) error {
+			actual := ssh.FingerprintSHA256(key)
+			if actual != expected {
+				return fmt.Errorf("SFTP host key mismatch: got %s", actual)
+			}
+			return nil
+		}
+	}
+
 	sshConfig := &ssh.ClientConfig{
 		User:            s.cfg.User,
 		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         10 * time.Second,
 	}
 
@@ -135,14 +153,31 @@ func (s *SFTP) Save(_ context.Context, key string, r io.Reader) error {
 		return err
 	}
 
-	f, err := s.client.Create(dest)
+	// Write to a temporary name and rename, so an interrupted upload never
+	// leaves a truncated backup at the final key.
+	tmp := fmt.Sprintf("%s.tmp-%d", dest, time.Now().UnixNano())
+	f, err := s.client.Create(tmp)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-
-	_, err = io.Copy(f, r)
-	return err
+	if _, err := io.Copy(f, r); err != nil {
+		_ = f.Close()
+		_ = s.client.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = s.client.Remove(tmp)
+		return err
+	}
+	if err := s.client.PosixRename(tmp, dest); err == nil {
+		return nil
+	}
+	_ = s.client.Remove(dest)
+	if err := s.client.Rename(tmp, dest); err != nil {
+		_ = s.client.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 func (s *SFTP) Open(_ context.Context, key string) (io.ReadCloser, error) {
@@ -156,5 +191,25 @@ func (s *SFTP) Delete(_ context.Context, key string) error {
 	if err := s.ensureConnection(); err != nil {
 		return err
 	}
-	return s.client.Remove(s.remotePath(key))
+	err := s.client.Remove(s.remotePath(key))
+	if err == nil || errors.Is(err, os.ErrNotExist) || strings.Contains(strings.ToLower(err.Error()), "no such file") {
+		return nil
+	}
+	return err
+}
+
+// Close releases the SFTP and SSH connections. It is safe to call more than
+// once.
+func (s *SFTP) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.client != nil {
+		_ = s.client.Close()
+		s.client = nil
+	}
+	if s.sshClient != nil {
+		_ = s.sshClient.Close()
+		s.sshClient = nil
+	}
+	return nil
 }
