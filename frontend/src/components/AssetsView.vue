@@ -1300,11 +1300,11 @@ onBeforeUnmount(() => {
           >
             <header
               v-if="!panels.topCollapsed"
-              class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-lg"
+              class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 shadow-lg"
             >
           <select
             v-model="collectionFilter"
-            class="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+            class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 dark:disabled:bg-slate-800 disabled:text-slate-400"
             :disabled="embedCollectionLocked"
             :title="
               embedCollectionLocked
@@ -1337,7 +1337,7 @@ onBeforeUnmount(() => {
                 ? 'Tags are locked by the host application'
                 : undefined
             "
-            class="rounded border border-slate-300 bg-white text-sm"
+            class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
           >
             <template #option="slotProps">
               <span class="flex items-center gap-2">
@@ -1353,7 +1353,7 @@ onBeforeUnmount(() => {
 
           <select
             v-model="typeFilter"
-            class="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm"
+            class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm"
           >
             <option
               v-for="option in TYPE_CATEGORIES"
@@ -1366,7 +1366,7 @@ onBeforeUnmount(() => {
 
           <select
             v-model="sort"
-            class="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm"
+            class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm"
           >
             <option value="date-desc">Newest first</option>
             <option value="date-asc">Oldest first</option>
@@ -1380,7 +1380,7 @@ onBeforeUnmount(() => {
 
           <span
             v-if="embedCollectionLocked || embedTagLocked"
-            class="text-xs font-medium text-amber-600"
+            class="text-xs font-medium text-amber-600 dark:text-amber-400"
             title="The host application restricted this picker"
           >
             Restricted by host
@@ -1445,7 +1445,7 @@ onBeforeUnmount(() => {
                 />
               </div>
 
-              <div class="border-t border-slate-100 pt-3">
+              <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
                 <p
                   class="mb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
                 >
@@ -1489,7 +1489,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
-              <div class="border-t border-slate-100 pt-3">
+              <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
                 <div class="mb-2 flex items-center justify-between">
                   <p
                     class="text-xs font-semibold tracking-wide text-slate-400 uppercase"
@@ -1498,7 +1498,7 @@ onBeforeUnmount(() => {
                   </p>
                   <button
                     type="button"
-                    class="inline-flex items-center text-slate-400 transition-colors hover:text-violet-600"
+                    class="inline-flex items-center text-slate-400 transition-colors hover:text-violet-600 dark:hover:text-violet-400"
                     :title="allPreviewOn ? 'Hide all' : 'Show all'"
                     @click="toggleAllPreview"
                   >
@@ -1529,7 +1529,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
-              <div class="border-t border-slate-100 pt-3">
+              <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
                 <div class="mb-2 flex items-center justify-between">
                   <p
                     class="text-xs font-semibold tracking-wide text-slate-400 uppercase"
@@ -1538,7 +1538,7 @@ onBeforeUnmount(() => {
                   </p>
                   <button
                     type="button"
-                    class="inline-flex items-center text-slate-400 transition-colors hover:text-violet-600"
+                    class="inline-flex items-center text-slate-400 transition-colors hover:text-violet-600 dark:hover:text-violet-400"
                     :title="allAutoplayOn ? 'Disable all' : 'Enable all'"
                     @click="toggleAllAutoplay"
                   >
@@ -1568,7 +1568,7 @@ onBeforeUnmount(() => {
           </Transition>
           <button
             type="button"
-            class="absolute bottom-1.5 left-1/2 z-20 flex h-5 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm transition-colors hover:text-violet-600"
+            class="absolute bottom-1.5 left-1/2 z-20 flex h-5 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 shadow-sm transition-colors hover:text-violet-600 dark:hover:text-violet-400"
             :title="panels.topCollapsed ? 'Expand filters' : 'Collapse filters'"
             :aria-label="
               panels.topCollapsed ? 'Expand filters' : 'Collapse filters'
@@ -1672,7 +1672,7 @@ onBeforeUnmount(() => {
           >
             <div v-if="!panels.bottomCollapsed">
               <div
-                class="max-h-44 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg"
+                class="max-h-44 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg"
               >
                 <TagsList />
               </div>
@@ -1680,7 +1680,7 @@ onBeforeUnmount(() => {
           </Transition>
           <button
             type="button"
-            class="absolute top-1.5 left-1/2 z-20 flex h-5 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm transition-colors hover:text-violet-600"
+            class="absolute top-1.5 left-1/2 z-20 flex h-5 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 shadow-sm transition-colors hover:text-violet-600 dark:hover:text-violet-400"
             :title="panels.bottomCollapsed ? 'Expand tags' : 'Collapse tags'"
             :aria-label="
               panels.bottomCollapsed ? 'Expand tags' : 'Collapse tags'
@@ -1718,21 +1718,21 @@ onBeforeUnmount(() => {
             Cancel
           </button>
           <div
-            class="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-lg"
+            class="flex items-center gap-1 rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-2 py-1 shadow-lg"
           >
             <button
-              class="inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+              class="inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
               title="Previous"
               :disabled="!canStepBack"
               @click="stepEditor(-1)"
             >
               <ChevronLeft :size="16" />
             </button>
-            <span class="min-w-14 px-1 text-center text-xs tabular-nums text-slate-500">
+            <span class="min-w-14 px-1 text-center text-xs tabular-nums text-slate-500 dark:text-slate-400">
               {{ editingIndex + 1 }} / {{ visibleAssets.length }}
             </span>
             <button
-              class="inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+              class="inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
               title="Next"
               :disabled="!canStepForward"
               @click="stepEditor(1)"
@@ -1748,7 +1748,7 @@ onBeforeUnmount(() => {
         :style="{ width: panels.rightCollapsed ? '0px' : '20.5rem' }"
       >
         <aside
-          class="h-full w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
+          class="h-full w-full overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg"
         >
           <div
             class="flex h-full w-80 flex-col"
@@ -1780,7 +1780,7 @@ onBeforeUnmount(() => {
 
         <button
           type="button"
-          class="absolute top-1/2 right-full z-30 flex h-7 w-5 -translate-y-1/2 cursor-pointer items-center justify-center border border-slate-200/80 bg-white/80 text-slate-400 shadow-sm transition-[translate] duration-200 ease-in-out hover:bg-white hover:text-violet-600"
+          class="absolute top-1/2 right-full z-30 flex h-7 w-5 -translate-y-1/2 cursor-pointer items-center justify-center border border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-900/80 text-slate-400 shadow-sm transition-[translate] duration-200 ease-in-out hover:bg-white dark:hover:bg-slate-800 hover:text-violet-600 dark:hover:text-violet-400"
           :class="
             panels.rightCollapsed
               ? 'translate-x-0 rounded-l-full'
@@ -1800,14 +1800,14 @@ onBeforeUnmount(() => {
 
     <div
       v-if="embedPicker"
-      class="flex shrink-0 items-center gap-3 border-t border-slate-200 bg-white px-6 py-3"
+      class="flex shrink-0 items-center gap-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 py-3"
     >
-      <span class="text-sm text-slate-500">
+      <span class="text-sm text-slate-500 dark:text-slate-400">
         {{
           embedSingle ? 'Choose one asset' : 'Choose one or more assets'
         }}
       </span>
-      <span class="ml-auto text-sm text-slate-500">
+      <span class="ml-auto text-sm text-slate-500 dark:text-slate-400">
         {{ selectedIds.length }} selected
       </span>
       <Button
@@ -1827,7 +1827,7 @@ onBeforeUnmount(() => {
         <a
           data-pc-section="itemlink"
           class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm"
-          :class="slotProps.item.class ?? 'text-slate-700'"
+          :class="slotProps.item.class ?? 'text-slate-700 dark:text-slate-200'"
           @click.prevent
         >
           <component

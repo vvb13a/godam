@@ -408,7 +408,7 @@ async function commitDrag(): Promise<void> {
 <template>
   <div ref="root">
     <div
-      class="sticky top-0 z-10 flex items-center justify-between bg-white pt-3 pb-0 pr-3 pl-[1.375rem]"
+      class="sticky top-0 z-10 flex items-center justify-between bg-white dark:bg-slate-900 pt-3 pb-0 pr-3 pl-[1.375rem]"
     >
       <span class="text-xs font-semibold tracking-wide text-slate-400 uppercase">
         Smart Collections
@@ -418,7 +418,7 @@ async function commitDrag(): Promise<void> {
       </span>
       <div class="flex items-center gap-2">
         <button
-          class="inline-flex text-slate-400 hover:text-violet-600"
+          class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
           title="Sort smart collections"
           @click="toggleSort"
         >
@@ -428,7 +428,7 @@ async function commitDrag(): Promise<void> {
           class="inline-flex"
           :class="
             hasFilters
-              ? 'text-slate-400 hover:text-violet-600'
+              ? 'text-slate-400 hover:text-violet-600 dark:hover:text-violet-400'
               : 'cursor-not-allowed text-slate-300'
           "
           :disabled="!hasFilters"
@@ -453,8 +453,8 @@ async function commitDrag(): Promise<void> {
           class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
           :class="
             sortMode === option.value
-              ? 'bg-violet-50 text-violet-700'
-              : 'text-slate-600 hover:bg-slate-100'
+              ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
           "
           @click="setSort(option.value)"
         >
@@ -472,8 +472,8 @@ async function commitDrag(): Promise<void> {
         class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 select-none"
         :class="[
           isActive(item)
-            ? 'bg-violet-50 text-violet-700'
-            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+            ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white',
           dragIndex === index ? 'opacity-40' : '',
         ]"
         @click="apply(item)"
@@ -490,7 +490,7 @@ async function commitDrag(): Promise<void> {
           v-model="editingName"
           :data-smart-rename="item.id"
           type="text"
-          class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 outline-none"
+          class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none"
           @click.stop
           @dragstart.stop.prevent
           @keydown.stop
@@ -518,7 +518,7 @@ async function commitDrag(): Promise<void> {
           data-smart-draft
           type="text"
           placeholder="Smart collection name"
-          class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 outline-none placeholder:text-slate-300"
+          class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none placeholder:text-slate-300 dark:placeholder:text-slate-500"
           @keydown.stop
           @keydown.enter="commitCreate"
           @keydown.esc="cancelCreate"
@@ -532,12 +532,12 @@ async function commitDrag(): Promise<void> {
         <a
           data-pc-section="itemlink"
           class="flex cursor-pointer items-center gap-2 px-3 py-1 text-sm"
-          :class="slotProps.item.class ?? 'text-slate-700'"
+          :class="slotProps.item.class ?? 'text-slate-700 dark:text-slate-200'"
           @click.prevent
         >
           <span
             v-if="slotProps.item.colorOption"
-            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300"
+            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300 dark:ring-slate-700"
             :style="{ backgroundColor: slotProps.item.color }"
           />
           <component
@@ -553,7 +553,7 @@ async function commitDrag(): Promise<void> {
               contextItem?.color === slotProps.item.color.replace('#', '')
             "
             :size="12"
-            class="shrink-0 text-violet-600"
+            class="shrink-0 text-violet-600 dark:text-violet-400"
           />
         </a>
       </template>

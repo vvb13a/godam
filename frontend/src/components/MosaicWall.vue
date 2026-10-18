@@ -87,7 +87,7 @@ function extensionOf(asset: Asset): string {
       type="button"
       draggable="true"
       :data-asset-id="asset.id"
-      class="group relative overflow-hidden rounded bg-slate-100 focus:ring-2 focus:ring-violet-400 focus:outline-none"
+      class="group relative overflow-hidden rounded bg-slate-100 dark:bg-slate-800 focus:ring-2 focus:ring-violet-400 focus:outline-none"
       :class="selectedIds.includes(asset.id) ? 'ring-2 ring-violet-500' : ''"
       :style="itemStyle(asset)"
       @click.stop="$emit('open', asset, $event)"

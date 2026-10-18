@@ -322,7 +322,7 @@ onBeforeUnmount(() => {
   <div ref="root" class="relative">
     <button
       type="button"
-      class="group flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-slate-100"
+      class="group flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
       title="Switch library"
       @click="toggleOpen"
     >
@@ -331,7 +331,7 @@ onBeforeUnmount(() => {
         class="shrink-0"
         :style="{ color: libraryColorHex(currentLibrary()?.color ?? '') }"
       />
-      <span class="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">
+      <span class="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
         {{ currentLibrary()?.name ?? 'No library' }}
       </span>
       <span
@@ -345,14 +345,14 @@ onBeforeUnmount(() => {
 
     <div
       v-if="open"
-      class="absolute left-0 right-0 z-50 mt-1 rounded-lg border border-slate-200 bg-white p-2 shadow-lg"
+      class="absolute left-0 right-0 z-50 mt-1 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-2 shadow-lg"
     >
       <div class="mb-1 flex items-center justify-between px-1">
         <span class="text-xs font-semibold tracking-wide text-slate-400 uppercase">
           Libraries
         </span>
         <button
-          class="inline-flex text-slate-400 hover:text-violet-600"
+          class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
           title="New library"
           @click="startCreate"
         >
@@ -368,8 +368,8 @@ onBeforeUnmount(() => {
           :class="[
             dragOverId === lib.id ? 'ring-2 ring-violet-400 ring-inset' : '',
             lib.id === library.currentId
-              ? 'bg-violet-50 text-violet-700'
-              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+              ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white',
           ]"
           :draggable="editingId !== lib.id"
           :data-library-id="lib.id"
@@ -395,7 +395,7 @@ onBeforeUnmount(() => {
             v-model="editingName"
             :data-library-rename="lib.id"
             type="text"
-            class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 outline-none"
+            class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none"
             @click.stop
             @dblclick.stop
             @keydown.stop
@@ -407,7 +407,7 @@ onBeforeUnmount(() => {
           <Check
             v-if="lib.id === library.currentId"
             :size="14"
-            class="shrink-0 text-violet-600"
+            class="shrink-0 text-violet-600 dark:text-violet-400"
           />
         </div>
 
@@ -421,7 +421,7 @@ onBeforeUnmount(() => {
             data-library-create
             type="text"
             placeholder="Library name"
-            class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 outline-none placeholder:text-slate-300"
+            class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none placeholder:text-slate-300 dark:placeholder:text-slate-500"
             @keydown.stop
             @keydown.enter="commitCreate"
             @keydown.esc="cancelCreate"
@@ -436,12 +436,12 @@ onBeforeUnmount(() => {
         <a
           data-pc-section="itemlink"
           class="flex cursor-pointer items-center gap-2 px-3 py-1 text-sm"
-          :class="slotProps.item.class ?? 'text-slate-700'"
+          :class="slotProps.item.class ?? 'text-slate-700 dark:text-slate-200'"
           @click.prevent
         >
           <span
             v-if="slotProps.item.colorOption"
-            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300"
+            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300 dark:ring-slate-700"
             :style="{ backgroundColor: slotProps.item.color }"
           />
           <component
@@ -460,7 +460,7 @@ onBeforeUnmount(() => {
               contextLib?.color === slotProps.item.color.replace('#', '')
             "
             :size="12"
-            class="shrink-0 text-violet-600"
+            class="shrink-0 text-violet-600 dark:text-violet-400"
           />
           <AngleRight
             v-else-if="slotProps.hasSubmenu"

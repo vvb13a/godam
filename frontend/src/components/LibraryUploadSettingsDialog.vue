@@ -72,7 +72,7 @@ async function save(): Promise<void> {
   >
     <div class="space-y-5">
       <div>
-        <p class="mb-2 text-sm font-medium text-slate-700">Allowed file types</p>
+        <p class="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">Allowed file types</p>
         <p class="mb-3 text-xs text-slate-400">
           Leave this library without an explicit list to inherit the app default.
         </p>
@@ -84,7 +84,7 @@ async function save(): Promise<void> {
               </span>
               <div class="flex gap-2 text-xs">
                 <button
-                  class="text-violet-600 hover:underline"
+                  class="text-violet-600 dark:text-violet-400 hover:underline"
                   @click="toggleAll(category.options, true)"
                 >
                   All
@@ -100,7 +100,7 @@ async function save(): Promise<void> {
             <label
               v-for="option in category.options"
               :key="option.value"
-              class="flex cursor-pointer items-center gap-2 py-0.5 text-sm text-slate-600"
+              class="flex cursor-pointer items-center gap-2 py-0.5 text-sm text-slate-600 dark:text-slate-300"
             >
               <input v-model="selected[option.value]" type="checkbox" />
               {{ option.label }}
@@ -111,7 +111,7 @@ async function save(): Promise<void> {
       </div>
 
       <div>
-        <label class="mb-1 block text-sm font-medium text-slate-700" for="max-upload">
+        <label class="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200" for="max-upload">
           Max upload size (MB)
         </label>
         <input
@@ -120,7 +120,7 @@ async function save(): Promise<void> {
           type="number"
           min="0"
           step="1"
-          class="w-32 rounded border border-slate-300 px-3 py-1.5 text-sm"
+          class="w-32 rounded border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm"
         />
         <p class="mt-1 text-xs text-slate-400">0 keeps the app default.</p>
       </div>
@@ -128,7 +128,7 @@ async function save(): Promise<void> {
 
     <template #footer>
       <button
-        class="rounded px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+        class="rounded px-3 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
         @click="uploadSettingsDialog.visible = false"
       >
         Cancel

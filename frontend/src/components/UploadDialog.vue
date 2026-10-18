@@ -152,7 +152,7 @@ async function importUrl(): Promise<void> {
           <li
             v-for="(file, index) in upload.files"
             :key="`${file.name}-${index}`"
-            class="flex items-center justify-between rounded border border-slate-200 px-2 py-1 text-sm"
+            class="flex items-center justify-between rounded border border-slate-200 dark:border-slate-800 px-2 py-1 text-sm"
           >
             <span class="truncate">{{ file.name }}</span>
             <button
@@ -173,7 +173,7 @@ async function importUrl(): Promise<void> {
           type="file"
           multiple
           :accept="ACCEPT_STRING"
-          class="block w-full text-sm text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-violet-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-violet-700 hover:file:bg-violet-100"
+          class="block w-full text-sm text-slate-600 dark:text-slate-300 file:mr-3 file:rounded file:border-0 file:bg-violet-50 dark:file:bg-violet-950/50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-violet-700 dark:file:text-violet-300 hover:file:bg-violet-100"
           @change="onFiles"
         />
         <p v-if="maxUploadBytes" class="mt-1 text-xs text-slate-400">
@@ -203,7 +203,7 @@ async function importUrl(): Promise<void> {
         <label class="mb-2 block text-sm font-medium">Destination</label>
         <select
           v-model="upload.destinationCollectionId"
-          class="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          class="w-full rounded border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm"
         >
           <option :value="null">No collection</option>
           <option
@@ -214,14 +214,14 @@ async function importUrl(): Promise<void> {
             {{ collection.name }}
           </option>
         </select>
-        <p v-if="destinationTagName" class="mt-1 text-xs text-slate-500">
+        <p v-if="destinationTagName" class="mt-1 text-xs text-slate-500 dark:text-slate-400">
           Tag “{{ destinationTagName }}” will be applied to the uploaded assets.
         </p>
       </div>
 
       <div v-if="uploading" class="space-y-2">
         <ProgressBar :value="progress" />
-        <p class="truncate text-xs text-slate-500">{{ current }}</p>
+        <p class="truncate text-xs text-slate-500 dark:text-slate-400">{{ current }}</p>
       </div>
 
       <Message v-if="error" severity="error">{{ error }}</Message>

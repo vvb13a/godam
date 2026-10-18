@@ -9,11 +9,12 @@ withDefaults(defineProps<{ name: string; color?: string; starred?: boolean }>(),
 
 <template>
   <span
-    class="inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs text-slate-700 opacity-80"
-    :style="{
-      backgroundColor: color ? `${color}1a` : '#f1f5f9',
-      borderColor: color ?? '#e2e8f0',
-    }"
+    class="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs text-slate-700 opacity-80 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+    :style="
+      color
+        ? { backgroundColor: `${color}1a`, borderColor: color }
+        : undefined
+    "
   >
     <StarFill
       v-if="starred"

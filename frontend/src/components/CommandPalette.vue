@@ -141,7 +141,7 @@ const model = computed<PaletteItem[]>(() => {
         >
           <span
             v-if="slotProps.item.dot"
-            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300"
+            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300 dark:ring-slate-700"
             :style="{ backgroundColor: slotProps.item.dot }"
           />
           <component

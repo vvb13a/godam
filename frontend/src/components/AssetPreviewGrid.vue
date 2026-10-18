@@ -31,7 +31,7 @@ function markFailed(id: string): void {
     <div
       v-for="asset in previewAssets"
       :key="asset.id"
-      class="aspect-square overflow-hidden rounded bg-slate-100"
+      class="aspect-square overflow-hidden rounded bg-slate-100 dark:bg-slate-800"
     >
       <img
         v-if="!failedIds.has(asset.id)"
@@ -43,7 +43,7 @@ function markFailed(id: string): void {
     </div>
     <div
       v-if="remaining > 0"
-      class="flex aspect-square items-center justify-center rounded bg-slate-100 text-xl font-semibold text-slate-500"
+      class="flex aspect-square items-center justify-center rounded bg-slate-100 dark:bg-slate-800 text-xl font-semibold text-slate-500 dark:text-slate-400"
     >
       +{{ remaining }}
     </div>

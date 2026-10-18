@@ -1135,7 +1135,7 @@ onBeforeUnmount(() => {
     @show="focusSearch"
   >
     <div ref="rootRef" class="flex h-[36rem] max-h-[80vh] flex-col">
-      <div class="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
+      <div class="flex items-center gap-3 border-b border-slate-200 dark:border-slate-800 px-4 py-3">
         <Search :size="16" class="shrink-0 text-slate-400" />
         <input
           ref="searchRef"
@@ -1145,14 +1145,14 @@ onBeforeUnmount(() => {
           class="min-w-0 flex-1 border-0 bg-transparent text-sm outline-none"
         />
         <button
-          class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-violet-600"
+          class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-violet-600 dark:hover:text-violet-400"
           title="Display options"
           @click="displayMenu?.show($event)"
         >
           <SlidersH :size="16" />
         </button>
         <button
-          class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200"
           title="Close"
           @click="tagsDialog.visible = false"
         >
@@ -1163,7 +1163,7 @@ onBeforeUnmount(() => {
       <div class="flex min-h-0 flex-1">
         <nav
           v-if="!collapsed"
-          class="w-1/3 shrink-0 overflow-y-auto border-r border-slate-200 p-2"
+          class="w-1/3 shrink-0 overflow-y-auto border-r border-slate-200 dark:border-slate-800 p-2"
         >
           <button
             v-for="(item, index) in syntheticNav"
@@ -1173,10 +1173,10 @@ onBeforeUnmount(() => {
               item.key === 'uncategorized' && dragOverTarget === 'uncategorized'
                 ? 'ring-2 ring-violet-400 ring-inset'
                 : focusArea === 'nav' && navIndex === index
-                  ? 'bg-violet-50 text-violet-700'
+                  ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
                   : item.key === activeView
-                    ? 'bg-slate-100 text-slate-900'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white',
             ]"
             @click="selectNav(item.key, index)"
             @dragover.prevent="item.key === 'uncategorized' && onGroupDragOver('uncategorized')"
@@ -1203,7 +1203,7 @@ onBeforeUnmount(() => {
               </template>
             </span>
             <button
-              class="inline-flex text-slate-400 hover:text-violet-600"
+              class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
               title="New group"
               @click="addGroup"
             >
@@ -1227,10 +1227,10 @@ onBeforeUnmount(() => {
               dragOverTarget === group.id
                 ? 'ring-2 ring-violet-400 ring-inset'
                 : focusArea === 'nav' && navIndex === syntheticNav.length + index
-                  ? 'bg-violet-50 text-violet-700'
+                  ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
                   : activeView === `group:${group.id}`
-                    ? 'bg-slate-100 text-slate-900'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white',
             ]"
             @click="selectNav(`group:${group.id}`, syntheticNav.length + index)"
             @dblclick="startGroupRename(group)"
@@ -1249,7 +1249,7 @@ onBeforeUnmount(() => {
               v-model="editingName"
               :data-group-rename="group.id"
               type="text"
-              class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 outline-none"
+              class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none"
               @click.stop
               @dblclick.stop
               @keydown.stop
@@ -1274,9 +1274,9 @@ onBeforeUnmount(() => {
 
         <div class="flex min-w-0 flex-1 flex-col">
           <div
-            class="flex items-center gap-2 border-b border-slate-100 px-3 py-2"
+            class="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 px-3 py-2"
           >
-            <span class="truncate text-sm font-semibold text-slate-700">
+            <span class="truncate text-sm font-semibold text-slate-700 dark:text-slate-200">
               {{ activeNavLabel }}
             </span>
             <span
@@ -1286,7 +1286,7 @@ onBeforeUnmount(() => {
               {{ viewTags.length }}
             </span>
             <button
-              class="ml-auto inline-flex text-slate-400 hover:text-violet-600"
+              class="ml-auto inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
               title="New tag"
               @click="addTag"
             >
@@ -1304,7 +1304,7 @@ onBeforeUnmount(() => {
             <template v-for="section in sections" :key="section.key">
               <p
                 v-if="section.label"
-                class="sticky top-0 z-10 bg-white px-2 pt-2 pb-1 text-xs font-semibold tracking-wide text-slate-400 uppercase"
+                class="sticky top-0 z-10 bg-white dark:bg-slate-900 px-2 pt-2 pb-1 text-xs font-semibold tracking-wide text-slate-400 uppercase"
               >
                 {{ section.label }}
               </p>
@@ -1322,8 +1322,8 @@ onBeforeUnmount(() => {
                   :class="
                     focusArea === 'tags' &&
                     tagIndexMap.get(tag.id) === tagIndex
-                      ? 'bg-violet-50 text-violet-700'
-                      : 'text-slate-700 hover:bg-slate-100'
+                      ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+                      : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
                   "
                   @click="onTagClick(tag)"
                   @dblclick="startTagRename(tag)"
@@ -1358,7 +1358,7 @@ onBeforeUnmount(() => {
                     v-model="editingTagName"
                     :data-tag-rename="tag.id"
                     type="text"
-                    class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 outline-none"
+                    class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none"
                     @click.stop
                     @dblclick.stop
                     @keydown.stop
@@ -1385,7 +1385,7 @@ onBeforeUnmount(() => {
 
           <div
             v-if="isAssetEditing"
-            class="flex flex-wrap items-center gap-1.5 border-t border-slate-100 px-3 py-2"
+            class="flex flex-wrap items-center gap-1.5 border-t border-slate-100 dark:border-slate-800 px-3 py-2"
           >
             <span v-if="!selectedTags.length" class="text-xs text-slate-400">
               No tags selected
@@ -1409,7 +1409,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div
-        class="flex items-center gap-4 border-t border-slate-200 px-4 py-2 text-xs text-slate-400"
+        class="flex items-center gap-4 border-t border-slate-200 dark:border-slate-800 px-4 py-2 text-xs text-slate-400"
       >
         <span class="flex items-center gap-1.5">
           <Kbd>↑</Kbd>
@@ -1439,12 +1439,12 @@ onBeforeUnmount(() => {
         <a
           data-pc-section="itemlink"
           class="flex cursor-pointer items-center gap-2 px-3 py-1 text-sm"
-          :class="slotProps.item.class ?? 'text-slate-700'"
+          :class="slotProps.item.class ?? 'text-slate-700 dark:text-slate-200'"
           @click.prevent
         >
           <span
             v-if="slotProps.item.colorOption"
-            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300"
+            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300 dark:ring-slate-700"
             :style="{ backgroundColor: slotProps.item.color }"
           />
           <component
@@ -1458,7 +1458,7 @@ onBeforeUnmount(() => {
           />
           <span
             v-else-if="slotProps.item.color"
-            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300"
+            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300 dark:ring-slate-700"
             :style="{ backgroundColor: slotProps.item.color }"
           />
           <span class="flex-1">{{ slotProps.label }}</span>
@@ -1468,7 +1468,7 @@ onBeforeUnmount(() => {
               contextGroup?.color === slotProps.item.color.replace('#', '')
             "
             :size="12"
-            class="shrink-0 text-violet-600"
+            class="shrink-0 text-violet-600 dark:text-violet-400"
           />
           <AngleRight
             v-else-if="slotProps.hasSubmenu"
@@ -1484,12 +1484,12 @@ onBeforeUnmount(() => {
         <a
           data-pc-section="itemlink"
           class="flex cursor-pointer items-center gap-2 px-3 py-1 text-sm"
-          :class="slotProps.item.class ?? 'text-slate-700'"
+          :class="slotProps.item.class ?? 'text-slate-700 dark:text-slate-200'"
           @click.prevent
         >
           <span
             v-if="slotProps.item.colorOption"
-            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300"
+            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300 dark:ring-slate-700"
             :style="{ backgroundColor: slotProps.item.color }"
           />
           <component
@@ -1503,7 +1503,7 @@ onBeforeUnmount(() => {
           />
           <span
             v-else-if="slotProps.item.color"
-            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300"
+            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300 dark:ring-slate-700"
             :style="{ backgroundColor: slotProps.item.color }"
           />
           <span class="flex-1">{{ slotProps.label }}</span>
@@ -1513,7 +1513,7 @@ onBeforeUnmount(() => {
               contextGroup?.color === slotProps.item.color.replace('#', '')
             "
             :size="12"
-            class="shrink-0 text-violet-600"
+            class="shrink-0 text-violet-600 dark:text-violet-400"
           />
           <AngleRight
             v-else-if="slotProps.hasSubmenu"
@@ -1528,7 +1528,7 @@ onBeforeUnmount(() => {
       <template #item="slotProps">
         <a
           data-pc-section="itemlink"
-          class="flex cursor-pointer items-center gap-2 px-3 py-1 text-sm text-slate-700"
+          class="flex cursor-pointer items-center gap-2 px-3 py-1 text-sm text-slate-700 dark:text-slate-200"
           @click.prevent
         >
           <component
@@ -1541,7 +1541,7 @@ onBeforeUnmount(() => {
           <Check
             v-if="slotProps.item.active"
             :size="12"
-            class="shrink-0 text-violet-600"
+            class="shrink-0 text-violet-600 dark:text-violet-400"
           />
           <AngleRight
             v-else-if="slotProps.hasSubmenu"

@@ -183,13 +183,13 @@ const mediaClass = computed(() => {
   const base = 'relative w-full overflow-hidden'
   switch (props.shape) {
     case 'landscape':
-      return `${base} bg-slate-100 aspect-video`
+      return `${base} bg-slate-100 dark:bg-slate-800 aspect-video`
     case 'poster':
-      return `${base} bg-slate-100 aspect-[2/3]`
+      return `${base} bg-slate-100 dark:bg-slate-800 aspect-[2/3]`
     case 'native':
       return base
     default:
-      return `${base} bg-slate-100 aspect-square`
+      return `${base} bg-slate-100 dark:bg-slate-800 aspect-square`
   }
 })
 
@@ -211,12 +211,12 @@ const cardClass = computed(() => {
   // part of a larger selection, the ring is softened) so the source is clear.
   if (props.dragging) {
     return props.fill
-      ? 'h-full rounded border border-dashed border-violet-500 bg-white opacity-60'
-      : 'rounded border border-dashed border-violet-500 bg-white opacity-60'
+      ? 'h-full rounded border border-dashed border-violet-500 bg-white dark:bg-slate-900 opacity-60'
+      : 'rounded border border-dashed border-violet-500 bg-white dark:bg-slate-900 opacity-60'
   }
   const base = props.selected
-    ? 'rounded border border-violet-500 bg-white ring-2 ring-violet-500 ring-inset'
-    : 'rounded border border-slate-200 bg-white hover:border-violet-300'
+    ? 'rounded border border-violet-500 bg-white dark:bg-slate-900 ring-2 ring-violet-500 ring-inset'
+    : 'rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-violet-300'
   return props.fill ? `${base} h-full` : base
 })
 

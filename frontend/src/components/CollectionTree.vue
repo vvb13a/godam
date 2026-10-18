@@ -685,7 +685,7 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
     @drop.capture="onAssetDrop"
   >
     <div
-      class="sticky top-0 z-10 flex items-center justify-between bg-white pt-2 pb-0 pr-3 pl-[1.375rem]"
+      class="sticky top-0 z-10 flex items-center justify-between bg-white dark:bg-slate-900 pt-2 pb-0 pr-3 pl-[1.375rem]"
     >
       <span class="text-xs font-semibold tracking-wide text-slate-400 uppercase">
         Collections
@@ -695,7 +695,7 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
       </span>
       <div class="flex items-center gap-1">
         <button
-          class="inline-flex text-slate-400 hover:text-violet-600"
+          class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
           :title="allExpanded ? 'Collapse all' : 'Expand all'"
           @click="toggleExpandAll"
         >
@@ -703,14 +703,14 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
           <AngleDoubleDown v-else :size="14" />
         </button>
         <button
-          class="inline-flex text-slate-400 hover:text-violet-600"
+          class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
           title="Sort collections"
           @click="toggleSort"
         >
           <SortAlt :size="14" />
         </button>
         <button
-          class="inline-flex text-slate-400 hover:text-violet-600"
+          class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
           title="New collection"
           @click="addCollection(null)"
         >
@@ -728,8 +728,8 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
           class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
           :class="
             sortMode === option.value
-              ? 'bg-violet-50 text-violet-700'
-              : 'text-slate-600 hover:bg-slate-100'
+              ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
           "
           @click="setSort(option.value)"
         >
@@ -756,7 +756,7 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
       <template #default="{ node }">
         <div
           class="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1"
-          :class="dragOverId === node.data?.id ? 'bg-slate-100' : ''"
+          :class="dragOverId === node.data?.id ? 'bg-slate-100 dark:bg-slate-800' : ''"
         >
           <template v-if="node.key === DRAFT_KEY">
             <component
@@ -771,7 +771,7 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
               data-collection-draft
               type="text"
               placeholder="New folder"
-              class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 outline-none placeholder:text-slate-300"
+              class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none placeholder:text-slate-300 dark:placeholder:text-slate-500"
               @click.stop
               @keydown.stop
               @keydown.enter="commitDraft"
@@ -792,7 +792,7 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
               v-model="editingName"
               :data-collection-rename="node.data.id"
               type="text"
-              class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 outline-none"
+              class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none"
               @click.stop
               @dblclick.stop
               @dragstart.stop.prevent
@@ -818,12 +818,12 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
         <a
           data-pc-section="itemlink"
           class="flex cursor-pointer items-center gap-2 px-3 py-1 text-sm"
-          :class="slotProps.item.class ?? 'text-slate-700'"
+          :class="slotProps.item.class ?? 'text-slate-700 dark:text-slate-200'"
           @click.prevent
         >
           <span
             v-if="slotProps.item.colorOption"
-            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300"
+            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300 dark:ring-slate-700"
             :style="{ backgroundColor: slotProps.item.color }"
           />
           <component
@@ -839,7 +839,7 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
               contextCollection?.color === slotProps.item.color.replace('#', '')
             "
             :size="12"
-            class="shrink-0 text-violet-600"
+            class="shrink-0 text-violet-600 dark:text-violet-400"
           />
         </a>
       </template>

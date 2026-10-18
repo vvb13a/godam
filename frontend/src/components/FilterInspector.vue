@@ -166,7 +166,7 @@ function setColor(color: string): void {
           :size="16"
           :style="{ color: subject.color }"
         />
-        <h3 class="text-sm font-semibold text-slate-600">{{ subject.kind }}</h3>
+        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-300">{{ subject.kind }}</h3>
       </div>
 
       <AssetPreviewGrid :assets="assets" />
@@ -182,7 +182,7 @@ function setColor(color: string): void {
           <input
             id="filter-inspector-name"
             v-model="name"
-            class="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm"
+            class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm"
             @blur="save"
             @keydown.enter.prevent="save"
           />
@@ -199,7 +199,7 @@ function setColor(color: string): void {
             v-model="description"
             rows="3"
             placeholder="Add a description…"
-            class="w-full resize-y rounded border border-slate-300 bg-white px-3 py-1.5 text-sm"
+            class="w-full resize-y rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm"
             @blur="save"
           />
         </div>

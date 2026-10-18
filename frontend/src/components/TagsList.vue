@@ -511,7 +511,7 @@ const menuItems = computed<TagMenuItem[]>(() => {
     @drop.capture="onAssetDrop"
   >
     <div
-      class="sticky top-0 z-10 flex items-center justify-between bg-white pt-3 pb-0 pr-3 pl-[1.375rem]"
+      class="sticky top-0 z-10 flex items-center justify-between bg-white dark:bg-slate-900 pt-3 pb-0 pr-3 pl-[1.375rem]"
     >
       <span class="text-xs font-semibold tracking-wide text-slate-400 uppercase">
         Tags
@@ -521,21 +521,21 @@ const menuItems = computed<TagMenuItem[]>(() => {
       </span>
       <div class="flex items-center gap-2">
         <button
-          class="inline-flex text-slate-400 hover:text-violet-600"
+          class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
           title="Manage tags"
           @click="openTagsDialog"
         >
           <Tags :size="14" />
         </button>
         <button
-          class="inline-flex text-slate-400 hover:text-violet-600"
+          class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
           title="Group and sort tags"
           @click="toggleOptions"
         >
           <Cog :size="14" />
         </button>
         <button
-          class="inline-flex text-slate-400 hover:text-violet-600"
+          class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
           title="New tag"
           @click="createTag"
         >
@@ -558,8 +558,8 @@ const menuItems = computed<TagMenuItem[]>(() => {
           class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
           :class="
             groupBy === option.value
-              ? 'bg-violet-50 text-violet-700'
-              : 'text-slate-600 hover:bg-slate-100'
+              ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
           "
           @click="setGroup(option.value)"
         >
@@ -567,7 +567,7 @@ const menuItems = computed<TagMenuItem[]>(() => {
           <Check v-if="groupBy === option.value" :size="12" class="shrink-0" />
         </button>
 
-        <div class="my-1 border-t border-slate-100" />
+        <div class="my-1 border-t border-slate-100 dark:border-slate-800" />
 
         <p
           class="px-2 pt-1 pb-1 text-xs font-semibold tracking-wide text-slate-400 uppercase"
@@ -581,8 +581,8 @@ const menuItems = computed<TagMenuItem[]>(() => {
           class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
           :class="
             sort === option.value
-              ? 'bg-violet-50 text-violet-700'
-              : 'text-slate-600 hover:bg-slate-100'
+              ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
           "
           @click="setSort(option.value)"
         >
@@ -605,7 +605,7 @@ const menuItems = computed<TagMenuItem[]>(() => {
         class="max-w-full min-w-0 shrink-0 rounded-md pb-1.5"
         :class="
           section.label
-            ? 'border border-slate-200 bg-slate-50 px-1.5'
+            ? 'border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-1.5'
             : 'w-full'
         "
       >
@@ -622,7 +622,7 @@ const menuItems = computed<TagMenuItem[]>(() => {
               v-model="editingTagName"
               :data-tag-rename="tag.id"
               type="text"
-              class="w-24 rounded-full border border-violet-400 bg-white px-2 py-0.5 text-xs text-slate-800 outline-none"
+              class="w-24 rounded-full border border-violet-400 bg-white dark:bg-slate-900 px-2 py-0.5 text-xs text-slate-800 dark:text-slate-100 outline-none"
               @click.stop
               @keydown.stop
               @keydown.enter="commitRename"
@@ -657,12 +657,12 @@ const menuItems = computed<TagMenuItem[]>(() => {
         <a
           data-pc-section="itemlink"
           class="flex cursor-pointer items-center gap-2 px-3 py-1 text-sm"
-          :class="slotProps.item.class ?? 'text-slate-700'"
+          :class="slotProps.item.class ?? 'text-slate-700 dark:text-slate-200'"
           @click.prevent
         >
           <span
             v-if="slotProps.item.colorOption"
-            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300"
+            class="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300 dark:ring-slate-700"
             :style="{ backgroundColor: slotProps.item.color ?? '#cbd5e1' }"
           />
           <component

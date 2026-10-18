@@ -1,12 +1,14 @@
 @import "tailwindcss";
 
-/* PrimeVue uses class-based dark mode and resolves its tokens with
-   light-dark(), which follows the used `color-scheme`. PDF.js's viewer CSS
-   (injected when a PDF is opened) sets `:root { color-scheme: light dark }`,
-   which would let the OS dark preference flip PrimeVue tokens app-wide. Pin the
-   root to light; scoped dark subtrees (e.g. a future .p-dark) still win. */
-html:root {
-  color-scheme: light;
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* The theme store sets color-scheme on <html> alongside .dark/.p-dark. */
+html {
+  background-color: #f8fafc;
+}
+
+html.dark {
+  background-color: #020617;
 }
 
 /* Keep confirmation popups compact so long messages wrap instead of stretching

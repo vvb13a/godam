@@ -182,8 +182,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex h-full w-full flex-col items-center justify-center gap-6 bg-slate-100 p-6">
-    <div class="w-full max-w-3xl rounded-lg bg-white p-4 shadow-sm">
+  <div class="flex h-full w-full flex-col items-center justify-center gap-6 bg-slate-100 dark:bg-slate-800 p-6">
+    <div class="w-full max-w-3xl rounded-lg bg-white dark:bg-slate-900 p-4 shadow-sm">
       <div ref="timelineEl" class="w-full" />
       <div ref="waveformEl" class="w-full" />
       <div ref="minimapEl" class="mt-2 w-full" />
@@ -194,7 +194,7 @@ onBeforeUnmount(() => {
 
     <div class="flex w-full max-w-3xl flex-wrap items-center gap-3">
       <button
-        class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+        class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40"
         title="Back 10 seconds"
         @click="skip(-10)"
       >
@@ -210,14 +210,14 @@ onBeforeUnmount(() => {
         <Play v-else :size="20" />
       </button>
       <button
-        class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+        class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40"
         title="Forward 10 seconds"
         @click="skip(10)"
       >
         <StepForward :size="18" />
       </button>
 
-      <span class="text-sm tabular-nums text-slate-500">
+      <span class="text-sm tabular-nums text-slate-500 dark:text-slate-400">
         {{ formatTime(current) }} / {{ formatTime(duration) }}
       </span>
 
@@ -226,20 +226,20 @@ onBeforeUnmount(() => {
           :href="source"
           target="_blank"
           rel="noreferrer"
-          class="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
+          class="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
           title="Download"
         >
           <Download :size="16" />
         </a>
         <button
-          class="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
+          class="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
           title="Player settings"
           @click="toggleSettings"
         >
           <Cog :size="16" />
         </button>
         <button
-          class="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
+          class="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
           :title="silent ? 'Unmute' : 'Mute'"
           @click="toggleMute"
         >
@@ -257,7 +257,7 @@ onBeforeUnmount(() => {
         />
         <select
           v-model.number="rate"
-          class="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600"
+          class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs text-slate-600 dark:text-slate-300"
           title="Playback speed"
           @change="applyRate"
         >
@@ -274,7 +274,7 @@ onBeforeUnmount(() => {
     <Popover ref="settingsPopover">
       <div class="w-64 space-y-3">
         <div class="flex items-center justify-between gap-4">
-          <span class="text-sm font-medium text-slate-700">Autoplay</span>
+          <span class="text-sm font-medium text-slate-700 dark:text-slate-200">Autoplay</span>
           <ToggleSwitch v-model="autoplay" />
         </div>
         <p class="text-xs text-slate-400">

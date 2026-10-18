@@ -435,29 +435,29 @@ onBeforeUnmount(dispose)
 
     <div
       v-else-if="mode === 'font'"
-      class="h-full w-full overflow-y-auto bg-slate-100 p-6"
+      class="h-full w-full overflow-y-auto bg-slate-100 dark:bg-slate-800 p-6"
     >
-      <div class="mx-auto max-w-3xl rounded-lg bg-white p-6 shadow-sm">
+      <div class="mx-auto max-w-3xl rounded-lg bg-white dark:bg-slate-900 p-6 shadow-sm">
         <p
-          class="mb-5 text-5xl leading-tight break-words text-slate-800"
+          class="mb-5 text-5xl leading-tight break-words text-slate-800 dark:text-slate-100"
           :style="{ fontFamily: fontFamily || 'inherit' }"
         >
           The quick brown fox jumps over the lazy dog
         </p>
         <p
-          class="mb-3 text-3xl break-words text-slate-700"
+          class="mb-3 text-3xl break-words text-slate-700 dark:text-slate-200"
           :style="{ fontFamily: fontFamily || 'inherit' }"
         >
           ABCDEFGHIJKLMNOPQRSTUVWXYZ
         </p>
         <p
-          class="mb-3 text-3xl break-words text-slate-700"
+          class="mb-3 text-3xl break-words text-slate-700 dark:text-slate-200"
           :style="{ fontFamily: fontFamily || 'inherit' }"
         >
           abcdefghijklmnopqrstuvwxyz
         </p>
         <p
-          class="text-lg text-slate-500"
+          class="text-lg text-slate-500 dark:text-slate-400"
           :style="{ fontFamily: fontFamily || 'inherit' }"
         >
           Aa Bb Cc — 0123456789 !@#$%^&*()
@@ -471,7 +471,7 @@ onBeforeUnmount(dispose)
           :href="api.assetContentUrl(asset.id)"
           target="_blank"
           rel="noreferrer"
-          class="text-sm text-violet-600 hover:underline"
+          class="text-sm text-violet-600 dark:text-violet-400 hover:underline"
         >
           Download font
         </a>
@@ -486,32 +486,32 @@ onBeforeUnmount(dispose)
       :asset="asset"
     />
 
-    <div v-else-if="mode === 'text'" class="h-full w-full bg-slate-100 p-4">
+    <div v-else-if="mode === 'text'" class="h-full w-full bg-slate-100 dark:bg-slate-800 p-4">
       <p v-if="textLoading" class="text-sm text-slate-400">Loading…</p>
       <textarea
         v-else
         v-model="textContent"
         spellcheck="false"
-        class="h-full w-full resize-none rounded-md border border-slate-200 bg-white p-4 font-mono text-sm leading-relaxed text-slate-800 outline-none focus:border-violet-400"
+        class="h-full w-full resize-none rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 font-mono text-sm leading-relaxed text-slate-800 dark:text-slate-100 outline-none focus:border-violet-400"
       />
     </div>
 
     <div
       v-else-if="mode === 'csv'"
-      class="h-full w-full overflow-auto bg-slate-100 p-4"
+      class="h-full w-full overflow-auto bg-slate-100 dark:bg-slate-800 p-4"
     >
       <p v-if="textLoading" class="text-sm text-slate-400">Loading…</p>
-      <table v-else class="min-w-full border-collapse bg-white text-sm">
+      <table v-else class="min-w-full border-collapse bg-white dark:bg-slate-900 text-sm">
         <tbody>
           <tr
             v-for="(row, rowIndex) in csvRows"
             :key="rowIndex"
-            :class="rowIndex === 0 ? 'font-medium text-slate-800' : 'text-slate-600'"
+            :class="rowIndex === 0 ? 'font-medium text-slate-800 dark:text-slate-100' : 'text-slate-600 dark:text-slate-300'"
           >
             <td
               v-for="(cell, cellIndex) in row"
               :key="cellIndex"
-              class="border border-slate-200 px-2 py-1 whitespace-nowrap"
+              class="border border-slate-200 dark:border-slate-800 px-2 py-1 whitespace-nowrap"
             >
               {{ cell }}
             </td>
@@ -529,7 +529,7 @@ onBeforeUnmount(dispose)
         :href="api.assetContentUrl(asset.id)"
         target="_blank"
         rel="noreferrer"
-        class="text-violet-600 hover:underline"
+        class="text-violet-600 dark:text-violet-400 hover:underline"
       >
         Open original
       </a>
@@ -549,15 +549,15 @@ onBeforeUnmount(dispose)
         <button
           v-for="image in watermarkAssets"
           :key="image.id"
-          class="overflow-hidden rounded border border-slate-200 text-left hover:border-violet-400"
+          class="overflow-hidden rounded border border-slate-200 dark:border-slate-800 text-left hover:border-violet-400"
           @click="chooseWatermark(image)"
         >
           <img
             :src="api.assetPreviewUrl(image.id, image.updated_at)"
             :alt="image.title || image.filename"
-            class="aspect-square w-full bg-slate-100 object-cover"
+            class="aspect-square w-full bg-slate-100 dark:bg-slate-800 object-cover"
           />
-          <span class="block truncate px-1.5 py-1 text-xs text-slate-500">
+          <span class="block truncate px-1.5 py-1 text-xs text-slate-500 dark:text-slate-400">
             {{ image.title || image.filename }}
           </span>
         </button>

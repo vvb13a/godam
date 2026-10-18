@@ -36,7 +36,7 @@ async function removeCover(): Promise<void> {
     <div class="flex items-center justify-end px-3 py-2">
       <button
         v-if="coverAssetId"
-        class="inline-flex shrink-0 text-slate-400 hover:text-slate-700"
+        class="inline-flex shrink-0 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
         title="Remove cover"
         :disabled="busy"
         @click="removeCover"
@@ -47,7 +47,7 @@ async function removeCover(): Promise<void> {
 
     <div class="min-h-0 flex-1 space-y-6 overflow-y-auto px-3 pb-4">
       <div
-        class="flex aspect-video items-center justify-center overflow-hidden rounded bg-slate-100"
+        class="flex aspect-video items-center justify-center overflow-hidden rounded bg-slate-100 dark:bg-slate-800"
       >
         <img
           v-if="coverAssetId && !previewFailed"
@@ -95,7 +95,7 @@ async function removeCover(): Promise<void> {
             :key="type.mime_type"
             class="flex justify-between gap-4"
           >
-            <span class="truncate text-slate-600">{{ type.mime_type }}</span>
+            <span class="truncate text-slate-600 dark:text-slate-300">{{ type.mime_type }}</span>
             <span class="shrink-0 text-slate-400">
               {{ type.count }} · {{ formatSize(type.bytes) }}
             </span>

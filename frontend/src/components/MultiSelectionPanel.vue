@@ -40,7 +40,7 @@ const typeSummaries = computed<TypeSummary[]>(() => {
   <div class="flex h-full flex-col">
     <div class="flex items-center justify-end px-3 py-2">
       <button
-        class="inline-flex shrink-0 text-slate-400 hover:text-slate-700"
+        class="inline-flex shrink-0 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
         title="Clear selection"
         @click="emit('close')"
       >
@@ -70,7 +70,7 @@ const typeSummaries = computed<TypeSummary[]>(() => {
             :key="type.mimeType"
             class="flex justify-between gap-4"
           >
-            <span class="truncate text-slate-600">{{ type.mimeType }}</span>
+            <span class="truncate text-slate-600 dark:text-slate-300">{{ type.mimeType }}</span>
             <span class="shrink-0 text-slate-400">
               {{ type.count }} · {{ formatSize(type.bytes) }}
             </span>

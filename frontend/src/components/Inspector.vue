@@ -139,7 +139,7 @@ function removeCollection(collectionId: string): void {
   <div class="flex h-full flex-col">
     <div class="flex items-center justify-end px-3 py-2">
       <button
-        class="inline-flex shrink-0 text-slate-400 hover:text-slate-700"
+        class="inline-flex shrink-0 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
         title="Close"
         @click="emit('close')"
       >
@@ -174,7 +174,7 @@ function removeCollection(collectionId: string): void {
             id="inspector-title"
             v-model="title"
             :placeholder="asset.filename"
-            class="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm"
+            class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm"
             @blur="save"
             @keydown.enter.prevent="save"
           />
@@ -191,7 +191,7 @@ function removeCollection(collectionId: string): void {
             v-model="note"
             rows="3"
             placeholder="Add a note…"
-            class="w-full resize-y rounded border border-slate-300 bg-white px-3 py-1.5 text-sm"
+            class="w-full resize-y rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm"
             @blur="save"
           />
         </div>
@@ -202,7 +202,7 @@ function removeCollection(collectionId: string): void {
         <div class="mb-2 flex items-center justify-between">
           <h3 class="text-sm font-semibold">Tags</h3>
           <button
-            class="inline-flex text-slate-400 hover:text-violet-600"
+            class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
             title="Edit tags"
             @click="editTags"
           >
@@ -235,7 +235,7 @@ function removeCollection(collectionId: string): void {
         <div class="mb-2 flex items-center justify-between">
           <h3 class="text-sm font-semibold">Collections</h3>
           <button
-            class="inline-flex text-slate-400 hover:text-violet-600"
+            class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
             title="Add to collection"
           >
             <Plus :size="14" />

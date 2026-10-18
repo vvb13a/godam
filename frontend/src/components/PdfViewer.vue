@@ -285,7 +285,7 @@ onBeforeUnmount(dispose)
 <template>
   <div class="flex h-full min-h-0 flex-col">
     <div
-      class="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600"
+      class="flex flex-wrap items-center gap-1 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-300"
     >
       <button
         class="pdf-btn"
@@ -296,7 +296,7 @@ onBeforeUnmount(dispose)
         <ChevronLeft :size="16" />
       </button>
       <input
-        class="w-12 rounded border border-slate-300 px-1 py-0.5 text-center text-xs tabular-nums"
+        class="w-12 rounded border border-slate-300 dark:border-slate-700 px-1 py-0.5 text-center text-xs tabular-nums"
         type="number"
         :value="page"
         min="1"
@@ -342,7 +342,7 @@ onBeforeUnmount(dispose)
 
       <select
         v-model.number="scrollMode"
-        class="rounded border border-slate-300 bg-white px-2 py-0.5 text-xs"
+        class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-0.5 text-xs"
         title="Scrolling mode"
         @change="applyScroll"
       >
@@ -352,7 +352,7 @@ onBeforeUnmount(dispose)
       </select>
       <select
         v-model.number="spreadMode"
-        class="rounded border border-slate-300 bg-white px-2 py-0.5 text-xs"
+        class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-0.5 text-xs"
         title="Page layout"
         @change="applySpread"
       >
@@ -364,14 +364,14 @@ onBeforeUnmount(dispose)
       <span class="pdf-sep" />
 
       <div
-        class="flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5"
+        class="flex items-center gap-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-0.5"
       >
         <Search :size="14" class="shrink-0 text-slate-400" />
         <input
           v-model="findQuery"
           type="text"
           placeholder="Search"
-          class="w-28 bg-transparent text-xs text-slate-700 outline-none"
+          class="w-28 bg-transparent text-xs text-slate-700 dark:text-slate-200 outline-none"
           @input="onFindInput"
           @keydown="onFindKeydown"
         />
@@ -419,7 +419,7 @@ onBeforeUnmount(dispose)
     </div>
 
     <div class="relative min-h-0 flex-1">
-      <div ref="container" class="absolute inset-0 overflow-auto bg-slate-200">
+      <div ref="container" class="absolute inset-0 overflow-auto bg-slate-200 dark:bg-slate-700">
         <div ref="viewerEl" class="pdfViewer" />
       </div>
     </div>
@@ -468,3 +468,25 @@ onBeforeUnmount(dispose)
   margin: 0 0.25rem;
 }
 </style>
+
+:global(.dark) .pdf-btn {
+  color: #cbd5e1;
+}
+
+:global(.dark) .pdf-btn:hover:not(:disabled) {
+  background-color: #1e293b;
+  color: #f8fafc;
+}
+
+:global(.dark) .pdf-btn-sm {
+  color: #94a3b8;
+}
+
+:global(.dark) .pdf-btn-sm:hover:not(:disabled) {
+  background-color: #1e293b;
+  color: #f8fafc;
+}
+
+:global(.dark) .pdf-sep {
+  background-color: #334155;
+}

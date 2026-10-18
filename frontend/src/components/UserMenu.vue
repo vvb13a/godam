@@ -3,6 +3,7 @@ import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Popover from 'primevue/popover'
+import SelectButton from 'primevue/selectbutton'
 import ToggleSwitch from 'primevue/toggleswitch'
 import { useToast } from 'primevue/usetoast'
 import { ChevronRight, SignOut, SlidersH, UserEdit } from '@primeicons/vue'
@@ -11,6 +12,12 @@ import { useRouter } from 'vue-router'
 import { auth, changePassword, logout, updateProfile } from '../lib/auth'
 import { openCommandMenu } from '../lib/command'
 import { SIDEBAR_TOGGLES, sidebarPrefs } from '../lib/sidebar'
+import {
+  THEME_OPTIONS,
+  setThemeMode,
+  theme,
+  type ThemeMode,
+} from '../lib/theme'
 import Kbd from './Kbd.vue'
 
 const router = useRouter()
@@ -18,6 +25,11 @@ const toast = useToast()
 
 const menu = ref<InstanceType<typeof Popover> | null>(null)
 const displayMenu = ref<InstanceType<typeof Popover> | null>(null)
+
+const themeMode = computed<ThemeMode>({
+  get: () => theme.mode,
+  set: (mode) => setThemeMode(mode),
+})
 
 const dialogVisible = ref(false)
 const name = ref('')
@@ -101,8 +113,8 @@ async function doLogout(): Promise<void> {
 </script>
 
 <template>
-  <div class="border-t border-slate-200 p-2">
-    <div class="flex items-center gap-2 rounded px-2 py-2 hover:bg-slate-100">
+  <div class="border-t border-slate-200 dark:border-slate-800 p-2">
+    <div class="flex items-center gap-2 rounded px-2 py-2 hover:bg-slate-100 dark:hover:bg-slate-800">
       <button
         type="button"
         class="flex min-w-0 flex-1 items-center gap-2 text-left"
@@ -110,12 +122,12 @@ async function doLogout(): Promise<void> {
         @click="toggle"
       >
         <span
-          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-semibold text-violet-700"
+          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-100 dark:bg-violet-900/50 text-xs font-semibold text-violet-700 dark:text-violet-300"
         >
           {{ initial }}
         </span>
         <span class="min-w-0 flex-1">
-          <span class="block truncate text-sm font-medium text-slate-700">
+          <span class="block truncate text-sm font-medium text-slate-700 dark:text-slate-200">
             {{ auth.user?.name }}
           </span>
           <span class="block truncate text-xs text-slate-400">
@@ -134,10 +146,10 @@ async function doLogout(): Promise<void> {
     </div>
 
     <Popover ref="menu">
-      <div class="w-52">
+      <div class="w-64">
         <button
           type="button"
-          class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+          class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
           @click="open"
         >
           <UserEdit :size="14" />
@@ -145,17 +157,34 @@ async function doLogout(): Promise<void> {
         </button>
         <button
           type="button"
-          class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+          class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
           @click="openDisplayMenu"
         >
           <SlidersH :size="14" />
           <span class="flex-1 text-left">Panel display</span>
           <ChevronRight :size="12" class="shrink-0 text-slate-400" />
         </button>
-        <div class="my-1 border-t border-slate-100" />
+        <div class="my-1 border-t border-slate-100 dark:border-slate-800" />
+        <div class="px-2 py-1">
+          <p
+            class="mb-1.5 text-xs font-semibold tracking-wide text-slate-400 uppercase"
+          >
+            Theme
+          </p>
+          <SelectButton
+            v-model="themeMode"
+            :options="THEME_OPTIONS"
+            option-label="label"
+            option-value="value"
+            :allow-empty="false"
+            size="small"
+            class="w-full"
+          />
+        </div>
+        <div class="my-1 border-t border-slate-100 dark:border-slate-800" />
         <button
           type="button"
-          class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-red-600 hover:bg-red-50"
+          class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
           @click="doLogout"
         >
           <SignOut :size="14" />
@@ -176,7 +205,7 @@ async function doLogout(): Promise<void> {
           :key="toggle.key"
           class="flex items-center justify-between gap-3 rounded px-2 py-1.5"
         >
-          <span class="text-sm text-slate-600">{{ toggle.label }}</span>
+          <span class="text-sm text-slate-600 dark:text-slate-300">{{ toggle.label }}</span>
           <ToggleSwitch v-model="sidebarPrefs[toggle.key]" />
         </div>
       </div>
@@ -190,16 +219,16 @@ async function doLogout(): Promise<void> {
     >
       <div class="space-y-4">
         <div>
-          <label class="mb-1.5 block text-sm font-medium text-slate-700">Name</label>
+          <label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">Name</label>
           <InputText v-model="name" placeholder="Name" class="w-full" />
         </div>
         <div>
-          <label class="mb-1.5 block text-sm font-medium text-slate-700">Email</label>
+          <label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">Email</label>
           <InputText v-model="email" type="email" placeholder="Email" class="w-full" />
         </div>
 
-        <div class="border-t border-slate-100 pt-4">
-          <p class="mb-1 text-sm font-medium text-slate-700">Change password</p>
+        <div class="border-t border-slate-100 dark:border-slate-800 pt-4">
+          <p class="mb-1 text-sm font-medium text-slate-700 dark:text-slate-200">Change password</p>
           <p class="mb-3 text-xs text-slate-400">
             Leave these blank to keep your current password.
           </p>
@@ -229,7 +258,7 @@ async function doLogout(): Promise<void> {
           </div>
         </div>
 
-        <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+        <p v-if="error" class="text-sm text-red-600 dark:text-red-400">{{ error }}</p>
       </div>
       <template #footer>
         <Button label="Cancel" text :disabled="busy" @click="dialogVisible = false" />

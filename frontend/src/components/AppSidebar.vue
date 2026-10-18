@@ -64,7 +64,7 @@ watch(
     :style="{ width: panels.leftCollapsed ? '0px' : '16.5rem' }"
   >
     <aside
-      class="h-full w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
+      class="h-full w-full overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg"
     >
       <div
         class="flex h-full w-64 flex-col"
@@ -76,7 +76,7 @@ watch(
           >
             Library
           </p>
-          <p class="truncate text-sm font-semibold text-slate-700">
+          <p class="truncate text-sm font-semibold text-slate-700 dark:text-slate-200">
             {{ activeLibrary?.name ?? 'Library' }}
           </p>
         </div>
@@ -91,8 +91,8 @@ watch(
             class="flex items-center gap-2 rounded px-3 py-2 text-sm font-medium"
             :class="
               allActive
-                ? 'bg-violet-50 text-violet-700'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
             "
           >
             <Images :size="18" />
@@ -132,7 +132,7 @@ watch(
 
     <button
       type="button"
-      class="absolute top-1/2 left-full z-30 flex h-7 w-5 -translate-y-1/2 cursor-pointer items-center justify-center border border-slate-200/80 bg-white/80 text-slate-400 shadow-sm transition-[translate] duration-200 ease-in-out hover:bg-white hover:text-violet-600"
+      class="absolute top-1/2 left-full z-30 flex h-7 w-5 -translate-y-1/2 cursor-pointer items-center justify-center border border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-900/80 text-slate-400 shadow-sm transition-[translate] duration-200 ease-in-out hover:bg-white dark:hover:bg-slate-800 hover:text-violet-600 dark:hover:text-violet-400"
       :class="
         panels.leftCollapsed
           ? 'translate-x-0 rounded-r-full'
@@ -191,3 +191,16 @@ watch(
   background-position: center;
 }
 </style>
+
+:global(.dark) :deep(.p-splitter-gutter)::before {
+  background-color: #1e293b;
+}
+
+:global(.dark) :deep(.p-splitter-gutter:hover)::before {
+  background-color: #475569;
+}
+
+:global(.dark) :deep(.p-splitter-gutter-handle) {
+  border-color: #334155;
+  background-color: #0f172a;
+}

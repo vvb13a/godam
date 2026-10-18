@@ -53,16 +53,16 @@ async function useDeveloper(): Promise<void> {
 </script>
 
 <template>
-  <div class="flex h-full w-full items-center justify-center bg-slate-50 p-6">
-    <div class="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
+  <div class="flex h-full w-full items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
+    <div class="w-full max-w-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 shadow-sm">
       <div class="mb-6 flex items-center gap-2">
-        <Database :size="24" class="text-violet-600" />
-        <h1 class="text-xl font-semibold text-slate-800">GoDam</h1>
+        <Database :size="24" class="text-violet-600 dark:text-violet-400" />
+        <h1 class="text-xl font-semibold text-slate-800 dark:text-slate-100">GoDam</h1>
       </div>
 
       <form class="space-y-4" @submit.prevent="submit">
         <div>
-          <label class="mb-1.5 block text-sm font-medium text-slate-700">Email</label>
+          <label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">Email</label>
           <InputText
             v-model="email"
             type="email"
@@ -73,7 +73,7 @@ async function useDeveloper(): Promise<void> {
           />
         </div>
         <div>
-          <label class="mb-1.5 block text-sm font-medium text-slate-700">Password</label>
+          <label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">Password</label>
           <InputText
             v-model="password"
             type="password"
@@ -84,7 +84,7 @@ async function useDeveloper(): Promise<void> {
           />
         </div>
 
-        <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+        <p v-if="error" class="text-sm text-red-600 dark:text-red-400">{{ error }}</p>
 
         <Button
           type="submit"
@@ -96,9 +96,9 @@ async function useDeveloper(): Promise<void> {
       </form>
 
       <div class="my-5 flex items-center gap-3 text-xs text-slate-400">
-        <span class="h-px flex-1 bg-slate-200" />
+        <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
         <span>or</span>
-        <span class="h-px flex-1 bg-slate-200" />
+        <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
       </div>
 
       <Button

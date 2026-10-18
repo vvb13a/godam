@@ -33,10 +33,10 @@ async function create(): Promise<void> {
 </script>
 
 <template>
-  <div class="flex h-full w-full items-center justify-center bg-slate-50 p-6">
-    <div class="w-full max-w-md rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-      <h1 class="text-xl font-semibold text-slate-800">Create your first library</h1>
-      <p class="mt-1 text-sm text-slate-500">
+  <div class="flex h-full w-full items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
+    <div class="w-full max-w-md rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 shadow-sm">
+      <h1 class="text-xl font-semibold text-slate-800 dark:text-slate-100">Create your first library</h1>
+      <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
         A library is a self-contained scope for your assets, tags, collections
         and tag groups. You can create more later and switch between them.
       </p>
@@ -71,7 +71,7 @@ async function create(): Promise<void> {
         </div>
       </div>
 
-      <p v-if="error" class="mt-4 text-sm text-red-600">{{ error }}</p>
+      <p v-if="error" class="mt-4 text-sm text-red-600 dark:text-red-400">{{ error }}</p>
 
       <Button
         label="Create library"

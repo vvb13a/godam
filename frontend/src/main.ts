@@ -8,6 +8,7 @@ import { createApp } from 'vue'
 import './style.css'
 import App from './App.vue'
 import { router } from './router'
+import { initTheme } from './lib/theme'
 
 // Violet primary, matching the accent the former TUI used.
 const GodamPreset = definePreset(Aura, {
@@ -27,6 +28,8 @@ const GodamPreset = definePreset(Aura, {
     },
   },
 })
+
+initTheme()
 
 const app = createApp(App)
 
