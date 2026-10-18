@@ -15,6 +15,7 @@ import UploadDialog from './components/UploadDialog.vue'
 import { auth } from './lib/auth'
 import { commandMenu } from './lib/command'
 import { editorDirty, setLeaveConfirm } from './lib/editorState'
+import { embed, startEmbedBridge } from './lib/embed'
 import { initLibrary, library, resetLibrary } from './lib/library'
 import { openUpload } from './lib/upload'
 
@@ -119,12 +120,20 @@ onMounted(() => {
   window.addEventListener('beforeunload', onBeforeUnload)
 })
 
-// Load (or clear) the library scope whenever the signed-in user changes.
+startEmbedBridge()
+
+// Load (or clear) the library scope whenever the signed-in user changes. An
+// embedding host pins the app to the requested project.
 watch(
   () => auth.user,
   (user) => {
-    if (user) void initLibrary()
-    else resetLibrary()
+    if (user) {
+      void initLibrary(
+        embed.active && embed.libraryId ? embed.libraryId : undefined,
+      )
+    } else {
+      resetLibrary()
+    }
   },
   { immediate: true },
 )
@@ -151,10 +160,17 @@ onBeforeUnmount(() => {
         Loading…
       </div>
 
+      <p
+        v-else-if="embed.active && !library.libraries.length"
+        class="flex h-full w-full items-center justify-center text-sm text-slate-400"
+      >
+        No libraries are available in this workspace.
+      </p>
+
       <LibraryOnboarding v-else-if="!library.libraries.length" />
 
       <template v-else>
-        <AppSidebar />
+        <AppSidebar :embed="embed.active" />
         <main class="min-h-0 flex-1 overflow-hidden">
           <RouterView />
         </main>

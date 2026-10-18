@@ -1,0 +1,1053 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ACME News · godam embed demo</title>
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
+    ></script>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      [x-cloak] {
+        display: none !important;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        color: #1e293b;
+        background: #f8fafc;
+      }
+      .app-shell {
+        display: flex;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      /* Mock consuming-app sidebar */
+      .app-sidebar {
+        display: flex;
+        width: 240px;
+        flex-shrink: 0;
+        flex-direction: column;
+        gap: 1.5rem;
+        padding: 1.25rem 1rem;
+        background: #0f172a;
+        color: #e2e8f0;
+        overflow-y: auto;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0 0.4rem;
+        font-size: 0.95rem;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+      .brand-mark {
+        display: inline-flex;
+        width: 1.75rem;
+        height: 1.75rem;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.45rem;
+        background: #7c3aed;
+        color: #fff;
+        font-size: 0.8rem;
+      }
+      .nav {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+      }
+      .nav a {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.55rem 0.7rem;
+        border-radius: 0.45rem;
+        color: #cbd5e1;
+        font-size: 0.85rem;
+        font-weight: 500;
+        text-decoration: none;
+      }
+      .nav a:hover {
+        background: #1e293b;
+        color: #f8fafc;
+      }
+      .nav a.active {
+        background: #7c3aed;
+        color: #fff;
+      }
+      .sidebar-settings {
+        margin-top: auto;
+        padding: 0.75rem;
+        border: 1px solid #1e293b;
+        border-radius: 0.6rem;
+        background: #111c33;
+      }
+      .sidebar-settings .eyebrow {
+        color: #64748b;
+        margin-bottom: 0.6rem;
+      }
+      .sidebar-settings label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        margin-bottom: 0.6rem;
+        font-size: 0.62rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: #94a3b8;
+      }
+      .sidebar-settings input,
+      .sidebar-settings select {
+        padding: 0.4rem 0.5rem;
+        border: 1px solid #334155;
+        border-radius: 0.35rem;
+        background: #1e293b;
+        color: #e2e8f0;
+        font: inherit;
+        font-size: 0.75rem;
+        text-transform: none;
+      }
+      .sidebar-note {
+        margin: 0;
+        font-size: 0.68rem;
+        line-height: 1.5;
+        color: #64748b;
+        text-transform: none;
+        letter-spacing: 0;
+      }
+
+      /* Main area */
+      .app-main {
+        position: relative;
+        display: flex;
+        min-width: 0;
+        flex: 1;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .page-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1.1rem 1.5rem;
+        border-bottom: 1px solid #e2e8f0;
+        background: #fff;
+      }
+      .page-header h1 {
+        margin: 0;
+        font-size: 1.05rem;
+        letter-spacing: -0.01em;
+      }
+      .eyebrow {
+        margin: 0 0 0.2rem;
+        font-size: 0.62rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #94a3b8;
+      }
+      .badge {
+        flex-shrink: 0;
+        padding: 0.25rem 0.55rem;
+        border-radius: 999px;
+        background: #ede9fe;
+        color: #6d28d9;
+        font-size: 0.68rem;
+        font-weight: 600;
+      }
+
+      /* Full library page */
+      .library-page {
+        display: flex;
+        min-height: 0;
+        flex: 1;
+        flex-direction: column;
+      }
+      .library-host {
+        position: relative;
+        min-height: 0;
+        flex: 1;
+      }
+      .library-frame {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: #fff;
+      }
+      .library-loading {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #fff;
+        color: #94a3b8;
+        font-size: 0.85rem;
+      }
+
+      /* Article form */
+      .article-page {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1.5rem;
+      }
+      .article-form {
+        display: flex;
+        max-width: 820px;
+        margin: 0 auto;
+        flex-direction: column;
+        gap: 1.25rem;
+        padding: 1.5rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        background: #fff;
+        box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+      }
+      .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #475569;
+      }
+      .field input,
+      .field textarea {
+        padding: 0.55rem 0.65rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 0.45rem;
+        color: #1e293b;
+        background: #fff;
+        font: inherit;
+        font-size: 0.85rem;
+        font-weight: 400;
+      }
+      .field input:focus,
+      .field textarea:focus {
+        border-color: #a78bfa;
+        outline: 2px solid #ddd6fe;
+        outline-offset: 0;
+      }
+      .field-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+      .field-hint {
+        font-size: 0.72rem;
+        font-weight: 400;
+        color: #94a3b8;
+      }
+      .asset-field {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+        gap: 0.75rem;
+        padding: 0.75rem;
+        border: 1px dashed #cbd5e1;
+        border-radius: 0.6rem;
+        background: #f8fafc;
+      }
+      .asset-field.single-field {
+        grid-template-columns: repeat(auto-fill, 160px);
+      }
+      .asset-item {
+        position: relative;
+        margin: 0;
+        overflow: hidden;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.5rem;
+        background: #fff;
+        cursor: grab;
+        transition:
+          outline-color 0.15s ease,
+          box-shadow 0.15s ease;
+      }
+      .asset-item:active {
+        cursor: grabbing;
+      }
+      .asset-item.drag-over {
+        outline: 2px dashed #7c3aed;
+        outline-offset: 2px;
+        box-shadow: 0 0 0 4px #ede9fe;
+      }
+      .asset-preview {
+        display: block;
+        width: 100%;
+        aspect-ratio: 1;
+        object-fit: cover;
+        background: #e2e8f0;
+      }
+      .asset-index {
+        position: absolute;
+        top: 0.35rem;
+        left: 0.35rem;
+        z-index: 1;
+        display: inline-flex;
+        width: 1.2rem;
+        height: 1.2rem;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        background: #ede9fe;
+        color: #6d28d9;
+        font-size: 0.62rem;
+        font-weight: 700;
+        box-shadow: 0 1px 3px rgb(15 23 42 / 25%);
+      }
+      .asset-hover {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        padding: 0.4rem;
+        background: linear-gradient(to top, rgb(15 23 42 / 70%), transparent 60%);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s ease;
+      }
+      .asset-item:hover .asset-hover,
+      .asset-item:focus-within .asset-hover {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .asset-hover-actions {
+        display: flex;
+        gap: 0.15rem;
+        padding: 0.2rem;
+        border-radius: 0.4rem;
+        background: rgb(255 255 255 / 96%);
+        box-shadow: 0 2px 8px rgb(15 23 42 / 25%);
+      }
+      .asset-hover button {
+        display: inline-flex;
+        width: 1.7rem;
+        height: 1.7rem;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: 0.3rem;
+        background: transparent;
+        color: #475569;
+        font: inherit;
+        font-size: 0.8rem;
+        cursor: pointer;
+      }
+      .asset-hover button:hover:not(:disabled) {
+        background: #f1f5f9;
+        color: #1e293b;
+      }
+      .asset-hover button:disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+      }
+      .asset-hover button.danger:hover {
+        background: #fef2f2;
+        color: #dc2626;
+      }
+      @media (hover: none) {
+        .asset-hover {
+          opacity: 1;
+          pointer-events: auto;
+        }
+      }
+      .asset-add {
+        display: flex;
+        min-height: 130px;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.35rem;
+        padding: 0.75rem;
+        border: 1px dashed #a78bfa;
+        border-radius: 0.5rem;
+        background: #f5f3ff;
+        color: #6d28d9;
+        font: inherit;
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-align: center;
+        cursor: pointer;
+      }
+      .asset-add:hover {
+        background: #ede9fe;
+      }
+      .plus {
+        font-size: 1.5rem;
+        line-height: 1;
+      }
+      .field-help {
+        margin: 0;
+        font-size: 0.72rem;
+        font-weight: 400;
+        line-height: 1.5;
+        color: #94a3b8;
+      }
+      .form-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+      .primary {
+        padding: 0.6rem 1rem;
+        border: 0;
+        border-radius: 0.45rem;
+        background: #7c3aed;
+        color: #fff;
+        font: inherit;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .primary:hover {
+        background: #6d28d9;
+      }
+      .saved {
+        color: #059669;
+        font-size: 0.75rem;
+      }
+
+      /* Picker dialog */
+      .overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        background: rgb(15 23 42 / 55%);
+        backdrop-filter: blur(2px);
+      }
+      .dialog {
+        position: relative;
+        width: 80vw;
+        height: 80vh;
+        overflow: hidden;
+        border-radius: 0.75rem;
+        background: #fff;
+        box-shadow: 0 25px 60px -15px rgb(0 0 0 / 50%);
+      }
+      .dialog iframe {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }
+      .dialog-loading {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #fff;
+        color: #94a3b8;
+        font-size: 0.85rem;
+      }
+
+      @media (max-width: 720px) {
+        .app-sidebar {
+          display: none;
+        }
+        .form-row {
+          grid-template-columns: 1fr;
+        }
+        .overlay {
+          padding: 0.5rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div x-data="godamDemo()" x-init="init()" class="app-shell">
+      <aside class="app-sidebar">
+        <div class="brand">
+          <span class="brand-mark">A</span>
+          ACME News
+        </div>
+
+        <nav class="nav">
+          <a
+            href="#/article"
+            :class="page === 'article' ? 'active' : ''"
+          >
+            Article editor
+          </a>
+          <a
+            href="#/library"
+            :class="page === 'library' ? 'active' : ''"
+          >
+            Media library
+          </a>
+        </nav>
+
+        <div class="sidebar-settings">
+          <p class="eyebrow">Embed settings</p>
+          <label>
+            godam origin
+            <input x-model="damOrigin" />
+          </label>
+          <label>
+            library id
+            <input x-model="libraryId" placeholder="(first library)" />
+          </label>
+
+          <p class="eyebrow" style="margin-top: 1rem">Picker restrictions</p>
+          <label>
+            collection id
+            <input x-model="restrictCollection" placeholder="(none)" />
+          </label>
+          <label>
+            tag id
+            <input x-model="restrictTag" placeholder="(none)" />
+          </label>
+          <label>
+            lock
+            <select x-model="lock">
+              <option value="">not locked</option>
+              <option value="collection">collection</option>
+              <option value="tag">tag</option>
+              <option value="collection,tag">both</option>
+            </select>
+          </label>
+
+          <p class="sidebar-note">
+            Log into godam once on this origin so the iframe has a session.
+            Switch from <code>:5173</code> to <code>:8080</code> when using the
+            Go-served build. Restrictions apply to the picker only.
+          </p>
+        </div>
+      </aside>
+
+      <main class="app-main">
+        <template x-if="page === 'library'">
+          <section class="library-page">
+          <div class="library-host">
+            <iframe
+              x-ref="libraryFrame"
+              :src="libraryUrl"
+              title="godam media library"
+              class="library-frame"
+              @load="onLibraryLoad()"
+            ></iframe>
+            <div class="library-loading" x-show="!libraryReady">
+              Loading the godam library…
+            </div>
+          </div>
+          </section>
+        </template>
+
+        <section class="article-page" x-show="page === 'article'" x-cloak>
+            <form class="article-form" @submit.prevent="saveArticle()">
+              <header class="page-header" style="padding: 0 0 1rem; border-bottom: 1px solid #e2e8f0">
+                <div>
+                  <p class="eyebrow">News</p>
+                  <h1>Edit article</h1>
+                </div>
+                <span class="badge">Picker embed</span>
+              </header>
+
+              <div class="form-row">
+                <label class="field">
+                  Title
+                  <input
+                    x-model="article.title"
+                    placeholder="Article title"
+                  />
+                </label>
+                <label class="field">
+                  Slug
+                  <input x-model="article.slug" placeholder="article-slug" />
+                </label>
+              </div>
+
+              <label class="field">
+                Summary
+                <textarea
+                  x-model="article.summary"
+                  rows="3"
+                  placeholder="Short summary…"
+                ></textarea>
+              </label>
+
+              <div class="field">
+                <div class="field-head">
+                  <span>Hero image</span>
+                  <span
+                    class="field-hint"
+                    x-text="heroId ? '1 selected' : 'No image selected'"
+                  ></span>
+                </div>
+
+                <div class="asset-field single-field">
+                  <template x-if="heroId">
+                    <figure class="asset-item">
+                      <img
+                        v-if="!failedPreviews[heroId]"
+                        :src="previewUrl(heroId)"
+                        alt="Hero image"
+                        class="asset-preview"
+                        draggable="false"
+                        @error="onPreviewError(heroId)"
+                      />
+                      <div class="asset-hover">
+                        <div class="asset-hover-actions">
+                          <button
+                            type="button"
+                            title="Replace hero image"
+                            @click="chooseHero()"
+                          >
+                            ⇄
+                          </button>
+                          <button
+                            type="button"
+                            class="danger"
+                            title="Remove hero image"
+                            @click="heroId = ''"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    </figure>
+                  </template>
+
+                  <button
+                    type="button"
+                    class="asset-add"
+                    @click="chooseHero()"
+                  >
+                    <span class="plus">+</span>
+                    <span
+                      x-text="heroId ? 'Replace hero image' : 'Select hero image'"
+                    ></span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="field">
+                <div class="field-head">
+                  <span>Featured assets</span>
+                  <span
+                    class="field-hint"
+                    x-text="selectedIds.length ? `${selectedIds.length} selected` : 'No assets selected'"
+                  ></span>
+                </div>
+
+                <div class="asset-field">
+                  <template x-for="(id, index) in selectedIds" :key="id">
+                    <figure
+                      class="asset-item"
+                      draggable="true"
+                      :class="
+                        dragOverIndex === index && dragIndex !== index
+                          ? 'drag-over'
+                          : ''
+                      "
+                      @dragstart="startDrag(index, $event)"
+                      @dragover.prevent="dragOverIndex = index"
+                      @dragleave="onDragLeave(index, $event)"
+                      @drop.prevent="dropAt(index)"
+                      @dragend="endDrag()"
+                    >
+                      <img
+                        v-if="!failedPreviews[id]"
+                        :src="previewUrl(id)"
+                        :alt="`Selected asset ${index + 1}`"
+                        class="asset-preview"
+                        draggable="false"
+                        @error="onPreviewError(id)"
+                      />
+                      <span class="asset-index" x-text="index + 1"></span>
+
+                      <div class="asset-hover">
+                        <div class="asset-hover-actions">
+                          <button
+                            type="button"
+                            title="Move up"
+                            :disabled="index === 0"
+                            @click="moveUp(index)"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            title="Move down"
+                            :disabled="index === selectedIds.length - 1"
+                            @click="moveDown(index)"
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            title="Replace this asset"
+                            @click="replaceAsset(index)"
+                          >
+                            ⇄
+                          </button>
+                          <button
+                            type="button"
+                            class="danger"
+                            title="Remove"
+                            @click="removeAt(index)"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    </figure>
+                  </template>
+
+                  <button
+                    type="button"
+                    class="asset-add"
+                    @click="chooseAssets()"
+                  >
+                    <span class="plus">+</span>
+                    <span
+                      x-text="selectedIds.length ? 'Add or replace assets' : 'Select assets'"
+                    ></span>
+                  </button>
+                </div>
+
+                <p class="field-help">
+                  Previews are resolved from the asset ID. In production, feed
+                  the same ID to imgproxy for srcset, WebP, and quality
+                  optimization.
+                </p>
+              </div>
+
+              <div class="form-actions">
+                <button type="submit" class="primary">Save article</button>
+                <span class="saved" x-show="saved">Saved (check the console)</span>
+              </div>
+            </form>
+          </section>
+      </main>
+
+      <template x-if="dialogOpen">
+        <div class="overlay" @click.self="closeDialog()">
+          <div class="dialog">
+            <div class="dialog-loading" x-show="!dialogReady">
+              Loading picker…
+            </div>
+            <iframe
+              x-ref="frame"
+              :src="pickerUrl"
+              title="godam asset picker"
+              @load="onDialogLoad()"
+            ></iframe>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <script>
+      function godamDemo() {
+        return {
+          page: 'library',
+          damOrigin: 'http://localhost:5173',
+          libraryId: '',
+
+          restrictCollection: '',
+          restrictTag: '',
+          lock: '',
+
+          article: {
+            title: 'New product line lands in stores',
+            slug: 'new-product-line',
+            summary: 'A short summary of the article.',
+          },
+          heroId: '',
+          selectedIds: [],
+          failedPreviews: {},
+          previewRetries: {},
+          saved: false,
+
+          libraryReady: false,
+          dialogOpen: false,
+          dialogReady: false,
+          dialogMode: 'multi',
+          dialogPreselect: [],
+          replaceIndex: null,
+          dialogTarget: 'gallery',
+          dragIndex: null,
+          dragOverIndex: null,
+
+          get origin() {
+            try {
+              return new URL(this.damOrigin).origin
+            } catch {
+              return 'http://localhost:5173'
+            }
+          },
+
+          get hostOrigin() {
+            return window.location.origin === 'null'
+              ? ''
+              : window.location.origin
+          },
+
+          get libraryUrl() {
+            const url = new URL('/embed', this.origin)
+            url.searchParams.set('mode', 'library')
+            if (this.libraryId.trim()) {
+              url.searchParams.set('library', this.libraryId.trim())
+            }
+            if (this.hostOrigin) {
+              url.searchParams.set('hostOrigin', this.hostOrigin)
+            }
+            return url.toString()
+          },
+
+          get pickerUrl() {
+            const url = new URL('/embed', this.origin)
+            url.searchParams.set('mode', this.dialogMode)
+            if (this.libraryId.trim()) {
+              url.searchParams.set('library', this.libraryId.trim())
+            }
+            if (this.dialogPreselect.length) {
+              url.searchParams.set('selected', this.dialogPreselect.join(','))
+            }
+            if (this.restrictCollection.trim()) {
+              url.searchParams.set(
+                'collection',
+                this.restrictCollection.trim(),
+              )
+            }
+            if (this.restrictTag.trim()) {
+              url.searchParams.set('tag', this.restrictTag.trim())
+            }
+            if (this.lock) {
+              url.searchParams.set('lock', this.lock)
+            }
+            if (this.hostOrigin) {
+              url.searchParams.set('hostOrigin', this.hostOrigin)
+            }
+            return url.toString()
+          },
+
+          init() {
+            this.page = this.pageFromHash()
+            window.addEventListener('hashchange', () => {
+              this.page = this.pageFromHash()
+            })
+            this.listen()
+            this.$nextTick(() => this.ping(this.$refs.libraryFrame))
+          },
+
+          pageFromHash() {
+            return window.location.hash.replace(/^#\/?/, '') === 'article'
+              ? 'article'
+              : 'library'
+          },
+
+          previewUrl(id) {
+            const retry = this.previewRetries[id] || 0
+            const suffix = retry ? `?retry=${retry}` : ''
+            return `${this.origin}/api/assets/${encodeURIComponent(id)}/preview${suffix}`
+          },
+
+          onPreviewError(id) {
+            const retries = this.previewRetries[id] || 0
+            if (retries < 1) {
+              this.previewRetries[id] = retries + 1
+              return
+            }
+            this.failedPreviews[id] = true
+          },
+
+          ping(frame) {
+            frame?.contentWindow?.postMessage(
+              { type: 'godam:ping' },
+              this.origin,
+            )
+          },
+
+          onLibraryLoad() {
+            this.libraryReady = false
+            this.$nextTick(() => this.ping(this.$refs.libraryFrame))
+          },
+
+          onDialogLoad() {
+            this.dialogReady = false
+            this.$nextTick(() => this.ping(this.$refs.frame))
+          },
+
+          chooseHero() {
+            this.openDialog(
+              'single',
+              this.heroId ? [this.heroId] : [],
+              null,
+              'hero',
+            )
+          },
+
+          chooseAssets() {
+            this.openDialog('multi', this.selectedIds, null, 'gallery')
+          },
+
+          replaceAsset(index) {
+            const id = this.selectedIds[index]
+            if (!id) return
+            this.openDialog('single', [id], index, 'gallery')
+          },
+
+          openDialog(mode, preselect, replaceIndex, target) {
+            this.dialogMode = mode
+            this.dialogPreselect = [...preselect]
+            this.replaceIndex = replaceIndex
+            this.dialogTarget = target
+            this.dialogReady = false
+            this.dialogOpen = true
+            this.$nextTick(() => this.ping(this.$refs.frame))
+          },
+
+          closeDialog() {
+            this.dialogOpen = false
+            this.dialogPreselect = []
+            this.replaceIndex = null
+            this.dialogTarget = 'gallery'
+          },
+
+          applySelection(ids) {
+            const unique = [...new Set(ids)]
+            if (this.dialogTarget === 'hero') {
+              this.heroId = unique[0] ?? ''
+            } else if (this.replaceIndex !== null) {
+              const next = [...this.selectedIds]
+              next[this.replaceIndex] = unique[0]
+              this.selectedIds = next.filter(Boolean)
+            } else {
+              this.selectedIds = unique
+            }
+            this.closeDialog()
+          },
+
+          removeAt(index) {
+            this.selectedIds = this.selectedIds.filter(
+              (_, itemIndex) => itemIndex !== index,
+            )
+          },
+
+          moveUp(index) {
+            if (index <= 0) return
+            const next = [...this.selectedIds]
+            ;[next[index - 1], next[index]] = [next[index], next[index - 1]]
+            this.selectedIds = next
+          },
+
+          moveDown(index) {
+            if (index >= this.selectedIds.length - 1) return
+            const next = [...this.selectedIds]
+            ;[next[index], next[index + 1]] = [next[index + 1], next[index]]
+            this.selectedIds = next
+          },
+
+          startDrag(index, event) {
+            this.dragIndex = index
+            this.dragOverIndex = index
+            event.dataTransfer.effectAllowed = 'move'
+            event.dataTransfer.setData('text/plain', String(index))
+          },
+
+          onDragLeave(index, event) {
+            const related = event.relatedTarget
+            if (related && event.currentTarget.contains(related)) return
+            if (this.dragOverIndex === index) this.dragOverIndex = null
+          },
+
+          dropAt(index) {
+            const from = this.dragIndex
+            if (from === null) return this.endDrag()
+            if (from !== index) {
+              const next = [...this.selectedIds]
+              const [moved] = next.splice(from, 1)
+              next.splice(index, 0, moved)
+              this.selectedIds = next
+            }
+            this.endDrag()
+          },
+
+          endDrag() {
+            this.dragIndex = null
+            this.dragOverIndex = null
+          },
+
+          saveArticle() {
+            const payload = {
+              ...this.article,
+              heroAssetId: this.heroId || null,
+              assetIds: [...this.selectedIds],
+            }
+            console.log('[host] save article', payload)
+            this.saved = true
+            setTimeout(() => {
+              this.saved = false
+            }, 2000)
+          },
+
+          listen() {
+            window.addEventListener('message', (event) => {
+              if (event.origin !== this.origin) return
+
+              const fromPicker =
+                this.$refs.frame &&
+                event.source === this.$refs.frame.contentWindow
+              const fromLibrary =
+                this.$refs.libraryFrame &&
+                event.source === this.$refs.libraryFrame.contentWindow
+
+              const data = event.data || {}
+              if (data.type === 'godam:ready') {
+                if (fromPicker) this.dialogReady = true
+                if (fromLibrary) this.libraryReady = true
+                console.log(
+                  `[host] ${fromPicker ? 'picker' : 'library'} ready`,
+                  data,
+                )
+                return
+              }
+
+              if (!fromPicker) return
+              if (data.type === 'godam:selection') {
+                console.log('[host] selected asset ids:', data.assetIds)
+                this.applySelection(data.assetIds)
+                return
+              }
+              if (data.type === 'godam:cancel') {
+                console.log('[host] picker cancelled')
+                this.closeDialog()
+              }
+            })
+          },
+        }
+      }
+    </script>
+  </body>
+</html>

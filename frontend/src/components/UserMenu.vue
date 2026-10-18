@@ -149,7 +149,7 @@ async function doLogout(): Promise<void> {
           @click="openDisplayMenu"
         >
           <SlidersH :size="14" />
-          <span class="flex-1 text-left">Sidebar display</span>
+          <span class="flex-1 text-left">Panel display</span>
           <ChevronRight :size="12" class="shrink-0 text-slate-400" />
         </button>
         <div class="my-1 border-t border-slate-100" />
@@ -169,7 +169,7 @@ async function doLogout(): Promise<void> {
         <p
           class="px-2 pt-1 pb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
         >
-          Sidebar
+          Panels
         </p>
         <div
           v-for="toggle in SIDEBAR_TOGGLES"

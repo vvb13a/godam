@@ -104,16 +104,24 @@ export function selectLibrary(id: string): void {
 }
 
 // initLibrary loads the available libraries and picks the default: the library
-// with the lowest sort order (the API returns them pre-sorted).
-export async function initLibrary(): Promise<void> {
+// with the lowest sort order (the API returns them pre-sorted), or an explicit
+// preferred id when an embedding host scopes the app to one project.
+export async function initLibrary(preferredId?: string): Promise<void> {
   await loadLibraries()
+  const preferred = preferredId
+    ? library.libraries.find((item) => item.id === preferredId)
+    : undefined
   const first = library.libraries[0]
   if (!first) {
     library.currentId = null
     return
   }
   const stillValid = library.libraries.some((item) => item.id === library.currentId)
-  library.currentId = stillValid ? library.currentId : first.id
+  library.currentId = preferred
+    ? preferred.id
+    : stillValid
+      ? library.currentId
+      : first.id
   clearScopedData()
   library.version++
 }

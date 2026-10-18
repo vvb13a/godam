@@ -11,8 +11,10 @@ import { useToast } from 'primevue/usetoast'
 import type { MenuItem } from 'primevue/menuitem'
 import {
   AngleRight,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Download,
   Eye,
   EyeSlash,
@@ -38,10 +40,22 @@ import {
   CARD_SIZE_MIN,
 } from '../lib/display'
 import type { CardShape } from '../lib/display'
+import {
+  cancelEmbedSelection,
+  confirmEmbedSelection,
+  embed,
+  markEmbedReady,
+} from '../lib/embed'
 import { editorDirty, leaveEditor, setEditorCloser } from '../lib/editorState'
 import { library, loadLibraries, notifyLibraryChanged } from '../lib/library'
 import { isTextMime } from '../lib/mimeTypes'
-import { panels, toggleRightPanel } from '../lib/panels'
+import {
+  panels,
+  toggleBottomPanel,
+  toggleRightPanel,
+  toggleTopPanel,
+} from '../lib/panels'
+import { sidebarPrefs } from '../lib/sidebar'
 import { clearSmartSelection, smartSelection } from '../lib/smartSelection'
 import { openAssetTags, openBulkAssetTags } from '../lib/tagsDialog'
 import { openUpload } from '../lib/upload'
@@ -57,23 +71,127 @@ import FilterInspector from './FilterInspector.vue'
 import Inspector from './Inspector.vue'
 import LibraryInspector from './LibraryInspector.vue'
 import MultiSelectionPanel from './MultiSelectionPanel.vue'
+import TagsList from './TagsList.vue'
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 
+const PANEL_TRANSITION_MS = 200
+const panelAnimating = ref(false)
+let panelAnimationTimer: number | null = null
+
+function beginPanelAnimation(): void {
+  panelAnimating.value = true
+  if (panelAnimationTimer !== null) window.clearTimeout(panelAnimationTimer)
+  panelAnimationTimer = window.setTimeout(() => {
+    panelAnimating.value = false
+    panelAnimationTimer = null
+    void nextTick(measureGrid)
+  }, PANEL_TRANSITION_MS + 160)
+}
+
+function animatePanelEnter(el: Element, done: () => void): void {
+  beginPanelAnimation()
+  const node = el as HTMLElement
+  const height = node.scrollHeight
+  node.style.overflow = 'hidden'
+  node.style.height = '0px'
+  node.style.opacity = '0'
+  node.style.willChange = 'height, opacity'
+  void node.offsetHeight
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      node.style.transition = `height ${PANEL_TRANSITION_MS}ms ease, opacity ${PANEL_TRANSITION_MS}ms ease`
+      node.style.height = `${height}px`
+      node.style.opacity = '1'
+    })
+  })
+  window.setTimeout(() => {
+    node.style.removeProperty('transition')
+    node.style.removeProperty('height')
+    node.style.removeProperty('overflow')
+    node.style.removeProperty('opacity')
+    node.style.removeProperty('will-change')
+    done()
+  }, PANEL_TRANSITION_MS + 120)
+}
+
+function animatePanelLeave(el: Element, done: () => void): void {
+  beginPanelAnimation()
+  const node = el as HTMLElement
+  const height = node.scrollHeight
+  node.style.overflow = 'hidden'
+  node.style.height = `${height}px`
+  node.style.opacity = '1'
+  node.style.willChange = 'height, opacity'
+  void node.offsetHeight
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      node.style.transition = `height ${PANEL_TRANSITION_MS}ms ease, opacity ${PANEL_TRANSITION_MS}ms ease`
+      node.style.height = '0px'
+      node.style.opacity = '0'
+    })
+  })
+  window.setTimeout(() => {
+    node.style.removeProperty('will-change')
+    done()
+  }, PANEL_TRANSITION_MS + 120)
+}
+
 const assets = ref<Asset[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
-const selectedIds = ref<string[]>([])
+const localSelectedIds = ref<string[]>([])
+const selectedIds = computed<string[]>({
+  get: () => (embed.active ? embed.selectedIds : localSelectedIds.value),
+  set: (value) => {
+    if (embed.active) embed.selectedIds = value
+    else localSelectedIds.value = value
+  },
+})
 const anchorId = ref<string | null>(null)
 
+const embedPicker = computed(() => embed.active && embed.mode !== 'library')
+const embedSingle = computed(() => embed.active && embed.mode === 'single')
+const embedCollectionLocked = computed(
+  () => embedPicker.value && embed.collectionLocked,
+)
+const embedTagLocked = computed(() => embedPicker.value && embed.tagLocked)
+
 const DISPLAY_STORAGE_KEY = 'godam:display'
+
+type SpacingLevel = 'dense' | 'normal' | 'relaxed'
+
+const SPACING_LEVELS: SpacingLevel[] = ['dense', 'normal', 'relaxed']
+const SPACING_OPTIONS = [
+  { label: 'Dense', value: 'dense' },
+  { label: 'Normal', value: 'normal' },
+  { label: 'Relaxed', value: 'relaxed' },
+]
+const GRID_GAP_PX: Record<SpacingLevel, number> = {
+  dense: 8,
+  normal: 12,
+  relaxed: 16,
+}
+const AROUND_GAP_PX: Record<SpacingLevel, number> = {
+  dense: 8,
+  normal: 16,
+  relaxed: 24,
+}
+
+function normalizeSpacing(value: unknown): SpacingLevel {
+  return SPACING_LEVELS.includes(value as SpacingLevel)
+    ? (value as SpacingLevel)
+    : 'normal'
+}
 
 interface DisplayPrefs {
   size: number
   shape: CardShape
+  gridGap: SpacingLevel
+  aroundGap: SpacingLevel
   showExtension: boolean
   showName: boolean
   showSize: boolean
@@ -108,6 +226,10 @@ const shape = ref<CardShape>(
     ? (savedPrefs.shape as CardShape)
     : 'square',
 )
+const gridGap = ref<SpacingLevel>(normalizeSpacing(savedPrefs.gridGap))
+const aroundGap = ref<SpacingLevel>(normalizeSpacing(savedPrefs.aroundGap))
+const gridGapPx = computed(() => GRID_GAP_PX[gridGap.value])
+const aroundGapPx = computed(() => AROUND_GAP_PX[aroundGap.value])
 const showExtension = ref(savedPrefs.showExtension ?? false)
 const showName = ref(savedPrefs.showName ?? false)
 const showSize = ref(savedPrefs.showSize ?? false)
@@ -121,6 +243,8 @@ watch(
   [
     size,
     shape,
+    gridGap,
+    aroundGap,
     showExtension,
     showName,
     showSize,
@@ -133,6 +257,8 @@ watch(
     const prefs: DisplayPrefs = {
       size: clampSize(size.value),
       shape: shape.value,
+      gridGap: gridGap.value,
+      aroundGap: aroundGap.value,
       showExtension: showExtension.value,
       showName: showName.value,
       showSize: showSize.value,
@@ -427,17 +553,13 @@ const cardWidth = computed(() =>
   Math.round(size.value * Math.max(1, shapeAspect.value)),
 )
 
-// Horizontal gap between cards. Mirrors the Tailwind gap classes on the grid
-// containers below (gap-3 = 12px, gap-2 = 8px) so the fit maths matches the CSS.
-const GRID_GAP = 12
-const NATIVE_GAP = 8
-
 // Content width of the grid container, kept in sync by a ResizeObserver. The
 // tracks are spread across it so a row reaches the right edge instead of
 // leaving the leftover width as a gap (which auto-fill with fixed tracks does).
 const containerWidth = ref(0)
 
 function measureGrid(): void {
+  if (panelAnimating.value) return
   const el = gridContainer.value
   if (!el) return
   const style = getComputedStyle(el)
@@ -445,6 +567,10 @@ function measureGrid(): void {
     parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
   containerWidth.value = Math.max(0, el.clientWidth - padding)
 }
+
+watch([gridGap, aroundGap], () => {
+  void nextTick(measureGrid)
+})
 
 // Fit as many tracks of at least `target` px as possible, then widen them
 // evenly so the row fills the container exactly. Returns null before the
@@ -461,13 +587,17 @@ function fitColumns(
 }
 
 const gridStyle = computed(() => {
-  const fit = fitColumns(cardWidth.value, GRID_GAP)
+  const gap = gridGapPx.value
+  const fit = fitColumns(cardWidth.value, gap)
   if (!fit) {
-    return { gridTemplateColumns: `repeat(auto-fill, ${cardWidth.value}px)` }
+    return {
+      gridTemplateColumns: `repeat(auto-fill, ${cardWidth.value}px)`,
+      gap: `${gap}px`,
+    }
   }
   return {
     gridTemplateColumns: `repeat(${fit.count}, ${fit.width}px)`,
-    columnGap: `${GRID_GAP}px`,
+    gap: `${gap}px`,
   }
 })
 
@@ -477,7 +607,8 @@ const gridStyle = computed(() => {
 // square, otherwise the spanned previews would be distorted.
 const nativeUnit = computed(() => Math.max(1, Math.round(size.value)))
 const nativeGridStyle = computed(() => {
-  const fit = fitColumns(nativeUnit.value, NATIVE_GAP)
+  const gap = gridGapPx.value
+  const fit = fitColumns(nativeUnit.value, gap)
   const unit = fit ? fit.width : nativeUnit.value
   const columns = fit
     ? `repeat(${fit.count}, ${unit}px)`
@@ -486,8 +617,7 @@ const nativeGridStyle = computed(() => {
     gridTemplateColumns: columns,
     gridAutoRows: `${unit}px`,
     gridAutoFlow: 'dense',
-    columnGap: `${NATIVE_GAP}px`,
-    rowGap: `${NATIVE_GAP}px`,
+    gap: `${gap}px`,
   }
 })
 
@@ -622,9 +752,44 @@ async function load(): Promise<void> {
   } finally {
     loading.value = false
   }
+
+  if (embed.active && !error.value) {
+    if (!embed.selectionInitialized) {
+      const available = new Set(assets.value.map((asset) => asset.id))
+      if (!embed.selectedIds.length && embed.preselectedIds.length) {
+        selectedIds.value = embed.preselectedIds.filter((id) =>
+          available.has(id),
+        )
+      }
+      embed.selectionInitialized = true
+    }
+    markEmbedReady(assets.value.length)
+  }
 }
 
 function onSelect(asset: Asset, event: MouseEvent): void {
+  if (embedSingle.value) {
+    selectedIds.value = [asset.id]
+    anchorId.value = asset.id
+    return
+  }
+  if (embedPicker.value) {
+    if (event.shiftKey && anchorId.value) {
+      const list = visibleAssets.value
+      const from = list.findIndex((item) => item.id === anchorId.value)
+      const to = list.findIndex((item) => item.id === asset.id)
+      if (from !== -1 && to !== -1) {
+        const [lo, hi] = from < to ? [from, to] : [to, from]
+        selectedIds.value = list.slice(lo, hi + 1).map((item) => item.id)
+        return
+      }
+    }
+    selectedIds.value = selectedSet.value.has(asset.id)
+      ? selectedIds.value.filter((id) => id !== asset.id)
+      : [...selectedIds.value, asset.id]
+    anchorId.value = asset.id
+    return
+  }
   if (event.shiftKey && anchorId.value) {
     const list = visibleAssets.value
     const from = list.findIndex((item) => item.id === anchorId.value)
@@ -655,7 +820,7 @@ function clearSelection(): void {
 // background. Pressing a card (or any control) is left to the normal click /
 // native-drag handling. Ctrl/Cmd/Shift keeps the existing selection.
 function onLassoStart(event: MouseEvent): void {
-  if (event.button !== 0) return
+  if (event.button !== 0 || embedSingle.value) return
   const target = event.target as HTMLElement | null
   if (!target || target.closest('[data-asset-id], button, a, input, select, textarea')) {
     return
@@ -730,7 +895,10 @@ function onLassoEnd(): void {
 }
 
 function onContextMenu(event: MouseEvent, asset: Asset): void {
-  if (!selectedSet.value.has(asset.id)) {
+  if (embedSingle.value) {
+    selectedIds.value = [asset.id]
+    anchorId.value = asset.id
+  } else if (!selectedSet.value.has(asset.id)) {
     selectedIds.value = [asset.id]
     anchorId.value = asset.id
   }
@@ -1040,7 +1208,7 @@ function onAssetSaved(asset: Asset): void {
 }
 
 watch([collectionFilter, tagFilter], () => {
-  clearSelection()
+  if (!embedPicker.value) clearSelection()
   void load()
 })
 
@@ -1084,6 +1252,7 @@ function onAssetsSelectAll(event: KeyboardEvent): void {
     return
   }
   if (isEditableTarget(event.target) || editingAssetId.value) return
+  if (embedSingle.value) return
   if (document.querySelector('.p-dialog-mask')) return
   event.preventDefault()
   selectedIds.value = visibleAssets.value.map((asset) => asset.id)
@@ -1116,10 +1285,32 @@ onBeforeUnmount(() => {
 
     <div class="flex min-h-0 flex-1">
       <div class="relative flex min-w-0 flex-1 flex-col">
-        <header v-if="!editingAsset" class="flex flex-wrap items-center gap-3 px-6 py-4">
+        <div
+          v-if="!editingAsset"
+          class="relative pt-2"
+          :style="{
+            paddingLeft: `${aroundGapPx}px`,
+            paddingRight: `${aroundGapPx}px`,
+            paddingBottom: `${aroundGapPx}px`,
+          }"
+        >
+          <Transition
+            @enter="animatePanelEnter"
+            @leave="animatePanelLeave"
+          >
+            <header
+              v-if="!panels.topCollapsed"
+              class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-lg"
+            >
           <select
             v-model="collectionFilter"
-            class="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm"
+            class="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+            :disabled="embedCollectionLocked"
+            :title="
+              embedCollectionLocked
+                ? 'This collection is locked by the host application'
+                : undefined
+            "
           >
             <option value="">All collections</option>
             <option value="uncategorized">Uncategorized</option>
@@ -1140,6 +1331,12 @@ onBeforeUnmount(() => {
             display="chip"
             placeholder="All tags"
             :max-selected-labels="3"
+            :disabled="embedTagLocked"
+            :title="
+              embedTagLocked
+                ? 'Tags are locked by the host application'
+                : undefined
+            "
             class="rounded border border-slate-300 bg-white text-sm"
           >
             <template #option="slotProps">
@@ -1180,6 +1377,14 @@ onBeforeUnmount(() => {
             <option value="size-desc">Largest first</option>
             <option value="size-asc">Smallest first</option>
           </select>
+
+          <span
+            v-if="embedCollectionLocked || embedTagLocked"
+            class="text-xs font-medium text-amber-600"
+            title="The host application restricted this picker"
+          >
+            Restricted by host
+          </span>
 
           <Button
             label="Upload"
@@ -1238,6 +1443,50 @@ onBeforeUnmount(() => {
                   size="small"
                   class="w-full"
                 />
+              </div>
+
+              <div class="border-t border-slate-100 pt-3">
+                <p
+                  class="mb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
+                >
+                  Spacing
+                </p>
+                <div class="space-y-3">
+                  <div>
+                    <div class="mb-1 flex items-center justify-between">
+                      <span class="text-sm font-medium">Grid gap</span>
+                      <span class="text-xs text-slate-400">
+                        {{ gridGapPx }}px
+                      </span>
+                    </div>
+                    <SelectButton
+                      v-model="gridGap"
+                      :options="SPACING_OPTIONS"
+                      option-label="label"
+                      option-value="value"
+                      :allow-empty="false"
+                      size="small"
+                      class="w-full"
+                    />
+                  </div>
+                  <div>
+                    <div class="mb-1 flex items-center justify-between">
+                      <span class="text-sm font-medium">Around gap</span>
+                      <span class="text-xs text-slate-400">
+                        {{ aroundGapPx }}px
+                      </span>
+                    </div>
+                    <SelectButton
+                      v-model="aroundGap"
+                      :options="SPACING_OPTIONS"
+                      option-label="label"
+                      option-value="value"
+                      :allow-empty="false"
+                      size="small"
+                      class="w-full"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div class="border-t border-slate-100 pt-3">
@@ -1315,7 +1564,21 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </Popover>
-        </header>
+            </header>
+          </Transition>
+          <button
+            type="button"
+            class="absolute bottom-1.5 left-1/2 z-20 flex h-5 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm transition-colors hover:text-violet-600"
+            :title="panels.topCollapsed ? 'Expand filters' : 'Collapse filters'"
+            :aria-label="
+              panels.topCollapsed ? 'Expand filters' : 'Collapse filters'
+            "
+            @click="toggleTopPanel"
+          >
+            <ChevronDown v-if="panels.topCollapsed" :size="12" />
+            <ChevronUp v-else :size="12" />
+          </button>
+        </div>
 
         <AssetEditor
           v-if="editingAsset"
@@ -1328,7 +1591,11 @@ onBeforeUnmount(() => {
         <div
           v-show="!editingAsset"
           ref="gridContainer"
-          class="min-h-0 flex-1 overflow-y-auto px-6 pt-2 pb-6"
+          class="min-h-0 flex-1 overflow-y-auto"
+          :style="{
+            paddingLeft: `${aroundGapPx}px`,
+            paddingRight: `${aroundGapPx}px`,
+          }"
           @mousedown="onLassoStart"
         >
           <p v-if="loading" class="text-sm text-slate-400">Loading…</p>
@@ -1340,7 +1607,7 @@ onBeforeUnmount(() => {
           </p>
           <div
             v-else-if="shape === 'native'"
-            class="grid gap-2"
+            class="grid"
             :style="nativeGridStyle"
           >
             <AssetCard
@@ -1366,7 +1633,7 @@ onBeforeUnmount(() => {
               @dragend="onDragEnd"
             />
           </div>
-          <div v-else class="grid gap-3" :style="gridStyle">
+          <div v-else class="grid" :style="gridStyle">
             <AssetCard
               v-for="asset in visibleAssets"
               :key="asset.id"
@@ -1388,6 +1655,41 @@ onBeforeUnmount(() => {
               @dragend="onDragEnd"
             />
           </div>
+        </div>
+
+        <div
+          v-if="!editingAsset && sidebarPrefs.tags && !embedTagLocked"
+          class="relative pb-2"
+          :style="{
+            paddingLeft: `${aroundGapPx}px`,
+            paddingRight: `${aroundGapPx}px`,
+            paddingTop: `${aroundGapPx}px`,
+          }"
+        >
+          <Transition
+            @enter="animatePanelEnter"
+            @leave="animatePanelLeave"
+          >
+            <div v-if="!panels.bottomCollapsed">
+              <div
+                class="max-h-44 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg"
+              >
+                <TagsList />
+              </div>
+            </div>
+          </Transition>
+          <button
+            type="button"
+            class="absolute top-1.5 left-1/2 z-20 flex h-5 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm transition-colors hover:text-violet-600"
+            :title="panels.bottomCollapsed ? 'Expand tags' : 'Collapse tags'"
+            :aria-label="
+              panels.bottomCollapsed ? 'Expand tags' : 'Collapse tags'
+            "
+            @click="toggleBottomPanel"
+          >
+            <ChevronUp v-if="panels.bottomCollapsed" :size="12" />
+            <ChevronDown v-else :size="12" />
+          </button>
         </div>
 
         <!-- Bottom-right control cluster, left to right: Save, Cancel, then
@@ -1494,6 +1796,30 @@ onBeforeUnmount(() => {
           <ChevronRight v-else :size="12" />
         </button>
       </div>
+    </div>
+
+    <div
+      v-if="embedPicker"
+      class="flex shrink-0 items-center gap-3 border-t border-slate-200 bg-white px-6 py-3"
+    >
+      <span class="text-sm text-slate-500">
+        {{
+          embedSingle ? 'Choose one asset' : 'Choose one or more assets'
+        }}
+      </span>
+      <span class="ml-auto text-sm text-slate-500">
+        {{ selectedIds.length }} selected
+      </span>
+      <Button
+        label="Cancel"
+        severity="secondary"
+        @click="cancelEmbedSelection"
+      />
+      <Button
+        label="Use selected"
+        :disabled="!selectedIds.length"
+        @click="confirmEmbedSelection"
+      />
     </div>
 
     <ContextMenu ref="contextMenu" :model="menuItems">

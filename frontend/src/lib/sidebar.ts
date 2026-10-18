@@ -1,6 +1,6 @@
 import { reactive, watch } from 'vue'
 
-// SidebarPrefs controls which optional sections the sidebar shows. It is a
+// SidebarPrefs controls which optional panels the layout shows. It is a
 // per-device preference (like the asset grid display settings) persisted to
 // localStorage.
 export interface SidebarPrefs {

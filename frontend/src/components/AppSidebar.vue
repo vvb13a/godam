@@ -4,16 +4,43 @@ import SplitterPanel from 'primevue/splitterpanel'
 import { ChevronLeft, ChevronRight, Images } from '@primeicons/vue'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { library, refreshLibrary } from '../lib/library'
+import { embed as embedState } from '../lib/embed'
+import { currentLibrary, library, refreshLibrary } from '../lib/library'
 import { panels, toggleLeftPanel } from '../lib/panels'
 import { sidebarPrefs } from '../lib/sidebar'
 import CollectionTree from './CollectionTree.vue'
 import LibrarySwitcher from './LibrarySwitcher.vue'
 import SmartCollections from './SmartCollections.vue'
-import TagsList from './TagsList.vue'
 import UserMenu from './UserMenu.vue'
 
+const props = withDefaults(defineProps<{ embed?: boolean }>(), {
+  embed: false,
+})
+
 const route = useRoute()
+const activeLibrary = computed(() => currentLibrary())
+
+const pickerRestricted = computed(
+  () => embedState.active && embedState.mode !== 'library',
+)
+const collectionsLocked = computed(
+  () => pickerRestricted.value && embedState.collectionLocked,
+)
+const tagsLocked = computed(
+  () => pickerRestricted.value && embedState.tagLocked,
+)
+const showCollections = computed(
+  () => sidebarPrefs.collections && !collectionsLocked.value,
+)
+const showSmartCollections = computed(
+  () =>
+    sidebarPrefs.smartCollections &&
+    !collectionsLocked.value &&
+    !tagsLocked.value,
+)
+const showSections = computed(
+  () => showCollections.value || showSmartCollections.value,
+)
 
 const activeCollection = computed(
   () => (route.query.collection as string | undefined) ?? null,
@@ -43,7 +70,18 @@ watch(
         class="flex h-full w-64 flex-col"
         :inert="panels.leftCollapsed || undefined"
       >
-        <div class="p-3 pb-0">
+        <div v-if="props.embed" class="px-4 pt-4 pb-1">
+          <p
+            class="text-[10px] font-semibold tracking-wide text-slate-400 uppercase"
+          >
+            Library
+          </p>
+          <p class="truncate text-sm font-semibold text-slate-700">
+            {{ activeLibrary?.name ?? 'Library' }}
+          </p>
+        </div>
+
+        <div v-else class="p-3 pb-0">
           <LibrarySwitcher />
         </div>
 
@@ -69,38 +107,26 @@ watch(
         </nav>
 
         <Splitter
+          v-if="showSections"
           layout="vertical"
           state-key="godam:sidebar:sections"
           state-storage="local"
           :gutter-size="14"
           class="min-h-0 flex-1"
         >
-          <SplitterPanel
-            v-if="sidebarPrefs.collections"
-            :size="45"
-            :min-size="8"
-          >
+          <SplitterPanel v-if="showCollections" :size="60" :min-size="8">
             <div class="h-full overflow-y-auto pb-2">
               <CollectionTree />
             </div>
           </SplitterPanel>
-          <SplitterPanel
-            v-if="sidebarPrefs.smartCollections"
-            :size="20"
-            :min-size="8"
-          >
+          <SplitterPanel v-if="showSmartCollections" :size="40" :min-size="8">
             <div class="h-full overflow-y-auto pb-2">
               <SmartCollections />
             </div>
           </SplitterPanel>
-          <SplitterPanel v-if="sidebarPrefs.tags" :size="35" :min-size="8">
-            <div class="h-full overflow-y-auto pb-2">
-              <TagsList />
-            </div>
-          </SplitterPanel>
         </Splitter>
 
-        <UserMenu />
+        <UserMenu v-if="!props.embed" />
       </div>
     </aside>
 
