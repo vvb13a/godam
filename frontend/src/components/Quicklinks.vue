@@ -1,7 +1,15 @@
 <script setup lang="ts">
-import { Folder, Filter, Tag as TagIcon, Times } from '@primeicons/vue'
+import ContextMenu from 'primevue/contextmenu'
+import type { MenuItem } from 'primevue/menuitem'
+import {
+  ExternalLink,
+  Folder,
+  Filter,
+  Tag as TagIcon,
+  Times,
+} from '@primeicons/vue'
 import type { Component } from 'vue'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { library } from '../lib/library'
 import {
@@ -15,6 +23,8 @@ import type { SmartCollectionFilter } from '../types'
 
 const route = useRoute()
 const router = useRouter()
+const menu = ref<InstanceType<typeof ContextMenu> | null>(null)
+const contextItem = ref<ResolvedQuicklink | null>(null)
 
 interface ResolvedQuicklink extends Quicklink {
   count?: number
@@ -98,6 +108,32 @@ function open(item: ResolvedQuicklink): void {
 function unpin(item: Quicklink): void {
   toggleQuicklink(item)
 }
+
+interface QuicklinkMenuItem extends MenuItem {
+  menuIcon?: Component
+}
+
+function openMenu(event: MouseEvent, item: ResolvedQuicklink): void {
+  contextItem.value = item
+  menu.value?.show(event)
+}
+
+const menuItems = computed<QuicklinkMenuItem[]>(() => {
+  const item = contextItem.value
+  if (!item) return []
+  return [
+    {
+      label: 'Open',
+      menuIcon: ExternalLink,
+      command: () => open(item),
+    },
+    {
+      label: 'Unpin from Quicklinks',
+      menuIcon: Times,
+      command: () => unpin(item),
+    },
+  ]
+})
 </script>
 
 <template>
@@ -121,13 +157,15 @@ function unpin(item: Quicklink): void {
       <div
         v-for="item in items"
         :key="`${item.type}:${item.id}`"
-        class="group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm select-none"
+        class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm select-none"
         :class="
           isActive(item)
             ? 'bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300'
             : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
         "
+        title="Right-click for options"
         @click="open(item)"
+        @contextmenu.prevent="openMenu($event, item)"
       >
         <component
           :is="iconFor(item.type)"
@@ -139,15 +177,26 @@ function unpin(item: Quicklink): void {
         <span v-if="item.count !== undefined" class="shrink-0 text-xs text-slate-400">
           {{ item.count }}
         </span>
-        <button
-          type="button"
-          class="inline-flex shrink-0 text-slate-400 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-500"
-          title="Unpin"
-          @click.stop="unpin(item)"
-        >
-          <Times :size="12" />
-        </button>
       </div>
     </div>
+
+    <ContextMenu ref="menu" :model="menuItems">
+      <template #item="slotProps">
+        <a
+          data-pc-section="itemlink"
+          class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm"
+          :class="slotProps.item.class ?? 'text-slate-700 dark:text-slate-200'"
+          @click.prevent
+        >
+          <component
+            :is="slotProps.item.menuIcon"
+            v-if="slotProps.item.menuIcon"
+            :size="14"
+            class="shrink-0"
+          />
+          <span class="flex-1">{{ slotProps.item.label }}</span>
+        </a>
+      </template>
+    </ContextMenu>
   </div>
 </template>

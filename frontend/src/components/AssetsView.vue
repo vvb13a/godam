@@ -2,6 +2,9 @@
 import Button from 'primevue/button'
 import ContextMenu from 'primevue/contextmenu'
 import Message from 'primevue/message'
+import IconField from 'primevue/iconfield'
+import InputIcon from 'primevue/inputicon'
+import InputText from 'primevue/inputtext'
 import MultiSelect from 'primevue/multiselect'
 import Select from 'primevue/select'
 import Popover from 'primevue/popover'
@@ -24,6 +27,7 @@ import {
   Pencil,
   Refresh,
   Save,
+  Search,
   SlidersH,
   Tag,
   Times,
@@ -140,6 +144,18 @@ function animatePanelLeave(el: Element, done: () => void): void {
   }, PANEL_TRANSITION_MS + 120)
 }
 
+const searchQuery = computed({
+  get: () => {
+    const value = route.query.search
+    return typeof value === 'string' ? value : ''
+  },
+  set: (value: string) => {
+    const query = { ...route.query }
+    if (value.trim()) query.search = value
+    else delete query.search
+    void router.replace({ name: 'all', query })
+  },
+})
 const assets = ref<Asset[]>([])
 const loading = ref(false)
 const refreshing = ref(false)
@@ -539,6 +555,15 @@ const assetEditorRef = ref<InstanceType<typeof AssetEditor> | null>(null)
 
 const visibleAssets = computed(() => {
   let list = assets.value
+  const query = searchQuery.value.trim().toLowerCase()
+  if (query) {
+    list = list.filter(
+      (asset) =>
+        asset.filename.toLowerCase().includes(query) ||
+        (asset.title ?? '').toLowerCase().includes(query) ||
+        (asset.note ?? '').toLowerCase().includes(query),
+    )
+  }
   if (typeFilter.value) {
     list = list.filter((a) => mimeCategory(a.mime_type) === typeFilter.value)
   }
@@ -1406,6 +1431,19 @@ onBeforeUnmount(() => {
             class="w-48"
           />
 
+          <IconField class="w-60">
+            <InputIcon>
+              <Search :size="14" />
+            </InputIcon>
+            <InputText
+              v-model="searchQuery"
+              size="small"
+              placeholder="Search assets…"
+              title="Search title, note, and filename"
+              class="w-full"
+            />
+          </IconField>
+
           <span
             v-if="embedCollectionLocked || embedTagLocked"
             class="text-xs font-medium text-amber-600 dark:text-amber-400"
@@ -1624,7 +1662,7 @@ onBeforeUnmount(() => {
         <div
           v-show="!editingAsset"
           ref="gridContainer"
-          class="min-h-0 flex-1 overflow-y-auto"
+          class="min-h-0 flex-1 overflow-y-auto py-1.5"
           :style="{
             paddingLeft: `${aroundGapPx}px`,
             paddingRight: `${aroundGapPx}px`,

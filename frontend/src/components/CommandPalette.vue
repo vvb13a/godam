@@ -2,14 +2,17 @@
 import CommandMenu from 'primevue/commandmenu'
 import type { CommandMenuItem } from 'primevue/commandmenu'
 import Dialog from 'primevue/dialog'
+import { useToast } from 'primevue/usetoast'
 import {
   CloudUpload,
   Cog,
   Filter,
   Folder,
   FolderOpen,
+  FolderPlus,
   Images,
   Palette,
+  Search,
   SignOut,
   SlidersH,
   Tag,
@@ -18,11 +21,12 @@ import {
 } from '@primeicons/vue'
 import type { Component } from 'vue'
 import { computed, nextTick, ref } from 'vue'
-import { useRouter, type RouteLocationRaw } from 'vue-router'
+import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
+import * as api from '../api/client'
 import { logout } from '../lib/auth'
 import { openBackupSettings } from '../lib/backupSettings'
 import { commandMenu } from '../lib/command'
-import { library } from '../lib/library'
+import { library, notifyLibraryChanged } from '../lib/library'
 import { libraryColorHex } from '../lib/libraryColors'
 import { SIDEBAR_TOGGLES, sidebarPrefs } from '../lib/sidebar'
 import { clearSmartSelection, selectSmartCollection } from '../lib/smartSelection'
@@ -33,7 +37,7 @@ import { openUserSettings } from '../lib/userSettings'
 import type { SmartCollectionFilter } from '../types'
 import Kbd from './Kbd.vue'
 
-type Scope = 'all' | 'commands' | 'collections' | 'tags' | 'smart'
+type Scope = 'all' | 'commands' | 'collections' | 'tags' | 'smart' | 'create'
 
 interface PaletteItem extends CommandMenuItem {
   folderIcon?: Component
@@ -47,6 +51,8 @@ interface PaletteGroup extends CommandMenuItem {
 }
 
 const router = useRouter()
+const route = useRoute()
+const toast = useToast()
 
 const commandRef = ref<{ $el?: HTMLElement } | null>(null)
 const scope = ref<Scope>('all')
@@ -58,6 +64,7 @@ const scopes: { value: Scope; label: string }[] = [
   { value: 'collections', label: 'Collections' },
   { value: 'tags', label: 'Tags' },
   { value: 'smart', label: 'Smart' },
+  { value: 'create', label: 'Create' },
 ]
 
 function focusInput(): void {
@@ -66,7 +73,6 @@ function focusInput(): void {
 
 function setScope(value: Scope): void {
   scope.value = value
-  search.value = ''
   void nextTick(focusInput)
 }
 
@@ -102,8 +108,84 @@ function navigateFilter(filter: SmartCollectionFilter): void {
   void router.push({ name: 'all', query })
 }
 
+const hasFilters = computed(() => {
+  const q = route.query
+  return Boolean(
+    (typeof q.collection === 'string' && q.collection) ||
+      (typeof q.tag === 'string' && q.tag) ||
+      (typeof q.type === 'string' && q.type),
+  )
+})
+
+function currentFilter(): SmartCollectionFilter {
+  const q = route.query
+  const filter: SmartCollectionFilter = {}
+  if (typeof q.collection === 'string' && q.collection) {
+    filter.collection = q.collection
+  }
+  if (typeof q.tag === 'string' && q.tag) filter.tag = q.tag
+  if (typeof q.type === 'string' && q.type) filter.type = q.type
+  if (typeof q.sort === 'string' && q.sort) filter.sort = q.sort
+  return filter
+}
+
+async function createCollection(name: string): Promise<void> {
+  close()
+  try {
+    await api.createCollection(name, '8b5cf6', null)
+    notifyLibraryChanged()
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: 'Could not create collection',
+      detail: e instanceof Error ? e.message : String(e),
+      life: 4000,
+    })
+  }
+}
+
+async function createTag(name: string): Promise<void> {
+  close()
+  try {
+    await api.createTag(name)
+    notifyLibraryChanged()
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: 'Could not create tag',
+      detail: e instanceof Error ? e.message : String(e),
+      life: 4000,
+    })
+  }
+}
+
+async function createSmartCollection(name: string): Promise<void> {
+  close()
+  try {
+    await api.createSmartCollection(name, '8b5cf6', currentFilter())
+    notifyLibraryChanged()
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: 'Could not create smart collection',
+      detail: e instanceof Error ? e.message : String(e),
+      life: 4000,
+    })
+  }
+}
+
 const groups = computed<PaletteGroup[]>(() => {
-  const commands: PaletteItem[] = [
+  const commands: PaletteItem[] = []
+  const term = search.value.trim()
+  if (term) {
+    commands.push({
+      label: `Search assets for "${term}"`,
+      icon: Search,
+      keywords: [term, 'search', 'find', 'assets'],
+      command: () => run({ name: 'all', query: { search: term } }),
+    })
+  }
+  commands.push(
     {
       label: 'Manage tags',
       icon: Tag,
@@ -168,7 +250,7 @@ const groups = computed<PaletteGroup[]>(() => {
         await router.push({ name: 'login' })
       },
     },
-  ]
+  )
 
   const result: PaletteGroup[] = [
     {
@@ -251,9 +333,48 @@ const groups = computed<PaletteGroup[]>(() => {
 })
 
 const model = computed<PaletteGroup[]>(() => {
+  if (scope.value === 'create') {
+    const value = search.value.trim()
+    if (!value) return []
+    const items: PaletteItem[] = [
+      {
+        label: `Create collection "${value}"`,
+        icon: FolderPlus,
+        keywords: [value, 'create', 'new', 'collection'],
+        command: () => void createCollection(value),
+      },
+      {
+        label: `Create tag "${value}"`,
+        icon: Tag,
+        keywords: [value, 'create', 'new', 'tag'],
+        command: () => void createTag(value),
+      },
+    ]
+    if (hasFilters.value) {
+      items.push({
+        label: `Create smart collection "${value}"`,
+        icon: Filter,
+        keywords: [value, 'create', 'new', 'smart', 'filter'],
+        command: () => void createSmartCollection(value),
+      })
+    }
+    return [{ label: 'Create', scope: 'create', items }]
+  }
   if (scope.value === 'all') return groups.value
   return groups.value.filter((group) => group.scope === scope.value)
 })
+
+const emptyMessage = computed(() =>
+  scope.value === 'create'
+    ? 'Type a name to create a collection, tag, or smart collection.'
+    : 'No results.',
+)
+
+const emptyFilterMessage = computed(() =>
+  scope.value === 'create'
+    ? 'Type a name to create something.'
+    : 'No matching results.',
+)
 </script>
 
 <template>
@@ -269,6 +390,7 @@ const model = computed<PaletteGroup[]>(() => {
     <div
       @keydown.tab.prevent.stop="cycleScope"
       @keydown.esc.prevent="close()"
+      @keydown.space.capture.stop
     >
       <div
         class="flex items-center gap-1 border-b border-slate-100 px-3 py-2 dark:border-slate-800"
@@ -299,7 +421,8 @@ const model = computed<PaletteGroup[]>(() => {
         :model="model"
         placeholder="Type a command or search…"
         aria-label="Command menu"
-        empty-filter-message="No matching results."
+        :empty-message="emptyMessage"
+        :empty-filter-message="emptyFilterMessage"
       >
         <template #item="slotProps">
           <a
