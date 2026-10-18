@@ -10,7 +10,6 @@ import (
 // table and a tag optionally belongs to a tag group.
 type Tag struct {
 	ID          string    `gorm:"column:id;primaryKey;type:text"`
-	LibraryID   string    `gorm:"column:library_id;type:text;not null;index"`
 	Name        string    `gorm:"column:name;type:text;not null"`
 	Description string    `gorm:"column:description;type:text;not null;default:''"`
 	GroupID     *string   `gorm:"column:group_id;type:text"`
@@ -26,7 +25,6 @@ func (Tag) TableName() string { return "tags" }
 func TagModel(t *domain.Tag) *Tag {
 	return &Tag{
 		ID:          t.ID,
-		LibraryID:   t.LibraryID,
 		Name:        t.Name,
 		Description: t.Description,
 		GroupID:     t.GroupID,
@@ -39,7 +37,6 @@ func TagModel(t *domain.Tag) *Tag {
 func (m *Tag) ToDomain() *domain.Tag {
 	return &domain.Tag{
 		ID:          m.ID,
-		LibraryID:   m.LibraryID,
 		Name:        m.Name,
 		Description: m.Description,
 		GroupID:     m.GroupID,

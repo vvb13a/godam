@@ -23,17 +23,13 @@ func NewTagService(db *gorm.DB) *TagService {
 // GetOrCreate trims the name and returns the matching tag within the library,
 // inserting it when it does not exist yet. The name is preserved as the user
 // typed it; names are unique per library.
-func (s *TagService) GetOrCreate(ctx context.Context, libraryID, name string) (*domain.Tag, error) {
+func (s *TagService) GetOrCreate(ctx context.Context, name string) (*domain.Tag, error) {
 	cleaned := strings.TrimSpace(name)
 	if cleaned == "" {
 		return nil, domain.ErrNotFound
 	}
-	if err := ensureLibraryExists(ctx, s.db, libraryID); err != nil {
-		return nil, err
-	}
-
 	var tag store.Tag
-	err := s.db.WithContext(ctx).Where("library_id = ? AND name = ?", libraryID, cleaned).First(&tag).Error
+	err := s.db.WithContext(ctx).Where("name = ?", cleaned).First(&tag).Error
 	if err == nil {
 		return tag.ToDomain(), nil
 	}
@@ -43,7 +39,6 @@ func (s *TagService) GetOrCreate(ctx context.Context, libraryID, name string) (*
 
 	tag = store.Tag{
 		ID:        uuid.New().String(),
-		LibraryID: libraryID,
 		Name:      cleaned,
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
@@ -54,10 +49,9 @@ func (s *TagService) GetOrCreate(ctx context.Context, libraryID, name string) (*
 	return tag.ToDomain(), nil
 }
 
-func (s *TagService) List(ctx context.Context, libraryID string) ([]domain.Tag, error) {
+func (s *TagService) List(ctx context.Context) ([]domain.Tag, error) {
 	var models []store.Tag
 	if err := s.db.WithContext(ctx).
-		Where("library_id = ?", libraryID).
 		Order("name ASC").
 		Find(&models).Error; err != nil {
 		return nil, err

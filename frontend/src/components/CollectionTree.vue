@@ -7,6 +7,7 @@ import type { MenuItem } from 'primevue/menuitem'
 import {
   AngleDoubleDown,
   AngleDoubleUp,
+  Bookmark,
   Check,
   ChevronDown,
   ChevronUp,
@@ -28,6 +29,8 @@ import { assetDrag } from '../lib/assetDrag'
 import { library, notifyLibraryChanged } from '../lib/library'
 import { LIBRARY_COLORS, libraryColorHex } from '../lib/libraryColors'
 import { confirmDeleteMenuItem } from '../lib/menu'
+import { splitNames } from '../lib/names'
+import { isPinned, toggleQuicklink } from '../lib/quicklinks'
 import { clearSmartSelection } from '../lib/smartSelection'
 import type { Collection } from '../types'
 
@@ -341,20 +344,20 @@ function cancelDraft(): void {
 
 async function commitDraft(): Promise<void> {
   if (!creating.value) return
-  const libraryId = library.currentId
   const parentId = createParent.value
-  const name = draftName.value.trim()
+  const names = splitNames(draftName.value)
   creating.value = false
   draftName.value = ''
-  if (!name || !libraryId) return
+  if (!names.length) return
   try {
-    const collection = await api.createCollection(
-      libraryId,
-      name,
-      draftColor.value,
-      parentId,
-    )
-    library.collections.push(collection)
+    for (const name of names) {
+      const collection = await api.createCollection(
+        name,
+        draftColor.value,
+        parentId,
+      )
+      library.collections.push(collection)
+    }
     if (parentId) {
       expandedKeys.value = { ...expandedKeys.value, [parentId]: true }
     }
@@ -495,6 +498,19 @@ const menuItems = computed<TreeMenuItem[]>(() => {
       label: 'Create subfolder',
       menuIcon: FolderOpen,
       command: () => void addCollection(collection.id),
+    },
+    {
+      label: isPinned('collection', collection.id)
+        ? 'Unpin from Quicklinks'
+        : 'Pin to Quicklinks',
+      menuIcon: Bookmark,
+      command: () =>
+        toggleQuicklink({
+          type: 'collection',
+          id: collection.id,
+          name: collection.name,
+          color: collection.color ? `#${collection.color}` : undefined,
+        }),
     },
     { separator: true },
     confirmDeleteMenuItem('Delete', () => void remove(collection)),
@@ -770,7 +786,7 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
               v-model="draftName"
               data-collection-draft
               type="text"
-              placeholder="New folder"
+              placeholder="New folder (use , or ; to batch)"
               class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none placeholder:text-slate-300 dark:placeholder:text-slate-500"
               @click.stop
               @keydown.stop

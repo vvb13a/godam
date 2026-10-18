@@ -1,15 +1,10 @@
 import { reactive } from 'vue'
 
-// Global state for the per-library backup settings dialog.
-export const backupSettingsDialog = reactive<{
-  visible: boolean
-  libraryId: string | null
-}>({
+// Global state for the instance backup settings dialog.
+export const backupSettingsDialog = reactive({
   visible: false,
-  libraryId: null,
 })
 
-export function openBackupSettings(libraryId: string): void {
-  backupSettingsDialog.libraryId = libraryId
+export function openBackupSettings(): void {
   backupSettingsDialog.visible = true
 }

@@ -27,6 +27,7 @@ import { useRouter } from 'vue-router'
 import * as api from '../api/client'
 import { library, notifyLibraryChanged } from '../lib/library'
 import { confirmDeleteMenuItem } from '../lib/menu'
+import { splitNames } from '../lib/names'
 import { tagsDialog } from '../lib/tagsDialog'
 import type { Tag, TagGroup } from '../types'
 import Kbd from './Kbd.vue'
@@ -565,12 +566,11 @@ async function saveAssetSelection(): Promise<void> {
     return
   }
   const assetId = tagsDialog.assetId
-  const libraryId = library.currentId
-  if (!assetId || !libraryId || !selectionLoaded.value) return
+  if (!assetId || !selectionLoaded.value) return
   selectionLoaded.value = false
   try {
     const target = selectedTagIds.value.slice()
-    await api.applyAssetsTags(libraryId, [assetId], target, 'replace')
+    await api.applyAssetsTags([assetId], target, 'replace')
     notifyLibraryChanged()
   } catch (e) {
     toast.add({
@@ -589,11 +589,10 @@ async function saveBulkSelection(): Promise<void> {
   selectionLoaded.value = false
   const ids = tagsDialog.assetIds
   const mode = tagsDialog.mode
-  const libraryId = library.currentId
   const target = selectedTagIds.value.slice()
-  if (!ids.length || !mode || !libraryId) return
+  if (!ids.length || !mode) return
   try {
-    await api.applyAssetsTags(libraryId, ids, target, mode)
+    await api.applyAssetsTags(ids, target, mode)
     notifyLibraryChanged()
   } catch (e) {
     toast.add({
@@ -909,10 +908,8 @@ function uniqueUntitledTagName(): string {
 // addTag creates a draft tag then opens its inline editor. If the name is left
 // unchanged the draft is rolled back, so nothing is persisted.
 async function addTag(): Promise<void> {
-  const libraryId = library.currentId
-  if (!libraryId) return
   try {
-    let tag = await api.createTag(libraryId, uniqueUntitledTagName())
+    let tag = await api.createTag(uniqueUntitledTagName())
     const view = activeView.value
     if (view.startsWith('group:')) {
       tag = await api.updateTag(
@@ -962,11 +959,42 @@ async function commitTagRename(): Promise<void> {
   if (!id) return
   editingTagId.value = null
   const tag = library.tags.find((item) => item.id === id)
-  const name = editingTagName.value.trim()
+  const names = splitNames(editingTagName.value)
   if (!tag) return
   if (id === draftTagId.value) {
     draftTagId.value = null
-    if (!name || name === tag.name) {
+    if (!names.length) {
+      try {
+        await api.deleteTag(id)
+        removeTagLocal(id)
+      } catch (e) {
+        toast.add({
+          severity: 'error',
+          summary: 'Delete failed',
+          detail: toMessage(e),
+          life: 4000,
+        })
+      }
+      return
+    }
+    if (names.length > 1) {
+      try {
+        await api.deleteTag(id)
+        removeTagLocal(id)
+        for (const name of names) {
+          upsertTag(await api.createTag(name))
+        }
+      } catch (e) {
+        toast.add({
+          severity: 'error',
+          summary: 'Could not create tags',
+          detail: toMessage(e),
+          life: 4000,
+        })
+      }
+      return
+    }
+    if (names[0] === tag.name) {
       try {
         await api.deleteTag(id)
         removeTagLocal(id)
@@ -981,6 +1009,7 @@ async function commitTagRename(): Promise<void> {
       return
     }
   }
+  const name = names[0]
   if (!name || name === tag.name) return
   try {
     const updated = await api.updateTag(
@@ -1010,11 +1039,8 @@ function uniqueUntitledName(): string {
 }
 
 async function addGroup(): Promise<void> {
-  const libraryId = library.currentId
-  if (!libraryId) return
   try {
     const group = await api.createTagGroup(
-      libraryId,
       uniqueUntitledName(),
       '',
       DEFAULT_COLOR,
@@ -1358,6 +1384,7 @@ onBeforeUnmount(() => {
                     v-model="editingTagName"
                     :data-tag-rename="tag.id"
                     type="text"
+                    placeholder="Tag name (use , or ; to batch)"
                     class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none"
                     @click.stop
                     @dblclick.stop

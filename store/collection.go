@@ -10,7 +10,6 @@ import (
 // asset_collections table; ParentID forms the folder hierarchy.
 type Collection struct {
 	ID          string    `gorm:"column:id;primaryKey;type:text"`
-	LibraryID   string    `gorm:"column:library_id;type:text;not null;index"`
 	ParentID    *string   `gorm:"column:parent_id;type:text;index"`
 	Name        string    `gorm:"column:name;type:text;not null"`
 	Description string    `gorm:"column:description;type:text"`
@@ -27,7 +26,6 @@ func (Collection) TableName() string { return "collections" }
 func CollectionModel(c *domain.Collection) *Collection {
 	return &Collection{
 		ID:          c.ID,
-		LibraryID:   c.LibraryID,
 		ParentID:    c.ParentID,
 		Name:        c.Name,
 		Description: c.Description,
@@ -41,7 +39,6 @@ func CollectionModel(c *domain.Collection) *Collection {
 func (m *Collection) ToDomain() *domain.Collection {
 	return &domain.Collection{
 		ID:          m.ID,
-		LibraryID:   m.LibraryID,
 		ParentID:    m.ParentID,
 		Name:        m.Name,
 		Description: m.Description,

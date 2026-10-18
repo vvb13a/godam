@@ -26,7 +26,7 @@ var (
 	smartCollectionService *service.SmartCollectionService
 	tagService             *service.TagService
 	tagGroupService        *service.TagGroupService
-	libraryService         *service.LibraryService
+	instanceService        *service.InstanceService
 	userService            *service.UserService
 	statsService           *service.StatsService
 	backupService          *service.BackupService
@@ -41,7 +41,7 @@ func main() {
 		SmartCollections: smartCollectionService,
 		Tags:             tagService,
 		TagGroups:        tagGroupService,
-		Libraries:        libraryService,
+		Instance:         instanceService,
 		Users:            userService,
 		Stats:            statsService,
 		Backups:          backupService,
@@ -125,10 +125,19 @@ func initDependencies() {
 		tagService,
 		backupService,
 	)
-	libraryService = service.NewLibraryService(db, assetService)
-	systemService = service.NewSystemService(db, dbPath, storagePath, version, libraryService, backupService)
+	instanceService = service.NewInstanceService(db, assetService)
+	instanceName := os.Getenv("GODAM_LIBRARY_NAME")
+	if instanceName == "" {
+		instanceName = "Library"
+	}
+	instance, err := instanceService.Ensure(context.Background(), instanceName)
+	if err != nil {
+		log.Fatalf("instance init failed: %v", err)
+	}
+	systemService = service.NewSystemService(db, dbPath, storagePath, version, instanceService, backupService)
 	backupService.Start(context.Background())
 
+	log.Printf("godam instance: %s (%s)", instance.Name, instance.ID)
 	log.Printf("godam database: %s", dbPath)
 	log.Printf("godam storage:  %s", storagePath)
 }

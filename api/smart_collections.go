@@ -8,14 +8,7 @@ import (
 )
 
 func (s *Server) handleListSmartCollections(w http.ResponseWriter, r *http.Request) {
-	libraryID, ok := requireLibraryID(w, r)
-	if !ok {
-		return
-	}
-	if !s.requireOwnedLibrary(w, r, libraryID) {
-		return
-	}
-	collections, err := s.deps.SmartCollections.List(r.Context(), libraryID)
+	collections, err := s.deps.SmartCollections.List(r.Context())
 	if err != nil {
 		writeError(w, err)
 		return
@@ -24,7 +17,6 @@ func (s *Server) handleListSmartCollections(w http.ResponseWriter, r *http.Reque
 }
 
 type smartCollectionRequest struct {
-	LibraryID   string                       `json:"library_id"`
 	Name        string                       `json:"name"`
 	Description string                       `json:"description"`
 	Color       string                       `json:"color"`
@@ -40,14 +32,7 @@ func (s *Server) handleCreateSmartCollection(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
 		return
 	}
-	if req.LibraryID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
-		return
-	}
-	if !s.requireOwnedLibrary(w, r, req.LibraryID) {
-		return
-	}
-	collection, err := s.deps.SmartCollections.Create(r.Context(), req.LibraryID, req.Name, req.Description, req.Color, req.Filter)
+	collection, err := s.deps.SmartCollections.Create(r.Context(), req.Name, req.Description, req.Color, req.Filter)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -76,8 +61,7 @@ func (s *Server) handleUpdateSmartCollection(w http.ResponseWriter, r *http.Requ
 }
 
 type smartCollectionSortRequest struct {
-	LibraryID string                        `json:"library_id"`
-	Items     []service.SmartCollectionSort `json:"items"`
+	Items []service.SmartCollectionSort `json:"items"`
 }
 
 // handleReorderSmartCollections applies sort positions in bulk for a drag
@@ -87,14 +71,7 @@ func (s *Server) handleReorderSmartCollections(w http.ResponseWriter, r *http.Re
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if req.LibraryID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
-		return
-	}
-	if !s.requireOwnedLibrary(w, r, req.LibraryID) {
-		return
-	}
-	if err := s.deps.SmartCollections.Reorder(r.Context(), req.LibraryID, req.Items); err != nil {
+	if err := s.deps.SmartCollections.Reorder(r.Context(), req.Items); err != nil {
 		writeError(w, err)
 		return
 	}

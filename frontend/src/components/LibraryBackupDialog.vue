@@ -64,22 +64,18 @@ function payload(): api.LibraryBackupUpdate {
 }
 
 async function loadStatus(): Promise<void> {
-  const id = backupSettingsDialog.libraryId
-  if (!id) return
   try {
-    status.value = await api.getLibraryBackupStatus(id)
+    status.value = await api.getLibraryBackupStatus()
   } catch {
     // The status panel is best-effort; saving/loading reports real errors.
   }
 }
 
 async function load(): Promise<void> {
-  const id = backupSettingsDialog.libraryId
-  if (!id) return
   loading.value = true
   try {
     const [settings] = await Promise.all([
-      api.getLibraryBackup(id),
+      api.getLibraryBackup(),
       loadStatus(),
     ])
     applySettings(settings)
@@ -96,11 +92,9 @@ async function load(): Promise<void> {
 }
 
 async function save(): Promise<void> {
-  const id = backupSettingsDialog.libraryId
-  if (!id) return
   saving.value = true
   try {
-    const updated = await api.setLibraryBackup(id, payload())
+    const updated = await api.setLibraryBackup(payload())
     applySettings(updated)
     toast.add({
       severity: 'success',
@@ -121,11 +115,9 @@ async function save(): Promise<void> {
 }
 
 async function test(): Promise<void> {
-  const id = backupSettingsDialog.libraryId
-  if (!id) return
   testing.value = true
   try {
-    await api.testLibraryBackup(id, payload())
+    await api.testLibraryBackup(payload())
     toast.add({
       severity: 'success',
       summary: 'SFTP connection successful',
@@ -144,11 +136,9 @@ async function test(): Promise<void> {
 }
 
 async function backupNow(): Promise<void> {
-  const id = backupSettingsDialog.libraryId
-  if (!id) return
   running.value = true
   try {
-    const result = await api.runLibraryBackup(id)
+    const result = await api.runLibraryBackup()
     toast.add({
       severity: 'success',
       summary: `Queued ${result.queued} asset(s)`,

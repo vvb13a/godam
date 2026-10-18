@@ -11,7 +11,6 @@ import (
 // table and loaded with a Preload.
 type Asset struct {
 	ID            string    `gorm:"column:id;primaryKey;type:text"`
-	LibraryID     string    `gorm:"column:library_id;type:text;not null;index"`
 	UploadedBy    *string   `gorm:"column:uploaded_by;type:text;index"`
 	Filename      string    `gorm:"column:filename;type:text;not null"`
 	Title         string    `gorm:"column:title;type:text;not null;default:''"`
@@ -43,7 +42,6 @@ func AssetModel(a *domain.Asset) *Asset {
 	}
 	return &Asset{
 		ID:            a.ID,
-		LibraryID:     a.LibraryID,
 		UploadedBy:    uploadedBy,
 		Filename:      a.Filename,
 		Title:         a.Title,
@@ -77,7 +75,6 @@ func (m *Asset) ToDomain() *domain.Asset {
 	}
 	return &domain.Asset{
 		ID:            m.ID,
-		LibraryID:     m.LibraryID,
 		UploadedBy:    uploadedBy,
 		Filename:      m.Filename,
 		Title:         m.Title,

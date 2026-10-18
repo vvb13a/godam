@@ -11,6 +11,8 @@ data, asset metadata, SFTP credentials, or consuming-application tokens.
 
 - One godam instance = one library = one docker compose stack.
 - Each instance has its own DB, storage volume, subdomain/domain, and tokens.
+- `GODAM_LIBRARY_NAME` is used when the instance creates its library on first
+  boot. There is no active-library selection; the instance is the library.
 - Instances are independent; the console is optional.
 - Instances must continue serving even if the console is down.
 - The console uses a pull model: it calls each instance over HTTPS. Instances

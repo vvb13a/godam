@@ -15,7 +15,6 @@ type SmartCollectionFilter struct {
 // SmartCollection is a named, coloured filter preset within a library.
 type SmartCollection struct {
 	ID          string                `json:"id"`
-	LibraryID   string                `json:"library_id"`
 	Name        string                `json:"name"`
 	Description string                `json:"description,omitempty"`
 	Color       string                `json:"color"`

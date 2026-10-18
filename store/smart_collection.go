@@ -11,7 +11,6 @@ import (
 // as a JSON blob.
 type SmartCollection struct {
 	ID          string    `gorm:"column:id;primaryKey;type:text"`
-	LibraryID   string    `gorm:"column:library_id;type:text;not null;index"`
 	Name        string    `gorm:"column:name;type:text;not null"`
 	Description string    `gorm:"column:description;type:text;not null;default:''"`
 	Color       string    `gorm:"column:color;type:text;not null;default:''"`
@@ -27,7 +26,6 @@ func SmartCollectionModel(s *domain.SmartCollection) *SmartCollection {
 	encoded, _ := json.Marshal(s.Filter)
 	return &SmartCollection{
 		ID:          s.ID,
-		LibraryID:   s.LibraryID,
 		Name:        s.Name,
 		Description: s.Description,
 		Color:       s.Color,
@@ -45,7 +43,6 @@ func (m *SmartCollection) ToDomain() *domain.SmartCollection {
 	}
 	return &domain.SmartCollection{
 		ID:          m.ID,
-		LibraryID:   m.LibraryID,
 		Name:        m.Name,
 		Description: m.Description,
 		Color:       m.Color,

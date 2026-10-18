@@ -26,11 +26,10 @@ var defaultSmartCollections = []struct {
 
 // seedDefaultSmartCollections inserts the built-in presets, appended after any
 // existing rows. It runs inside the library-creation transaction.
-func seedDefaultSmartCollections(tx *gorm.DB, libraryID string, now time.Time) error {
+func seedDefaultSmartCollections(tx *gorm.DB, now time.Time) error {
 	for i, def := range defaultSmartCollections {
 		model := &store.SmartCollection{
 			ID:        uuid.New().String(),
-			LibraryID: libraryID,
 			Name:      def.name,
 			Color:     def.color,
 			Sort:      i,
@@ -73,10 +72,9 @@ func NewSmartCollectionService(db *gorm.DB) *SmartCollectionService {
 	return &SmartCollectionService{db: db}
 }
 
-func (s *SmartCollectionService) List(ctx context.Context, libraryID string) ([]domain.SmartCollection, error) {
+func (s *SmartCollectionService) List(ctx context.Context) ([]domain.SmartCollection, error) {
 	var models []store.SmartCollection
 	if err := s.db.WithContext(ctx).
-		Where("library_id = ?", libraryID).
 		Order("sort ASC, name ASC").
 		Find(&models).Error; err != nil {
 		return nil, err
@@ -84,7 +82,7 @@ func (s *SmartCollectionService) List(ctx context.Context, libraryID string) ([]
 	collections := make([]domain.SmartCollection, 0, len(models))
 	for i := range models {
 		collection := models[i].ToDomain()
-		count, err := s.countAssets(ctx, libraryID, collection.Filter)
+		count, err := s.countAssets(ctx, collection.Filter)
 		if err != nil {
 			return nil, err
 		}
@@ -97,10 +95,8 @@ func (s *SmartCollectionService) List(ctx context.Context, libraryID string) ([]
 // countAssets returns how many assets in the library match a saved filter. The
 // special collection/tag values "uncategorized"/"untagged" and the broad media
 // categories mirror the asset list's filtering.
-func (s *SmartCollectionService) countAssets(ctx context.Context, libraryID string, filter domain.SmartCollectionFilter) (int, error) {
-	query := s.db.WithContext(ctx).
-		Model(&store.Asset{}).
-		Where("library_id = ?", libraryID)
+func (s *SmartCollectionService) countAssets(ctx context.Context, filter domain.SmartCollectionFilter) (int, error) {
+	query := s.db.WithContext(ctx).Model(&store.Asset{})
 
 	switch filter.Collection {
 	case "":
@@ -177,22 +173,18 @@ func (s *SmartCollectionService) GetByID(ctx context.Context, id string) (*domai
 }
 
 // Create stores a new filter preset, appended after its siblings.
-func (s *SmartCollectionService) Create(ctx context.Context, libraryID, name, description, color string, filter domain.SmartCollectionFilter) (*domain.SmartCollection, error) {
-	if err := ensureLibraryExists(ctx, s.db, libraryID); err != nil {
-		return nil, err
-	}
-	unique, err := s.uniqueName(ctx, libraryID, name)
+func (s *SmartCollectionService) Create(ctx context.Context, name, description, color string, filter domain.SmartCollectionFilter) (*domain.SmartCollection, error) {
+	unique, err := s.uniqueName(ctx, name)
 	if err != nil {
 		return nil, err
 	}
-	sort, err := s.nextSort(ctx, libraryID)
+	sort, err := s.nextSort(ctx)
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
 	collection := &domain.SmartCollection{
 		ID:          uuid.New().String(),
-		LibraryID:   libraryID,
 		Name:        unique,
 		Description: description,
 		Color:       color,
@@ -242,7 +234,7 @@ func (s *SmartCollectionService) Delete(ctx context.Context, id string) error {
 // Reorder applies a batch of sort positions in one transaction so a drag
 // reorder is a single request and never leaves the order half-applied. Only
 // rows in the given library are affected.
-func (s *SmartCollectionService) Reorder(ctx context.Context, libraryID string, items []SmartCollectionSort) error {
+func (s *SmartCollectionService) Reorder(ctx context.Context, items []SmartCollectionSort) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -250,7 +242,7 @@ func (s *SmartCollectionService) Reorder(ctx context.Context, libraryID string, 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, item := range items {
 			res := tx.Model(&store.SmartCollection{}).
-				Where("id = ? AND library_id = ?", item.ID, libraryID).
+				Where("id = ?", item.ID).
 				Updates(map[string]any{"sort": item.Sort, "updated_at": now})
 			if res.Error != nil {
 				return res.Error
@@ -263,13 +255,12 @@ func (s *SmartCollectionService) Reorder(ctx context.Context, libraryID string, 
 	})
 }
 
-func (s *SmartCollectionService) nextSort(ctx context.Context, libraryID string) (int, error) {
+func (s *SmartCollectionService) nextSort(ctx context.Context) (int, error) {
 	var row struct {
 		Max *int
 	}
 	if err := s.db.WithContext(ctx).
 		Model(&store.SmartCollection{}).
-		Where("library_id = ?", libraryID).
 		Select("MAX(sort) AS max").
 		Scan(&row).Error; err != nil {
 		return 0, err
@@ -280,12 +271,12 @@ func (s *SmartCollectionService) nextSort(ctx context.Context, libraryID string)
 	return *row.Max + 1, nil
 }
 
-func (s *SmartCollectionService) uniqueName(ctx context.Context, libraryID, base string) (string, error) {
+func (s *SmartCollectionService) uniqueName(ctx context.Context, base string) (string, error) {
 	name := base
 	for i := 2; ; i++ {
 		var count int64
 		if err := s.db.WithContext(ctx).Model(&store.SmartCollection{}).
-			Where("library_id = ? AND name = ?", libraryID, name).Count(&count).Error; err != nil {
+			Where("name = ?", name).Count(&count).Error; err != nil {
 			return "", err
 		}
 		if count == 0 {

@@ -19,10 +19,7 @@ const current = ref('')
 const error = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 
-const currentLibrary = computed(
-  () => library.libraries.find((item) => item.id === library.currentId) ?? null,
-)
-const maxUploadBytes = computed(() => currentLibrary.value?.max_upload_bytes ?? 0)
+const maxUploadBytes = computed(() => library.max_upload_bytes)
 
 watch(
   () => upload.visible,
@@ -68,12 +65,11 @@ const destinationTagName = computed(() => {
 async function finish(assetIds: string[]): Promise<void> {
   const destination = upload.destinationCollectionId
   const tagId = upload.destinationTagId
-  const libraryId = library.currentId
   if (destination) {
     await api.addAssetsToCollection(destination, assetIds)
   }
-  if (tagId && libraryId) {
-    await api.applyAssetsTags(libraryId, assetIds, [tagId], 'add')
+  if (tagId) {
+    await api.applyAssetsTags(assetIds, [tagId], 'add')
   }
   notifyLibraryChanged()
   upload.visible = false
@@ -81,13 +77,11 @@ async function finish(assetIds: string[]): Promise<void> {
 
 async function uploadFiles(): Promise<void> {
   if (!upload.files.length || uploading.value) return
-  const libraryId = library.currentId
-  if (!libraryId) return
   const limit = maxUploadBytes.value
   if (limit > 0) {
     const tooLarge = upload.files.find((file) => file.size > limit)
     if (tooLarge) {
-      error.value = `“${tooLarge.name}” exceeds the ${formatSize(limit)} limit for this library.`
+      error.value = `“${tooLarge.name}” exceeds the ${formatSize(limit)} limit for this instance.`
       return
     }
   }
@@ -99,7 +93,7 @@ async function uploadFiles(): Promise<void> {
     let done = 0
     for (const file of upload.files) {
       current.value = file.name
-      const asset = await api.uploadAsset(libraryId, file, undefined, (fraction) => {
+      const asset = await api.uploadAsset(file, undefined, (fraction) => {
         progress.value = Math.round(((done + fraction) / total) * 100)
       })
       ids.push(asset.id)
@@ -117,14 +111,12 @@ async function uploadFiles(): Promise<void> {
 async function importUrl(): Promise<void> {
   const source = sourceUrl.value.trim()
   if (!source || uploading.value) return
-  const libraryId = library.currentId
-  if (!libraryId) return
   uploading.value = true
   error.value = null
   current.value = source
   progress.value = 0
   try {
-    const asset = await api.importAsset(libraryId, source)
+    const asset = await api.importAsset(source)
     await finish([asset.id])
   } catch (e) {
     error.value = toMessage(e)

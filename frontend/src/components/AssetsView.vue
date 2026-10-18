@@ -3,6 +3,7 @@ import Button from 'primevue/button'
 import ContextMenu from 'primevue/contextmenu'
 import Message from 'primevue/message'
 import MultiSelect from 'primevue/multiselect'
+import Select from 'primevue/select'
 import Popover from 'primevue/popover'
 import SelectButton from 'primevue/selectbutton'
 import Slider from 'primevue/slider'
@@ -141,6 +142,9 @@ function animatePanelLeave(el: Element, done: () => void): void {
 
 const assets = ref<Asset[]>([])
 const loading = ref(false)
+const refreshing = ref(false)
+const loadedOnce = ref(false)
+const gridRevision = ref(0)
 const error = ref<string | null>(null)
 
 const localSelectedIds = ref<string[]>([])
@@ -393,6 +397,32 @@ const TYPE_CATEGORIES = [
   { value: 'other', label: 'Other' },
 ]
 
+const SORT_OPTIONS = [
+  { value: 'date-desc', label: 'Newest first' },
+  { value: 'date-asc', label: 'Oldest first' },
+  { value: 'modified-desc', label: 'Recently modified' },
+  { value: 'modified-asc', label: 'Least recently modified' },
+  { value: 'name-asc', label: 'Name A–Z' },
+  { value: 'name-desc', label: 'Name Z–A' },
+  { value: 'size-desc', label: 'Largest first' },
+  { value: 'size-asc', label: 'Smallest first' },
+]
+
+const collectionOptions = computed(() => [
+  {
+    value: '',
+    label: `All collections (${library.stats?.assets ?? 0})`,
+  },
+  {
+    value: 'uncategorized',
+    label: `Uncategorized (${library.stats?.uncategorized ?? 0})`,
+  },
+  ...library.collections.map((collection) => ({
+    value: collection.id,
+    label: `${collection.name} (${collection.asset_count})`,
+  })),
+])
+
 const DOCUMENT_MIMES = new Set([
   'application/pdf',
   'application/msword',
@@ -426,7 +456,12 @@ function setQueryFilter(
 }
 
 const tagOptions = computed(() => [
-  { label: 'Untagged', value: 'untagged', color: undefined as string | undefined },
+  {
+    label: 'Untagged',
+    value: 'untagged',
+    color: undefined as string | undefined,
+    count: library.stats?.untagged ?? 0,
+  },
   ...library.tags.map((tag) => {
     const group = tag.group_id
       ? library.tagGroups.find((item) => item.id === tag.group_id)
@@ -435,6 +470,7 @@ const tagOptions = computed(() => [
       label: tag.name,
       value: tag.id,
       color: group?.color ? `#${group.color}` : undefined,
+      count: tag.asset_count,
     }
   }),
 ])
@@ -728,15 +764,12 @@ function toMessage(e: unknown): string {
 }
 
 async function load(): Promise<void> {
-  const libraryId = library.currentId
-  if (!libraryId) {
-    assets.value = []
-    return
-  }
-  loading.value = true
+  const initial = !loadedOnce.value
+  if (initial) loading.value = true
+  else refreshing.value = true
   error.value = null
   try {
-    const params: api.AssetListParams = { libraryId }
+    const params: api.AssetListParams = {}
     const c = collectionFilter.value
     if (c === 'uncategorized') params.uncategorized = true
     else if (c) params.collectionId = c
@@ -751,6 +784,12 @@ async function load(): Promise<void> {
     error.value = toMessage(e)
   } finally {
     loading.value = false
+    refreshing.value = false
+  }
+
+  if (!error.value) {
+    loadedOnce.value = true
+    gridRevision.value++
   }
 
   if (embed.active && !error.value) {
@@ -1075,10 +1114,9 @@ async function regeneratePreviews(assets: Asset[]): Promise<void> {
 // (library) Inspector. The library list is reloaded so the cover propagates.
 async function setAsLibraryCover(): Promise<void> {
   const asset = selectedAssets.value[0]
-  const libraryId = library.currentId
-  if (!asset || !libraryId) return
+  if (!asset) return
   try {
-    await api.setLibraryCover(libraryId, asset.id)
+    await api.setInstanceCover(asset.id)
     await loadLibraries()
     toast.add({
       severity: 'success',
@@ -1099,10 +1137,9 @@ async function setAsLibraryCover(): Promise<void> {
 // image editor's watermark tool.
 async function setAsLibraryWatermark(): Promise<void> {
   const asset = selectedAssets.value[0]
-  const libraryId = library.currentId
-  if (!asset || !libraryId) return
+  if (!asset) return
   try {
-    await api.setLibraryWatermark(libraryId, asset.id)
+    await api.setInstanceWatermark(asset.id)
     await loadLibraries()
     toast.add({
       severity: 'success',
@@ -1220,7 +1257,7 @@ watch(
 )
 
 watch(
-  () => library.currentId,
+  () => library.id,
   () => {
     clearSelection()
   },
@@ -1302,26 +1339,20 @@ onBeforeUnmount(() => {
               v-if="!panels.topCollapsed"
               class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 shadow-lg"
             >
-          <select
+          <Select
             v-model="collectionFilter"
-            class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 dark:disabled:bg-slate-800 disabled:text-slate-400"
+            :options="collectionOptions"
+            option-label="label"
+            option-value="value"
+            size="small"
+            class="w-44"
             :disabled="embedCollectionLocked"
             :title="
               embedCollectionLocked
                 ? 'This collection is locked by the host application'
                 : undefined
             "
-          >
-            <option value="">All collections</option>
-            <option value="uncategorized">Uncategorized</option>
-            <option
-              v-for="collection in library.collections"
-              :key="collection.id"
-              :value="collection.id"
-            >
-              {{ collection.name }}
-            </option>
-          </select>
+          />
 
           <MultiSelect
             v-model="tagFilter"
@@ -1337,46 +1368,43 @@ onBeforeUnmount(() => {
                 ? 'Tags are locked by the host application'
                 : undefined
             "
-            class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
+            size="small"
+            class="w-48 text-sm"
           >
             <template #option="slotProps">
-              <span class="flex items-center gap-2">
+              <span class="flex w-full items-center gap-2">
                 <span
                   v-if="slotProps.option.color"
                   class="h-2.5 w-2.5 shrink-0 rounded-full"
                   :style="{ backgroundColor: slotProps.option.color }"
                 />
-                {{ slotProps.option.label }}
+                <span class="min-w-0 flex-1 truncate">
+                  {{ slotProps.option.label }}
+                </span>
+                <span class="shrink-0 text-xs text-slate-400">
+                  {{ slotProps.option.count }}
+                </span>
               </span>
             </template>
           </MultiSelect>
 
-          <select
+          <Select
             v-model="typeFilter"
-            class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm"
-          >
-            <option
-              v-for="option in TYPE_CATEGORIES"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </option>
-          </select>
+            :options="TYPE_CATEGORIES"
+            option-label="label"
+            option-value="value"
+            size="small"
+            class="w-36"
+          />
 
-          <select
+          <Select
             v-model="sort"
-            class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm"
-          >
-            <option value="date-desc">Newest first</option>
-            <option value="date-asc">Oldest first</option>
-            <option value="modified-desc">Recently modified</option>
-            <option value="modified-asc">Least recently modified</option>
-            <option value="name-asc">Name A–Z</option>
-            <option value="name-desc">Name Z–A</option>
-            <option value="size-desc">Largest first</option>
-            <option value="size-asc">Smallest first</option>
-          </select>
+            :options="SORT_OPTIONS"
+            option-label="label"
+            option-value="value"
+            size="small"
+            class="w-48"
+          />
 
           <span
             v-if="embedCollectionLocked || embedTagLocked"
@@ -1400,6 +1428,11 @@ onBeforeUnmount(() => {
                 : `${visibleAssets.length} item(s)`
             }}
           </span>
+          <span
+            v-if="refreshing"
+            class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-violet-600 dark:border-slate-700 dark:border-t-violet-400"
+            title="Refreshing assets"
+          ></span>
 
           <Button
             severity="secondary"
@@ -1598,10 +1631,19 @@ onBeforeUnmount(() => {
           }"
           @mousedown="onLassoStart"
         >
-          <p v-if="loading" class="text-sm text-slate-400">Loading…</p>
-          <p v-else-if="!assets.length" class="text-sm text-slate-400">
-            No assets yet.
-          </p>
+          <Transition name="grid-fade" mode="out-in">
+            <div :key="gridRevision">
+              <div
+                v-if="loading && !loadedOnce"
+                class="flex items-center justify-center py-16"
+              >
+                <span
+                  class="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-violet-600 dark:border-slate-700 dark:border-t-violet-400"
+                ></span>
+              </div>
+              <p v-else-if="!assets.length" class="text-sm text-slate-400">
+                No assets yet.
+              </p>
           <p v-else-if="!visibleAssets.length" class="text-sm text-slate-400">
             No assets match the current filters.
           </p>
@@ -1655,6 +1697,8 @@ onBeforeUnmount(() => {
               @dragend="onDragEnd"
             />
           </div>
+            </div>
+          </Transition>
         </div>
 
         <div
@@ -1849,3 +1893,15 @@ onBeforeUnmount(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.grid-fade-enter-active,
+.grid-fade-leave-active {
+  transition: opacity 120ms ease;
+}
+
+.grid-fade-enter-from,
+.grid-fade-leave-to {
+  opacity: 0;
+}
+</style>

@@ -3,6 +3,10 @@
 This document describes the three backup/transfer workflows for godam, what is
 already implemented, and how to add the remaining pieces.
 
+> Since the single-instance refactor, the instance and the library are the same
+> thing. The current code uses `backup_settings` and has no `library_id` columns;
+> older references below to per-library behavior mean per-instance behavior.
+
 The guiding principle is:
 
 > The SQLite database is the catalog. Storage files alone are not a portable
@@ -20,7 +24,7 @@ There are three distinct workflows:
 
 Continuous backup has two levels:
 
-- **v1 (implemented):** per-library SFTP mirror of originals.
+- **v1 (implemented):** per-instance SFTP mirror of originals.
 - **v2 (target):** versioned storage stream + lightweight DB snapshots, giving
   point-in-time recovery without re-zipping storage on every snapshot.
 
@@ -32,7 +36,7 @@ v2 is not a fourth workflow; it is a better implementation of workflow 2.
 
 ### Already implemented
 
-- Per-library SFTP backup settings, encrypted credentials, status UI, async
+- Per-instance SFTP backup settings, encrypted credentials, status UI, async
   jobs, retries, and reconciliation:
   - `store/migrations/00015_library_backups.sql`
   - `service/backup_service.go`

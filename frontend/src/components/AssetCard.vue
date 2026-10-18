@@ -215,7 +215,7 @@ const cardClass = computed(() => {
       : 'rounded border border-dashed border-violet-500 bg-white dark:bg-slate-900 opacity-60'
   }
   const base = props.selected
-    ? 'rounded border border-violet-500 bg-white dark:bg-slate-900 ring-2 ring-violet-500 ring-inset'
+    ? 'rounded border border-violet-500 bg-white dark:bg-slate-900 ring-2 ring-violet-500'
     : 'rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-violet-300'
   return props.fill ? `${base} h-full` : base
 })
@@ -229,7 +229,7 @@ const extensionClass =
     type="button"
     draggable="true"
     :data-asset-id="asset.id"
-    class="group block w-full overflow-hidden text-left transition focus:ring-2 focus:ring-violet-400 focus:ring-inset focus:outline-none"
+    class="group block w-full overflow-hidden text-left transition focus:ring-2 focus:ring-violet-400 focus:outline-none"
     :class="cardClass"
     @click.stop="$emit('open', asset, $event)"
     @contextmenu.prevent="$emit('menu', $event, asset)"

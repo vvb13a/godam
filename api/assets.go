@@ -11,20 +11,11 @@ import (
 	"github.com/vvb13a/godam/domain"
 )
 
-// handleListAssets returns the assets of a library, optionally filtered by
-// collection (collection_id or uncategorized=true), tag (tag_id or
-// untagged=true). library_id is required.
+// handleListAssets returns assets, optionally filtered by collection
+// (collection_id or uncategorized=true), tag (tag_id or untagged=true).
 func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-
-	libraryID, ok := requireLibraryID(w, r)
-	if !ok {
-		return
-	}
-	if !s.requireOwnedLibrary(w, r, libraryID) {
-		return
-	}
-	filter := domain.AssetFilter{LibraryID: libraryID}
+	filter := domain.AssetFilter{}
 	if v := q.Get("collection_id"); v != "" {
 		filter.CollectionID = &v
 	}
@@ -80,16 +71,7 @@ func (s *Server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
 		_, _ = file.Seek(0, 0)
 	}
 
-	libraryID := r.FormValue("library_id")
-	if libraryID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
-		return
-	}
-	if !s.requireOwnedLibrary(w, r, libraryID) {
-		return
-	}
-
-	asset, err := s.deps.Assets.Upload(r.Context(), currentUser(r).ID, libraryID, r.FormValue("driver"), header.Filename, mimeType, header.Size, file)
+	asset, err := s.deps.Assets.Upload(r.Context(), currentUser(r).ID, r.FormValue("driver"), header.Filename, mimeType, header.Size, file)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -98,8 +80,7 @@ func (s *Server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 type importRequest struct {
-	LibraryID string `json:"library_id"`
-	Source    string `json:"source"`
+	Source string `json:"source"`
 }
 
 // handleImportAsset pulls an asset from a local path or an http(s) URL.
@@ -112,14 +93,7 @@ func (s *Server) handleImportAsset(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "source is required"})
 		return
 	}
-	if req.LibraryID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
-		return
-	}
-	if !s.requireOwnedLibrary(w, r, req.LibraryID) {
-		return
-	}
-	asset, err := s.deps.Assets.UploadFromSource(r.Context(), currentUser(r).ID, req.LibraryID, req.Source, nil)
+	asset, err := s.deps.Assets.UploadFromSource(r.Context(), currentUser(r).ID, req.Source, nil)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -323,9 +297,8 @@ func (s *Server) handleRegeneratePreview(w http.ResponseWriter, r *http.Request)
 }
 
 type tagRequest struct {
-	Name      string `json:"name"`
-	TagID     string `json:"tag_id"`
-	LibraryID string `json:"library_id"`
+	Name  string `json:"name"`
+	TagID string `json:"tag_id"`
 }
 
 func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
@@ -431,10 +404,9 @@ func (s *Server) handleAddAssetsToCollection(w http.ResponseWriter, r *http.Requ
 }
 
 type bulkTagRequest struct {
-	LibraryID string   `json:"library_id"`
-	AssetIDs  []string `json:"asset_ids"`
-	TagIDs    []string `json:"tag_ids"`
-	Mode      string   `json:"mode"`
+	AssetIDs []string `json:"asset_ids"`
+	TagIDs   []string `json:"tag_ids"`
+	Mode     string   `json:"mode"`
 }
 
 // handleApplyAssetsTags applies a tag set to many assets in one request,
@@ -445,22 +417,15 @@ func (s *Server) handleApplyAssetsTags(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if req.LibraryID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
-		return
-	}
 	if req.Mode != "add" && req.Mode != "replace" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "mode must be add or replace"})
 		return
 	}
-	if !s.requireOwnedLibrary(w, r, req.LibraryID) {
-		return
-	}
 	var err error
 	if req.Mode == "replace" {
-		err = s.deps.Assets.ReplaceTagsBulk(r.Context(), req.LibraryID, req.AssetIDs, req.TagIDs)
+		err = s.deps.Assets.ReplaceTagsBulk(r.Context(), req.AssetIDs, req.TagIDs)
 	} else {
-		err = s.deps.Assets.AddTagsBulk(r.Context(), req.LibraryID, req.AssetIDs, req.TagIDs)
+		err = s.deps.Assets.AddTagsBulk(r.Context(), req.AssetIDs, req.TagIDs)
 	}
 	if err != nil {
 		writeError(w, err)

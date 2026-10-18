@@ -20,46 +20,25 @@ func newTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestLibraryMembership(t *testing.T) {
+func TestInstance(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
-	users := NewUserService(db)
-	libs := NewLibraryService(db, nil)
+	instances := NewInstanceService(db, nil)
 
-	user1, err := users.Create(ctx, "One", "one@example.com", "password1")
+	inst, err := instances.Ensure(ctx, "Test")
 	if err != nil {
-		t.Fatalf("create user1: %v", err)
+		t.Fatalf("ensure instance: %v", err)
 	}
-	user2, err := users.Create(ctx, "Two", "two@example.com", "password1")
-	if err != nil {
-		t.Fatalf("create user2: %v", err)
+	if inst.Name != "Test" || inst.ID == "" {
+		t.Fatalf("unexpected instance: %+v", inst)
 	}
-
-	lib, err := libs.Create(ctx, user1.ID, "Shared", "8b5cf6", 0)
-	if err != nil {
-		t.Fatalf("create library: %v", err)
+	again, err := instances.Ensure(ctx, "Ignored")
+	if err != nil || again.ID != inst.ID {
+		t.Fatalf("ensure should be idempotent: %+v err=%v", again, err)
 	}
-
-	list, err := libs.List(ctx, user1.ID)
-	if err != nil || len(list) != 1 {
-		t.Fatalf("creator should see library: n=%d err=%v", len(list), err)
-	}
-	other, err := libs.List(ctx, user2.ID)
-	if err != nil || len(other) != 0 {
-		t.Fatalf("non-member should not see library: n=%d err=%v", len(other), err)
-	}
-
-	if err := libs.VerifyOwned(ctx, lib.ID, user1.ID); err != nil {
-		t.Fatalf("member should be verified: %v", err)
-	}
-	if err := libs.VerifyOwned(ctx, lib.ID, user2.ID); err == nil {
-		t.Fatal("non-member should not be verified")
-	}
-	if err := libs.Reorder(ctx, user2.ID, []LibrarySort{{ID: lib.ID, Sort: 5}}); err == nil {
-		t.Fatal("non-member reorder should fail")
-	}
-	if err := libs.Reorder(ctx, user1.ID, []LibrarySort{{ID: lib.ID, Sort: 5}}); err != nil {
-		t.Fatalf("member reorder should work: %v", err)
+	updated, err := instances.Update(ctx, "Renamed", "ef4444")
+	if err != nil || updated.Name != "Renamed" || updated.Color != "ef4444" {
+		t.Fatalf("update: %+v err=%v", updated, err)
 	}
 }
 
@@ -104,20 +83,14 @@ func TestSessionCacheDurability(t *testing.T) {
 func TestSmartCollections(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
-	users := NewUserService(db)
-	libs := NewLibraryService(db, nil)
+	instances := NewInstanceService(db, nil)
 	smart := NewSmartCollectionService(db)
 
-	user, err := users.Create(ctx, "U", "smart@example.com", "password1")
-	if err != nil {
-		t.Fatalf("create user: %v", err)
-	}
-	lib, err := libs.Create(ctx, user.ID, "L", "", 0)
-	if err != nil {
-		t.Fatalf("create library: %v", err)
+	if _, err := instances.Ensure(ctx, "L"); err != nil {
+		t.Fatalf("create instance: %v", err)
 	}
 
-	created, err := smart.Create(ctx, lib.ID, "Videos", "", "3b82f6", domain.SmartCollectionFilter{
+	created, err := smart.Create(ctx, "Videos", "", "3b82f6", domain.SmartCollectionFilter{
 		Type: "video",
 		Sort: "name-asc",
 	})
@@ -127,7 +100,7 @@ func TestSmartCollections(t *testing.T) {
 
 	// Creating a library seeds the built-in Uncategorized/Untagged presets, so
 	// the created collection is listed alongside them.
-	list, err := smart.List(ctx, lib.ID)
+	list, err := smart.List(ctx)
 	if err != nil || len(list) != 3 {
 		t.Fatalf("list: n=%d err=%v", len(list), err)
 	}
@@ -144,7 +117,7 @@ func TestSmartCollections(t *testing.T) {
 		t.Fatalf("filter not persisted: %+v", videos.Filter)
 	}
 
-	if _, err := smart.Create(ctx, lib.ID, "Videos", "", "3b82f6", domain.SmartCollectionFilter{Type: "video"}); err != nil {
+	if _, err := smart.Create(ctx, "Videos", "", "3b82f6", domain.SmartCollectionFilter{Type: "video"}); err != nil {
 		t.Fatalf("duplicate name should be auto-suffixed: %v", err)
 	}
 
@@ -164,36 +137,25 @@ func TestSmartCollections(t *testing.T) {
 func TestCollectionHierarchy(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
-	users := NewUserService(db)
-	libs := NewLibraryService(db, nil)
 	cols := NewCollectionService(db)
 
-	user, err := users.Create(ctx, "U", "collections@example.com", "password1")
-	if err != nil {
-		t.Fatalf("create user: %v", err)
-	}
-	lib, err := libs.Create(ctx, user.ID, "L", "", 0)
-	if err != nil {
-		t.Fatalf("create library: %v", err)
-	}
-
-	root, err := cols.Create(ctx, lib.ID, nil, "Root", "", "8b5cf6")
+	root, err := cols.Create(ctx, nil, "Root", "", "8b5cf6")
 	if err != nil {
 		t.Fatalf("create root: %v", err)
 	}
-	child, err := cols.Create(ctx, lib.ID, &root.ID, "Child", "", "")
+	child, err := cols.Create(ctx, &root.ID, "Child", "", "")
 	if err != nil {
 		t.Fatalf("create child: %v", err)
 	}
-	grandchild, err := cols.Create(ctx, lib.ID, &child.ID, "Grandchild", "", "")
+	grandchild, err := cols.Create(ctx, &child.ID, "Grandchild", "", "")
 	if err != nil {
 		t.Fatalf("create grandchild: %v", err)
 	}
 
-	if _, err := cols.Create(ctx, lib.ID, nil, "Root", "", ""); err != nil {
+	if _, err := cols.Create(ctx, nil, "Root", "", ""); err != nil {
 		t.Fatalf("duplicate name should be auto-suffixed: %v", err)
 	}
-	list, err := cols.List(ctx, lib.ID)
+	list, err := cols.List(ctx)
 	if err != nil || len(list) != 4 {
 		t.Fatalf("expected 4 collections, got %d err=%v", len(list), err)
 	}
@@ -219,7 +181,7 @@ func TestCollectionHierarchy(t *testing.T) {
 	if err := db.Model(&struct{}{}).
 		Table("collections").
 		Select("id").
-		Where("library_id = ? AND parent_id IS NULL", lib.ID).
+		Where("parent_id IS NULL").
 		Order("sort ASC").
 		Limit(1).
 		Scan(&firstRoot).Error; err != nil {
@@ -233,35 +195,25 @@ func TestCollectionHierarchy(t *testing.T) {
 func TestBulkAssetRelations(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
-	users := NewUserService(db)
-	libs := NewLibraryService(db, nil)
 	cols := NewCollectionService(db)
 	tags := NewTagService(db)
 	assets := &AssetService{db: db}
 
-	user, err := users.Create(ctx, "U", "bulk@example.com", "password1")
-	if err != nil {
-		t.Fatalf("create user: %v", err)
-	}
-	lib, err := libs.Create(ctx, user.ID, "L", "", 0)
-	if err != nil {
-		t.Fatalf("create library: %v", err)
-	}
-	col, err := cols.Create(ctx, lib.ID, nil, "C", "", "")
+	col, err := cols.Create(ctx, nil, "C", "", "")
 	if err != nil {
 		t.Fatalf("create collection: %v", err)
 	}
-	tag1, err := tags.GetOrCreate(ctx, lib.ID, "One")
+	tag1, err := tags.GetOrCreate(ctx, "One")
 	if err != nil {
 		t.Fatalf("create tag1: %v", err)
 	}
-	tag2, err := tags.GetOrCreate(ctx, lib.ID, "Two")
+	tag2, err := tags.GetOrCreate(ctx, "Two")
 	if err != nil {
 		t.Fatalf("create tag2: %v", err)
 	}
 	for _, id := range []string{"a1", "a2"} {
 		if err := db.Create(&store.Asset{
-			ID: id, LibraryID: lib.ID, Filename: id + ".jpg",
+			ID: id, Filename: id + ".jpg",
 			StorageDriver: "local", StorageKey: id, MimeType: "image/jpeg",
 			ByteSize: 1, CreatedAt: time.Now().UTC(),
 		}).Error; err != nil {
@@ -287,10 +239,10 @@ func TestBulkAssetRelations(t *testing.T) {
 	}
 
 	// Bulk add tags merges the tag into both assets and is idempotent.
-	if err := assets.AddTagsBulk(ctx, lib.ID, []string{"a1", "a2"}, []string{tag1.ID}); err != nil {
+	if err := assets.AddTagsBulk(ctx, []string{"a1", "a2"}, []string{tag1.ID}); err != nil {
 		t.Fatalf("add tags bulk: %v", err)
 	}
-	if err := assets.AddTagsBulk(ctx, lib.ID, []string{"a1", "a2"}, []string{tag1.ID}); err != nil {
+	if err := assets.AddTagsBulk(ctx, []string{"a1", "a2"}, []string{tag1.ID}); err != nil {
 		t.Fatalf("add tags bulk repeat: %v", err)
 	}
 	if n := countRows("asset_tags", "tag_id", tag1.ID); n != 2 {
@@ -298,7 +250,7 @@ func TestBulkAssetRelations(t *testing.T) {
 	}
 
 	// Replace clears the old set then applies the new one.
-	if err := assets.ReplaceTagsBulk(ctx, lib.ID, []string{"a1", "a2"}, []string{tag2.ID}); err != nil {
+	if err := assets.ReplaceTagsBulk(ctx, []string{"a1", "a2"}, []string{tag2.ID}); err != nil {
 		t.Fatalf("replace tags bulk: %v", err)
 	}
 	if n := countRows("asset_tags", "tag_id", tag1.ID); n != 0 {
@@ -309,7 +261,7 @@ func TestBulkAssetRelations(t *testing.T) {
 	}
 
 	// An empty replacement clears every tag for the assets.
-	if err := assets.ReplaceTagsBulk(ctx, lib.ID, []string{"a1", "a2"}, nil); err != nil {
+	if err := assets.ReplaceTagsBulk(ctx, []string{"a1", "a2"}, nil); err != nil {
 		t.Fatalf("clear tags bulk: %v", err)
 	}
 	if n := countRows("asset_tags", "tag_id", tag2.ID); n != 0 {

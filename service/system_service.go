@@ -24,7 +24,7 @@ type SystemService struct {
 	storagePath string
 	version     string
 	started     time.Time
-	libraries   *LibraryService
+	instance    *InstanceService
 	backups     *BackupService
 
 	mu                sync.Mutex
@@ -32,14 +32,14 @@ type SystemService struct {
 	previewAt         time.Time
 }
 
-func NewSystemService(db *gorm.DB, dbPath, storagePath, version string, libraries *LibraryService, backups *BackupService) *SystemService {
+func NewSystemService(db *gorm.DB, dbPath, storagePath, version string, instance *InstanceService, backups *BackupService) *SystemService {
 	return &SystemService{
 		db:          db,
 		dbPath:      dbPath,
 		storagePath: storagePath,
 		version:     version,
 		started:     time.Now().UTC(),
-		libraries:   libraries,
+		instance:    instance,
 		backups:     backups,
 	}
 }
@@ -103,8 +103,8 @@ type SystemMetrics struct {
 }
 
 func (s *SystemService) Info(ctx context.Context) (*SystemInfo, error) {
-	var libraries []store.Library
-	if err := s.db.WithContext(ctx).Order("sort ASC, created_at ASC").Find(&libraries).Error; err != nil {
+	inst, err := s.instance.Get(ctx)
+	if err != nil {
 		return nil, err
 	}
 	out := &SystemInfo{
@@ -112,47 +112,40 @@ func (s *SystemService) Info(ctx context.Context) (*SystemInfo, error) {
 		SchemaVersion: s.schemaVersion(ctx),
 		StartedAt:     s.started,
 		UptimeSeconds: int64(time.Since(s.started).Seconds()),
-		Libraries:     make([]SystemLibrary, 0, len(libraries)),
-	}
-	for _, lib := range libraries {
-		out.Libraries = append(out.Libraries, SystemLibrary{ID: lib.ID, Name: lib.Name})
+		Libraries:     []SystemLibrary{{ID: inst.ID, Name: inst.Name}},
 	}
 	return out, nil
 }
 
 func (s *SystemService) Metrics(ctx context.Context) (*SystemMetrics, error) {
-	var libraries []store.Library
-	if err := s.db.WithContext(ctx).Order("sort ASC, created_at ASC").Find(&libraries).Error; err != nil {
+	inst, err := s.instance.Get(ctx)
+	if err != nil {
 		return nil, err
 	}
+	var row struct {
+		Assets int64
+		Bytes  int64
+	}
+	_ = s.db.WithContext(ctx).
+		Model(&store.Asset{}).
+		Select("COUNT(*) as assets, COALESCE(SUM(byte_size), 0) as bytes").
+		Scan(&row).Error
 	out := &SystemMetrics{
 		Version:       s.version,
 		SchemaVersion: s.schemaVersion(ctx),
 		UptimeSeconds: int64(time.Since(s.started).Seconds()),
-		Libraries:     make([]LibraryMetrics, 0, len(libraries)),
-		Backups:       make([]domain.BackupStatus, 0, len(libraries)),
-	}
-	for _, lib := range libraries {
-		var row struct {
-			Assets int64
-			Bytes  int64
-		}
-		_ = s.db.WithContext(ctx).
-			Model(&store.Asset{}).
-			Select("COUNT(*) as assets, COALESCE(SUM(byte_size), 0) as bytes").
-			Where("library_id = ?", lib.ID).
-			Scan(&row).Error
-		out.Libraries = append(out.Libraries, LibraryMetrics{
-			ID:            lib.ID,
-			Name:          lib.Name,
+		Libraries: []LibraryMetrics{{
+			ID:            inst.ID,
+			Name:          inst.Name,
 			Assets:        row.Assets,
 			OriginalBytes: row.Bytes,
-		})
-		out.Storage.OriginalBytes += row.Bytes
-		if s.backups != nil {
-			if status, err := s.backups.Status(ctx, lib.ID); err == nil && status != nil {
-				out.Backups = append(out.Backups, *status)
-			}
+		}},
+		Storage: StorageMetrics{OriginalBytes: row.Bytes},
+		Backups: make([]domain.BackupStatus, 0, 1),
+	}
+	if s.backups != nil {
+		if status, err := s.backups.Status(ctx); err == nil && status != nil {
+			out.Backups = append(out.Backups, *status)
 		}
 	}
 

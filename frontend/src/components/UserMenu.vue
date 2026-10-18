@@ -6,12 +6,22 @@ import Popover from 'primevue/popover'
 import SelectButton from 'primevue/selectbutton'
 import ToggleSwitch from 'primevue/toggleswitch'
 import { useToast } from 'primevue/usetoast'
-import { ChevronRight, SignOut, SlidersH, UserEdit } from '@primeicons/vue'
-import { computed, ref } from 'vue'
+import {
+  ChevronRight,
+  CloudUpload,
+  Cog,
+  SignOut,
+  SlidersH,
+  UserEdit,
+} from '@primeicons/vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { auth, changePassword, logout, updateProfile } from '../lib/auth'
+import { openBackupSettings } from '../lib/backupSettings'
+import { openUploadSettings } from '../lib/uploadSettings'
 import { openCommandMenu } from '../lib/command'
 import { SIDEBAR_TOGGLES, sidebarPrefs } from '../lib/sidebar'
+import { openUserSettings, userSettingsDialog } from '../lib/userSettings'
 import {
   THEME_OPTIONS,
   setThemeMode,
@@ -31,7 +41,6 @@ const themeMode = computed<ThemeMode>({
   set: (mode) => setThemeMode(mode),
 })
 
-const dialogVisible = ref(false)
 const name = ref('')
 const email = ref('')
 const currentPassword = ref('')
@@ -57,16 +66,33 @@ function openDisplayMenu(event: Event): void {
   displayMenu.value?.toggle(event)
 }
 
-function open(): void {
-  name.value = auth.user?.name ?? ''
-  email.value = auth.user?.email ?? ''
-  currentPassword.value = ''
-  newPassword.value = ''
-  confirmPassword.value = ''
-  error.value = null
+function openUploadSettingsMenu(): void {
   menu.value?.hide()
-  dialogVisible.value = true
+  openUploadSettings()
 }
+
+function openBackupSettingsMenu(): void {
+  menu.value?.hide()
+  openBackupSettings()
+}
+
+function open(): void {
+  menu.value?.hide()
+  openUserSettings()
+}
+
+watch(
+  () => userSettingsDialog.visible,
+  (visible) => {
+    if (!visible) return
+    name.value = auth.user?.name ?? ''
+    email.value = auth.user?.email ?? ''
+    currentPassword.value = ''
+    newPassword.value = ''
+    confirmPassword.value = ''
+    error.value = null
+  },
+)
 
 async function save(): Promise<void> {
   if (busy.value) return
@@ -97,7 +123,7 @@ async function save(): Promise<void> {
       await changePassword(currentPassword.value, newPassword.value)
     }
     toast.add({ severity: 'success', summary: 'Account updated', life: 2000 })
-    dialogVisible.value = false
+    userSettingsDialog.visible = false
   } catch (e) {
     error.value = toMessage(e)
   } finally {
@@ -158,6 +184,22 @@ async function doLogout(): Promise<void> {
         <button
           type="button"
           class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+          @click="openUploadSettingsMenu"
+        >
+          <Cog :size="14" />
+          <span>Upload settings</span>
+        </button>
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+          @click="openBackupSettingsMenu"
+        >
+          <CloudUpload :size="14" />
+          <span>Storage &amp; backup</span>
+        </button>
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
           @click="openDisplayMenu"
         >
           <SlidersH :size="14" />
@@ -212,7 +254,7 @@ async function doLogout(): Promise<void> {
     </Popover>
 
     <Dialog
-      v-model:visible="dialogVisible"
+      v-model:visible="userSettingsDialog.visible"
       modal
       header="Account settings"
       :style="{ width: '26rem' }"
@@ -261,7 +303,7 @@ async function doLogout(): Promise<void> {
         <p v-if="error" class="text-sm text-red-600 dark:text-red-400">{{ error }}</p>
       </div>
       <template #footer>
-        <Button label="Cancel" text :disabled="busy" @click="dialogVisible = false" />
+        <Button label="Cancel" text :disabled="busy" @click="userSettingsDialog.visible = false" />
         <Button label="Save" :loading="busy" @click="save" />
       </template>
     </Dialog>

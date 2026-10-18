@@ -1,15 +1,10 @@
 import { reactive } from 'vue'
 
-// Global state for the per-library upload settings dialog.
-export const uploadSettingsDialog = reactive<{
-  visible: boolean
-  libraryId: string | null
-}>({
+// Global state for the instance upload settings dialog.
+export const uploadSettingsDialog = reactive({
   visible: false,
-  libraryId: null,
 })
 
-export function openUploadSettings(libraryId: string): void {
-  uploadSettingsDialog.libraryId = libraryId
+export function openUploadSettings(): void {
   uploadSettingsDialog.visible = true
 }

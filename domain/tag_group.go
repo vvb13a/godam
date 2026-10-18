@@ -6,7 +6,6 @@ import "time"
 // group by ID; a tag without one is "uncategorized".
 type TagGroup struct {
 	ID          string    `json:"id"`
-	LibraryID   string    `json:"library_id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
 	Color       string    `json:"color"`

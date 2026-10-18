@@ -3,14 +3,7 @@ package api
 import "net/http"
 
 func (s *Server) handleListCollections(w http.ResponseWriter, r *http.Request) {
-	libraryID, ok := requireLibraryID(w, r)
-	if !ok {
-		return
-	}
-	if !s.requireOwnedLibrary(w, r, libraryID) {
-		return
-	}
-	collections, err := s.deps.Collections.List(r.Context(), libraryID)
+	collections, err := s.deps.Collections.List(r.Context())
 	if err != nil {
 		writeError(w, err)
 		return
@@ -19,7 +12,6 @@ func (s *Server) handleListCollections(w http.ResponseWriter, r *http.Request) {
 }
 
 type collectionRequest struct {
-	LibraryID   string  `json:"library_id"`
 	ParentID    *string `json:"parent_id"`
 	Name        string  `json:"name"`
 	Description string  `json:"description"`
@@ -35,14 +27,7 @@ func (s *Server) handleCreateCollection(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
 		return
 	}
-	if req.LibraryID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
-		return
-	}
-	if !s.requireOwnedLibrary(w, r, req.LibraryID) {
-		return
-	}
-	collection, err := s.deps.Collections.Create(r.Context(), req.LibraryID, req.ParentID, req.Name, req.Description, req.Color)
+	collection, err := s.deps.Collections.Create(r.Context(), req.ParentID, req.Name, req.Description, req.Color)
 	if err != nil {
 		writeError(w, err)
 		return

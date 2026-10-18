@@ -512,10 +512,6 @@
             godam origin
             <input x-model="damOrigin" />
           </label>
-          <label>
-            library id
-            <input x-model="libraryId" placeholder="(first library)" />
-          </label>
 
           <p class="eyebrow" style="margin-top: 1rem">Picker restrictions</p>
           <label>
@@ -772,7 +768,6 @@
         return {
           page: 'library',
           damOrigin: 'http://localhost:5173',
-          libraryId: '',
 
           restrictCollection: '',
           restrictTag: '',
@@ -816,9 +811,6 @@
           get libraryUrl() {
             const url = new URL('/embed', this.origin)
             url.searchParams.set('mode', 'library')
-            if (this.libraryId.trim()) {
-              url.searchParams.set('library', this.libraryId.trim())
-            }
             if (this.hostOrigin) {
               url.searchParams.set('hostOrigin', this.hostOrigin)
             }
@@ -828,9 +820,6 @@
           get pickerUrl() {
             const url = new URL('/embed', this.origin)
             url.searchParams.set('mode', this.dialogMode)
-            if (this.libraryId.trim()) {
-              url.searchParams.set('library', this.libraryId.trim())
-            }
             if (this.dialogPreselect.length) {
               url.searchParams.set('selected', this.dialogPreselect.join(','))
             }

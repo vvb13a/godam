@@ -24,6 +24,8 @@ import * as api from '../api/client'
 import { assetDrag } from '../lib/assetDrag'
 import { library, notifyLibraryChanged } from '../lib/library'
 import { confirmDeleteMenuItem } from '../lib/menu'
+import { splitNames } from '../lib/names'
+import { isPinned, toggleQuicklink } from '../lib/quicklinks'
 import { clearSmartSelection } from '../lib/smartSelection'
 import { openTagsDialog } from '../lib/tagsDialog'
 import type { Tag } from '../types'
@@ -251,10 +253,8 @@ function uniqueUntitledTagName(): string {
 // createTag adds a draft tag then opens its inline editor. If the name is left
 // unchanged the draft is rolled back, so nothing is persisted.
 async function createTag(): Promise<void> {
-  const libraryId = library.currentId
-  if (!libraryId) return
   try {
-    const tag = await api.createTag(libraryId, uniqueUntitledTagName())
+    const tag = await api.createTag(uniqueUntitledTagName())
     upsertTag(tag)
     draftTagId.value = tag.id
     startRename(tag)
@@ -294,11 +294,42 @@ async function commitRename(): Promise<void> {
   if (!id) return
   editingTagId.value = null
   const tag = library.tags.find((item) => item.id === id)
-  const name = editingTagName.value.trim()
+  const names = splitNames(editingTagName.value)
   if (!tag) return
   if (id === draftTagId.value) {
     draftTagId.value = null
-    if (!name || name === tag.name) {
+    if (!names.length) {
+      try {
+        await api.deleteTag(id)
+        removeTagLocal(id)
+      } catch (e) {
+        toast.add({
+          severity: 'error',
+          summary: 'Delete failed',
+          detail: toMessage(e),
+          life: 4000,
+        })
+      }
+      return
+    }
+    if (names.length > 1) {
+      try {
+        await api.deleteTag(id)
+        removeTagLocal(id)
+        for (const name of names) {
+          upsertTag(await api.createTag(name))
+        }
+      } catch (e) {
+        toast.add({
+          severity: 'error',
+          summary: 'Could not create tags',
+          detail: toMessage(e),
+          life: 4000,
+        })
+      }
+      return
+    }
+    if (names[0] === tag.name) {
       try {
         await api.deleteTag(id)
         removeTagLocal(id)
@@ -313,6 +344,7 @@ async function commitRename(): Promise<void> {
       return
     }
   }
+  const name = names[0]
   if (!name || name === tag.name) return
   try {
     upsertTag(
@@ -430,10 +462,9 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
       if (raw) ids = [raw]
     }
   }
-  const libraryId = library.currentId
-  if (!ids.length || !libraryId) return
+  if (!ids.length) return
   try {
-    await api.applyAssetsTags(libraryId, ids, [tag.id], 'add')
+    await api.applyAssetsTags(ids, [tag.id], 'add')
     notifyLibraryChanged()
     toast.add({
       severity: 'success',
@@ -469,6 +500,19 @@ const menuItems = computed<TagMenuItem[]>(() => {
       label: 'Filter',
       menuIcon: Search,
       command: () => filterByTag(tag),
+    },
+    {
+      label: isPinned('tag', tag.id)
+        ? 'Unpin from Quicklinks'
+        : 'Pin to Quicklinks',
+      menuIcon: Bookmark,
+      command: () =>
+        toggleQuicklink({
+          type: 'tag',
+          id: tag.id,
+          name: tag.name,
+          color: tagColor(tag),
+        }),
     },
   ]
   if (library.tagGroups.length) {

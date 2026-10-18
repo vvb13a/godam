@@ -6,7 +6,6 @@ import "time"
 // otherwise points at exactly one parent, forming a tree. Sort orders siblings.
 type Collection struct {
 	ID          string    `json:"id"`
-	LibraryID   string    `json:"library_id"`
 	ParentID    *string   `json:"parent_id,omitempty"`
 	Name        string    `json:"name"`
 	Description string    `json:"description,omitempty"`

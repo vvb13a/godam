@@ -11,9 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/pkg/sftp"
 	"github.com/vvb13a/godam/storage"
 	"github.com/vvb13a/godam/store"
@@ -115,12 +113,7 @@ func TestBackupSFTPFlow(t *testing.T) {
 	backup := NewBackupService(db, registry, secret)
 	assets := NewAssetService(cfg, db, registry, local, NewCompositeExtractor(), NewPreviewGenerator(128, 85), NewTagService(db), backup)
 
-	libraryID := uuid.NewString()
-	now := time.Now().UTC()
-	if err := db.Create(&store.Library{ID: libraryID, Name: "Backup test", Color: "8b5cf6", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
-		t.Fatal(err)
-	}
-	if _, err := backup.SetSettings(context.Background(), libraryID, BackupSettingsRequest{
+	if _, err := backup.SetSettings(context.Background(), BackupSettingsRequest{
 		Enabled:  true,
 		Driver:   "sftp",
 		Host:     "127.0.0.1",
@@ -131,18 +124,18 @@ func TestBackupSFTPFlow(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := backup.TestConnection(context.Background(), libraryID, BackupSettingsRequest{}); err != nil {
+	if err := backup.TestConnection(context.Background(), BackupSettingsRequest{}); err != nil {
 		t.Fatalf("test connection: %v", err)
 	}
 
 	content := []byte("hello from the backup test")
-	asset, err := assets.Upload(context.Background(), "", libraryID, "", "hello.txt", "text/plain", int64(len(content)), bytes.NewReader(content))
+	asset, err := assets.Upload(context.Background(), "", "", "hello.txt", "text/plain", int64(len(content)), bytes.NewReader(content))
 	if err != nil {
 		t.Fatal(err)
 	}
 	backup.processJobs(context.Background())
 
-	remotePath := filepath.Join(remoteDir, filepath.FromSlash(backupKey(libraryID, asset.ID, asset.StorageKey)))
+	remotePath := filepath.Join(remoteDir, filepath.FromSlash(backupKey(asset.ID, asset.StorageKey)))
 	got, err := os.ReadFile(remotePath)
 	if err != nil {
 		t.Fatalf("read backup: %v", err)
@@ -151,7 +144,7 @@ func TestBackupSFTPFlow(t *testing.T) {
 		t.Fatalf("backup content mismatch: %q", got)
 	}
 
-	status, err := backup.Status(context.Background(), libraryID)
+	status, err := backup.Status(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

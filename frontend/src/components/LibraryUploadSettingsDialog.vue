@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import Dialog from 'primevue/dialog'
-import { computed, reactive, ref, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import * as api from '../api/client'
 import { library } from '../lib/library'
@@ -12,23 +12,18 @@ const saving = ref(false)
 const selected = reactive<Record<string, boolean>>({})
 const maxMb = ref(0)
 
-const current = computed(() =>
-  library.libraries.find((item) => item.id === uploadSettingsDialog.libraryId) ?? null,
-)
-
 watch(
   () => uploadSettingsDialog.visible,
   (visible) => {
     if (!visible) return
-    const lib = current.value
     const allowed =
-      lib?.allowed_mime_types && lib.allowed_mime_types.length
-        ? lib.allowed_mime_types
+      library.allowed_mime_types && library.allowed_mime_types.length
+        ? library.allowed_mime_types
         : DEFAULT_ALLOWED
     for (const key of Object.keys(selected)) delete selected[key]
     for (const mime of allowed) selected[mime] = true
-    maxMb.value = lib?.max_upload_bytes
-      ? Math.round(lib.max_upload_bytes / (1024 * 1024))
+    maxMb.value = library.max_upload_bytes
+      ? Math.round(library.max_upload_bytes / (1024 * 1024))
       : 0
   },
 )
@@ -38,15 +33,12 @@ function toggleAll(categoryOptions: { value: string }[], on: boolean): void {
 }
 
 async function save(): Promise<void> {
-  const id = uploadSettingsDialog.libraryId
-  if (!id) return
   const allowed = Object.keys(selected).filter((mime) => selected[mime])
   const maxBytes = Math.max(0, Math.round(maxMb.value)) * 1024 * 1024
   saving.value = true
   try {
-    const updated = await api.setLibraryUploadSettings(id, allowed, maxBytes)
-    const index = library.libraries.findIndex((item) => item.id === id)
-    if (index >= 0) library.libraries[index] = updated
+    const updated = await api.setInstanceUploadSettings(allowed, maxBytes)
+    Object.assign(library, updated)
     toast.add({ severity: 'success', summary: 'Upload settings saved', life: 2500 })
     uploadSettingsDialog.visible = false
   } catch (e) {

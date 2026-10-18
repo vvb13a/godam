@@ -3,14 +3,7 @@ package api
 import "net/http"
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	libraryID, ok := requireLibraryID(w, r)
-	if !ok {
-		return
-	}
-	if !s.requireOwnedLibrary(w, r, libraryID) {
-		return
-	}
-	stats, err := s.deps.Stats.Get(r.Context(), libraryID)
+	stats, err := s.deps.Stats.Get(r.Context())
 	if err != nil {
 		writeError(w, err)
 		return

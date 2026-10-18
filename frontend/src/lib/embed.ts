@@ -6,7 +6,6 @@ export const embed = reactive({
   active: false,
   mode: 'library' as EmbedMode,
   hostOrigin: '*',
-  libraryId: '',
   collectionId: '',
   tag: '',
   collectionLocked: false,
@@ -33,7 +32,6 @@ export function configureEmbed(query: Record<string, unknown>): void {
   const mode = param(query.mode)
   embed.mode = mode === 'single' || mode === 'multi' ? mode : 'library'
   embed.hostOrigin = param(query.hostOrigin) || '*'
-  embed.libraryId = param(query.library)
   embed.collectionId = param(query.collection)
   embed.tag = param(query.tag)
   const lock = embed.mode === 'library' ? '' : param(query.lock)
@@ -48,7 +46,6 @@ export function configureEmbed(query: Record<string, unknown>): void {
 export function embedQuery(): Record<string, string> {
   const query: Record<string, string> = { embed: '1' }
   if (embed.mode !== 'library') query.mode = embed.mode
-  if (embed.libraryId) query.library = embed.libraryId
   if (embed.hostOrigin !== '*') query.hostOrigin = embed.hostOrigin
   const lock = [
     embed.collectionLocked ? 'collection' : '',

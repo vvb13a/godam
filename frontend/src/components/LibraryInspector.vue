@@ -15,12 +15,10 @@ const coverAssetId = computed(() => currentLibrary()?.cover_asset_id ?? '')
 const typeCounts = computed(() => stats.value?.types ?? [])
 
 async function removeCover(): Promise<void> {
-  const id = library.currentId
-  if (!id) return
   busy.value = true
   error.value = null
   try {
-    await api.setLibraryCover(id, '')
+    await api.setInstanceCover('')
     previewFailed.value = false
     await loadLibraries()
   } catch (e) {

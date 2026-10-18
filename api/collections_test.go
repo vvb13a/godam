@@ -20,9 +20,13 @@ func newTestClient(t *testing.T) (*httptest.Server, *http.Client) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
+	instances := service.NewInstanceService(db, nil)
+	if _, err := instances.Ensure(t.Context(), "Test"); err != nil {
+		t.Fatalf("ensure instance: %v", err)
+	}
 	deps := api.Deps{
 		Collections: service.NewCollectionService(db),
-		Libraries:   service.NewLibraryService(db, nil),
+		Instance:    instances,
 		Users:       service.NewUserService(db),
 	}
 	server := httptest.NewServer(api.NewServer(deps))
@@ -66,26 +70,19 @@ func TestCollectionTreeAPI(t *testing.T) {
 	server, client := newTestClient(t)
 	defer server.Close()
 
-	if code, _ := request(t, client, http.MethodGet, server.URL+"/api/libraries", nil); code != http.StatusUnauthorized {
+	if code, _ := request(t, client, http.MethodGet, server.URL+"/api/instance", nil); code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 before login, got %d", code)
 	}
 	if code, _ := request(t, client, http.MethodPost, server.URL+"/api/auth/dev-login", nil); code != http.StatusOK {
 		t.Fatalf("dev login status %d", code)
 	}
-
-	code, body := request(t, client, http.MethodPost, server.URL+"/api/libraries", map[string]any{
-		"name": "L", "color": "", "sort": 0,
-	})
-	if code != http.StatusCreated {
-		t.Fatalf("create library: %d %s", code, body)
+	code, body := request(t, client, http.MethodGet, server.URL+"/api/instance", nil)
+	if code != http.StatusOK {
+		t.Fatalf("get instance: %d %s", code, body)
 	}
-	var lib struct {
-		ID string `json:"id"`
-	}
-	_ = json.Unmarshal(body, &lib)
 
 	createCollection := func(name string, parent *string) string {
-		payload := map[string]any{"library_id": lib.ID, "name": name, "color": "8b5cf6", "parent_id": parent}
+		payload := map[string]any{"name": name, "color": "8b5cf6", "parent_id": parent}
 		code, body := request(t, client, http.MethodPost, server.URL+"/api/collections", payload)
 		if code != http.StatusCreated {
 			t.Fatalf("create collection %s: %d %s", name, code, body)
@@ -116,7 +113,7 @@ func TestCollectionTreeAPI(t *testing.T) {
 		t.Fatalf("move status %d", code)
 	}
 
-	_, body = request(t, client, http.MethodGet, server.URL+"/api/collections?library_id="+lib.ID, nil)
+	_, body = request(t, client, http.MethodGet, server.URL+"/api/collections", nil)
 	var collections []struct {
 		ID       string  `json:"id"`
 		ParentID *string `json:"parent_id"`
@@ -136,7 +133,7 @@ func TestCollectionTreeAPI(t *testing.T) {
 	// Unknown parent is a 404.
 	missing := "does-not-exist"
 	code, _ = request(t, client, http.MethodPost, server.URL+"/api/collections", map[string]any{
-		"library_id": lib.ID, "name": "X", "color": "", "parent_id": missing,
+		"name": "X", "color": "", "parent_id": missing,
 	})
 	if code != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing parent, got %d", code)

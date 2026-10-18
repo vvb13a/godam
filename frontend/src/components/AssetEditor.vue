@@ -5,7 +5,7 @@ import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 import * as api from '../api/client'
 import { editorDirty } from '../lib/editorState'
-import { currentLibrary, library } from '../lib/library'
+import { currentLibrary } from '../lib/library'
 import { isCsvMime, isFontMime, isTextMime } from '../lib/mimeTypes'
 import type { Asset } from '../types'
 import AudioPlayer from './AudioPlayer.vue'
@@ -155,11 +155,9 @@ async function openWatermarkPicker(
 ): Promise<void> {
   loadWatermarkImage = loadAndSet
   watermarkPickerVisible.value = true
-  const libraryId = library.currentId
-  if (!libraryId) return
   watermarkLoading.value = true
   try {
-    const all = await api.listAssets({ libraryId })
+    const all = await api.listAssets({})
     watermarkAssets.value = all.filter((a) => a.mime_type.startsWith('image/'))
   } catch {
     watermarkAssets.value = []
@@ -178,10 +176,8 @@ function chooseWatermark(asset: Asset): void {
 async function libraryImageGallery(): Promise<
   { originalUrl: string; previewUrl: string }[]
 > {
-  const libraryId = library.currentId
-  if (!libraryId) return []
   try {
-    const all = await api.listAssets({ libraryId })
+    const all = await api.listAssets({})
     return all
       .filter(
         (a) => a.mime_type.startsWith('image/') && a.id !== props.asset.id,

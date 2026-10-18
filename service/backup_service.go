@@ -26,7 +26,7 @@ const (
 )
 
 // SFTPBackupConfig is the secret-bearing payload encrypted in
-// library_backups.config.
+// backup_settings.config.
 type SFTPBackupConfig struct {
 	Host               string `json:"host"`
 	Port               int    `json:"port"`
@@ -52,16 +52,16 @@ type BackupSettingsRequest struct {
 	HostKeyFingerprint string
 }
 
-// BackupService mirrors originals to a per-library SFTP destination. Previews
+// BackupService mirrors originals to the instance's SFTP destination. Previews
 // stay in local storage; only the original blobs are replicated.
 type BackupService struct {
 	db       *gorm.DB
 	registry *storage.Registry
 	secret   *SecretBox
 
-	driversMu sync.Mutex
-	drivers   map[string]*storage.SFTP
-	wake      chan struct{}
+	driverMu sync.Mutex
+	driver   *storage.SFTP
+	wake     chan struct{}
 }
 
 func NewBackupService(db *gorm.DB, registry *storage.Registry, secret *SecretBox) *BackupService {
@@ -69,13 +69,10 @@ func NewBackupService(db *gorm.DB, registry *storage.Registry, secret *SecretBox
 		db:       db,
 		registry: registry,
 		secret:   secret,
-		drivers:  make(map[string]*storage.SFTP),
 		wake:     make(chan struct{}, 1),
 	}
 }
 
-// Start launches the replication worker. It runs a reconciliation pass on
-// startup and then every six hours, and drains queued jobs as they arrive.
 func (s *BackupService) Start(ctx context.Context) {
 	go func() {
 		s.reconcile(ctx)
@@ -86,7 +83,7 @@ func (s *BackupService) Start(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
-				s.closeDrivers()
+				s.closeDriver()
 				return
 			case <-s.wake:
 				s.processJobs(ctx)
@@ -99,8 +96,8 @@ func (s *BackupService) Start(ctx context.Context) {
 	}()
 }
 
-func (s *BackupService) GetSettings(ctx context.Context, libraryID string) (*domain.BackupSettings, error) {
-	row, err := s.settingsRow(ctx, libraryID)
+func (s *BackupService) GetSettings(ctx context.Context) (*domain.BackupSettings, error) {
+	row, err := s.settings(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -114,8 +111,8 @@ func (s *BackupService) GetSettings(ctx context.Context, libraryID string) (*dom
 	return settingsFromRow(row, cfg), nil
 }
 
-func (s *BackupService) SetSettings(ctx context.Context, libraryID string, req BackupSettingsRequest) (*domain.BackupSettings, error) {
-	row, err := s.settingsRow(ctx, libraryID)
+func (s *BackupService) SetSettings(ctx context.Context, req BackupSettingsRequest) (*domain.BackupSettings, error) {
+	row, err := s.settings(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +139,7 @@ func (s *BackupService) SetSettings(ctx context.Context, libraryID string, req B
 	}
 	now := time.Now().UTC()
 	if row == nil {
-		row = &store.LibraryBackup{LibraryID: libraryID, CreatedAt: now}
+		row = &store.BackupSettings{ID: 1, CreatedAt: now}
 	}
 	row.Enabled = req.Enabled
 	row.Driver = backupDestination
@@ -151,12 +148,12 @@ func (s *BackupService) SetSettings(ctx context.Context, libraryID string, req B
 	if err := s.db.WithContext(ctx).Save(row).Error; err != nil {
 		return nil, err
 	}
-	s.invalidateDriver(libraryID)
-	return s.GetSettings(ctx, libraryID)
+	s.invalidateDriver()
+	return s.GetSettings(ctx)
 }
 
-func (s *BackupService) TestConnection(ctx context.Context, libraryID string, req BackupSettingsRequest) error {
-	row, err := s.settingsRow(ctx, libraryID)
+func (s *BackupService) TestConnection(ctx context.Context, req BackupSettingsRequest) error {
+	row, err := s.settings(ctx)
 	if err != nil {
 		return err
 	}
@@ -196,15 +193,15 @@ func (s *BackupService) TestConnection(ctx context.Context, libraryID string, re
 	return driver.Close()
 }
 
-// BackupNow queues every asset in the library, replacing existing jobs so the
-// run refreshes the whole remote copy.
-func (s *BackupService) BackupNow(ctx context.Context, libraryID string) (int, error) {
-	row, err := s.settingsRow(ctx, libraryID)
+// BackupNow queues every asset, replacing existing jobs so the run refreshes
+// the whole remote copy.
+func (s *BackupService) BackupNow(ctx context.Context) (int, error) {
+	row, err := s.settings(ctx)
 	if err != nil {
 		return 0, err
 	}
 	if row == nil || !row.Enabled {
-		return 0, fmt.Errorf("%w: backups are not enabled for this library", ErrInvalidInput)
+		return 0, fmt.Errorf("%w: backups are not enabled", ErrInvalidInput)
 	}
 	type assetRow struct {
 		ID            string
@@ -216,16 +213,14 @@ func (s *BackupService) BackupNow(ctx context.Context, libraryID string) (int, e
 	if err := s.db.WithContext(ctx).
 		Table("assets").
 		Select("id, storage_driver, storage_key, byte_size").
-		Where("library_id = ?", libraryID).
 		Find(&assets).Error; err != nil {
 		return 0, err
 	}
 	for _, asset := range assets {
 		job := store.StorageJob{
-			LibraryID:     libraryID,
 			AssetID:       asset.ID,
 			StorageDriver: asset.StorageDriver,
-			StorageKey:    backupKey(libraryID, asset.ID, asset.StorageKey),
+			StorageKey:    backupKey(asset.ID, asset.StorageKey),
 			Action:        "put",
 			Destination:   backupDestination,
 		}
@@ -236,8 +231,8 @@ func (s *BackupService) BackupNow(ctx context.Context, libraryID string) (int, e
 	return len(assets), nil
 }
 
-func (s *BackupService) Status(ctx context.Context, libraryID string) (*domain.BackupStatus, error) {
-	row, err := s.settingsRow(ctx, libraryID)
+func (s *BackupService) Status(ctx context.Context) (*domain.BackupStatus, error) {
+	row, err := s.settings(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -246,10 +241,7 @@ func (s *BackupService) Status(ctx context.Context, libraryID string) (*domain.B
 		status.LastRunAt = row.LastRunAt
 		status.LastError = row.LastError
 	}
-	if err := s.db.WithContext(ctx).
-		Model(&store.Asset{}).
-		Where("library_id = ?", libraryID).
-		Count(&status.Total).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&store.Asset{}).Count(&status.Total).Error; err != nil {
 		return nil, err
 	}
 	type countRow struct {
@@ -259,10 +251,9 @@ func (s *BackupService) Status(ctx context.Context, libraryID string) (*domain.B
 	var rows []countRow
 	if err := s.db.WithContext(ctx).
 		Table("asset_replicas").
-		Select("asset_replicas.status as status, COUNT(*) as count").
-		Joins("JOIN assets ON assets.id = asset_replicas.asset_id").
-		Where("assets.library_id = ? AND asset_replicas.destination = ?", libraryID, backupDestination).
-		Group("asset_replicas.status").
+		Select("status, COUNT(*) as count").
+		Where("destination = ?", backupDestination).
+		Group("status").
 		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -281,18 +272,16 @@ func (s *BackupService) Status(ctx context.Context, libraryID string) (*domain.B
 	return status, nil
 }
 
-// EnqueueAsset queues an upsert of one asset's original. It is called after an
-// upload or content replacement and is a no-op when backups are disabled.
-func (s *BackupService) EnqueueAsset(ctx context.Context, libraryID, assetID, storageDriver, storageKey string, byteSize int64) error {
-	row, err := s.settingsRow(ctx, libraryID)
+// EnqueueAsset queues an upsert of one asset's original.
+func (s *BackupService) EnqueueAsset(ctx context.Context, assetID, storageDriver, storageKey string, byteSize int64) error {
+	row, err := s.settings(ctx)
 	if err != nil || row == nil || !row.Enabled {
 		return err
 	}
 	job := store.StorageJob{
-		LibraryID:     libraryID,
 		AssetID:       assetID,
 		StorageDriver: storageDriver,
-		StorageKey:    backupKey(libraryID, assetID, storageKey),
+		StorageKey:    backupKey(assetID, storageKey),
 		Action:        "put",
 		Destination:   backupDestination,
 	}
@@ -300,15 +289,14 @@ func (s *BackupService) EnqueueAsset(ctx context.Context, libraryID, assetID, st
 }
 
 // EnqueueDelete queues removal of an asset's remote copy.
-func (s *BackupService) EnqueueDelete(ctx context.Context, libraryID, assetID, storageKey string) error {
-	row, err := s.settingsRow(ctx, libraryID)
+func (s *BackupService) EnqueueDelete(ctx context.Context, assetID, storageKey string) error {
+	row, err := s.settings(ctx)
 	if err != nil || row == nil || !row.Enabled {
 		return err
 	}
 	job := store.StorageJob{
-		LibraryID:   libraryID,
 		AssetID:     assetID,
-		StorageKey:  backupKey(libraryID, assetID, storageKey),
+		StorageKey:  backupKey(assetID, storageKey),
 		Action:      "delete",
 		Destination: backupDestination,
 	}
@@ -386,7 +374,7 @@ func (s *BackupService) processJobs(ctx context.Context) {
 }
 
 func (s *BackupService) processJob(ctx context.Context, job store.StorageJob) {
-	row, err := s.settingsRow(ctx, job.LibraryID)
+	row, err := s.settings(ctx)
 	if err != nil {
 		s.failJob(ctx, job, err)
 		return
@@ -395,7 +383,7 @@ func (s *BackupService) processJob(ctx context.Context, job store.StorageJob) {
 		_ = s.db.WithContext(ctx).Delete(&store.StorageJob{}, "id = ?", job.ID).Error
 		return
 	}
-	driver, err := s.sftpFor(ctx, job.LibraryID)
+	driver, err := s.sftp(ctx)
 	if err != nil {
 		s.failJob(ctx, job, err)
 		return
@@ -452,8 +440,8 @@ func (s *BackupService) processJob(ctx context.Context, job store.StorageJob) {
 	}
 	_ = s.db.WithContext(ctx).Delete(&store.StorageJob{}, "id = ?", job.ID).Error
 	_ = s.db.WithContext(ctx).
-		Model(&store.LibraryBackup{}).
-		Where("library_id = ?", job.LibraryID).
+		Model(&store.BackupSettings{}).
+		Where("id = 1").
 		Updates(map[string]any{"last_run_at": now, "last_error": "", "updated_at": now}).Error
 }
 
@@ -484,26 +472,26 @@ func (s *BackupService) failJob(ctx context.Context, job store.StorageJob, cause
 			}).Error
 	}
 	_ = s.db.WithContext(ctx).
-		Model(&store.LibraryBackup{}).
-		Where("library_id = ?", job.LibraryID).
+		Model(&store.BackupSettings{}).
+		Where("id = 1").
 		Updates(map[string]any{"last_error": message, "updated_at": now}).Error
 }
 
-// reconcile queues assets that are new, failed, or otherwise missing a synced
-// replica. Existing jobs are left alone so retry backoff is preserved.
 func (s *BackupService) reconcile(ctx context.Context) {
-	type row struct {
+	row, err := s.settings(ctx)
+	if err != nil || row == nil || !row.Enabled {
+		return
+	}
+	type assetRow struct {
 		ID            string
-		LibraryID     string
 		StorageDriver string
 		StorageKey    string
 		ByteSize      int64
 	}
-	var rows []row
+	var rows []assetRow
 	if err := s.db.WithContext(ctx).
 		Table("assets").
-		Select("assets.id, assets.library_id, assets.storage_driver, assets.storage_key, assets.byte_size").
-		Joins("JOIN library_backups ON library_backups.library_id = assets.library_id AND library_backups.enabled = 1").
+		Select("assets.id, assets.storage_driver, assets.storage_key, assets.byte_size").
 		Joins("LEFT JOIN asset_replicas ON asset_replicas.asset_id = assets.id AND asset_replicas.destination = ?", backupDestination).
 		Where("asset_replicas.asset_id IS NULL OR asset_replicas.status <> ?", replicaSynced).
 		Scan(&rows).Error; err != nil {
@@ -512,10 +500,9 @@ func (s *BackupService) reconcile(ctx context.Context) {
 	}
 	for _, asset := range rows {
 		job := store.StorageJob{
-			LibraryID:     asset.LibraryID,
 			AssetID:       asset.ID,
 			StorageDriver: asset.StorageDriver,
-			StorageKey:    backupKey(asset.LibraryID, asset.ID, asset.StorageKey),
+			StorageKey:    backupKey(asset.ID, asset.StorageKey),
 			Action:        "put",
 			Destination:   backupDestination,
 		}
@@ -525,9 +512,9 @@ func (s *BackupService) reconcile(ctx context.Context) {
 	}
 }
 
-func (s *BackupService) settingsRow(ctx context.Context, libraryID string) (*store.LibraryBackup, error) {
-	var row store.LibraryBackup
-	err := s.db.WithContext(ctx).First(&row, "library_id = ?", libraryID).Error
+func (s *BackupService) settings(ctx context.Context) (*store.BackupSettings, error) {
+	var row store.BackupSettings
+	err := s.db.WithContext(ctx).First(&row, "id = 1").Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -537,7 +524,7 @@ func (s *BackupService) settingsRow(ctx context.Context, libraryID string) (*sto
 	return &row, nil
 }
 
-func (s *BackupService) configFromRow(row *store.LibraryBackup) (SFTPBackupConfig, error) {
+func (s *BackupService) configFromRow(row *store.BackupSettings) (SFTPBackupConfig, error) {
 	if row.Config == "" {
 		return SFTPBackupConfig{}, nil
 	}
@@ -555,15 +542,16 @@ func (s *BackupService) configFromRow(row *store.LibraryBackup) (SFTPBackupConfi
 	return cfg, nil
 }
 
-func (s *BackupService) sftpFor(ctx context.Context, libraryID string) (*storage.SFTP, error) {
-	s.driversMu.Lock()
-	if driver := s.drivers[libraryID]; driver != nil {
-		s.driversMu.Unlock()
+func (s *BackupService) sftp(ctx context.Context) (*storage.SFTP, error) {
+	s.driverMu.Lock()
+	if s.driver != nil {
+		driver := s.driver
+		s.driverMu.Unlock()
 		return driver, nil
 	}
-	s.driversMu.Unlock()
+	s.driverMu.Unlock()
 
-	row, err := s.settingsRow(ctx, libraryID)
+	row, err := s.settings(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -578,31 +566,31 @@ func (s *BackupService) sftpFor(ctx context.Context, libraryID string) (*storage
 	if err != nil {
 		return nil, err
 	}
-	s.driversMu.Lock()
-	defer s.driversMu.Unlock()
-	if existing := s.drivers[libraryID]; existing != nil {
+	s.driverMu.Lock()
+	defer s.driverMu.Unlock()
+	if s.driver != nil {
 		_ = driver.Close()
-		return existing, nil
+		return s.driver, nil
 	}
-	s.drivers[libraryID] = driver
+	s.driver = driver
 	return driver, nil
 }
 
-func (s *BackupService) invalidateDriver(libraryID string) {
-	s.driversMu.Lock()
-	defer s.driversMu.Unlock()
-	if driver := s.drivers[libraryID]; driver != nil {
-		_ = driver.Close()
-		delete(s.drivers, libraryID)
+func (s *BackupService) invalidateDriver() {
+	s.driverMu.Lock()
+	defer s.driverMu.Unlock()
+	if s.driver != nil {
+		_ = s.driver.Close()
+		s.driver = nil
 	}
 }
 
-func (s *BackupService) closeDrivers() {
-	s.driversMu.Lock()
-	defer s.driversMu.Unlock()
-	for id, driver := range s.drivers {
-		_ = driver.Close()
-		delete(s.drivers, id)
+func (s *BackupService) closeDriver() {
+	s.driverMu.Lock()
+	defer s.driverMu.Unlock()
+	if s.driver != nil {
+		_ = s.driver.Close()
+		s.driver = nil
 	}
 }
 
@@ -613,7 +601,7 @@ func (s *BackupService) signal() {
 	}
 }
 
-func settingsFromRow(row *store.LibraryBackup, cfg SFTPBackupConfig) *domain.BackupSettings {
+func settingsFromRow(row *store.BackupSettings, cfg SFTPBackupConfig) *domain.BackupSettings {
 	return &domain.BackupSettings{
 		Enabled:            row.Enabled,
 		Driver:             row.Driver,
@@ -673,7 +661,7 @@ func toSFTPConfig(cfg SFTPBackupConfig) storage.SFTPConfig {
 	}
 }
 
-func backupKey(libraryID, assetID, storageKey string) string {
+func backupKey(assetID, storageKey string) string {
 	ext := filepath.Ext(storageKey)
-	return path.Join("libraries", libraryID, "assets", assetID+ext)
+	return path.Join("assets", assetID+ext)
 }

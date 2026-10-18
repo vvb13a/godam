@@ -2,14 +2,16 @@
 import Splitter from 'primevue/splitter'
 import SplitterPanel from 'primevue/splitterpanel'
 import { ChevronLeft, ChevronRight, Images } from '@primeicons/vue'
-import { computed, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+import { useToast } from 'primevue/usetoast'
+import * as api from '../api/client'
 import { embed as embedState } from '../lib/embed'
 import { currentLibrary, library, refreshLibrary } from '../lib/library'
 import { panels, toggleLeftPanel } from '../lib/panels'
 import { sidebarPrefs } from '../lib/sidebar'
 import CollectionTree from './CollectionTree.vue'
-import LibrarySwitcher from './LibrarySwitcher.vue'
+import Quicklinks from './Quicklinks.vue'
 import SmartCollections from './SmartCollections.vue'
 import UserMenu from './UserMenu.vue'
 
@@ -18,7 +20,51 @@ const props = withDefaults(defineProps<{ embed?: boolean }>(), {
 })
 
 const route = useRoute()
+const toast = useToast()
 const activeLibrary = computed(() => currentLibrary())
+
+const editingName = ref(false)
+const nameDraft = ref('')
+const nameInput = ref<HTMLInputElement | null>(null)
+const renaming = ref(false)
+
+function startRename(): void {
+  if (!activeLibrary.value) return
+  nameDraft.value = activeLibrary.value.name
+  editingName.value = true
+  nextTick(() => {
+    nameInput.value?.focus()
+    nameInput.value?.select()
+  })
+}
+
+function cancelRename(): void {
+  editingName.value = false
+}
+
+async function commitRename(): Promise<void> {
+  if (!editingName.value || renaming.value) return
+  const name = nameDraft.value.trim()
+  if (!name || name === activeLibrary.value?.name) {
+    editingName.value = false
+    return
+  }
+  renaming.value = true
+  try {
+    const updated = await api.updateInstance(name, activeLibrary.value?.color ?? '')
+    Object.assign(library, updated)
+    editingName.value = false
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: 'Rename failed',
+      detail: e instanceof Error ? e.message : String(e),
+      life: 4000,
+    })
+  } finally {
+    renaming.value = false
+  }
+}
 
 const pickerRestricted = computed(
   () => embedState.active && embedState.mode !== 'library',
@@ -29,6 +75,7 @@ const collectionsLocked = computed(
 const tagsLocked = computed(
   () => pickerRestricted.value && embedState.tagLocked,
 )
+const showQuicklinks = computed(() => sidebarPrefs.quicklinks)
 const showCollections = computed(
   () => sidebarPrefs.collections && !collectionsLocked.value,
 )
@@ -70,19 +117,31 @@ watch(
         class="flex h-full w-64 flex-col"
         :inert="panels.leftCollapsed || undefined"
       >
-        <div v-if="props.embed" class="px-4 pt-4 pb-1">
+        <div class="px-4 pt-4 pb-1">
           <p
             class="text-[10px] font-semibold tracking-wide text-slate-400 uppercase"
           >
             Library
           </p>
-          <p class="truncate text-sm font-semibold text-slate-700 dark:text-slate-200">
+          <input
+            v-if="editingName"
+            ref="nameInput"
+            v-model="nameDraft"
+            type="text"
+            class="w-full border-b border-violet-400 bg-transparent p-0 text-sm leading-5 font-semibold text-slate-700 outline-none dark:text-slate-200"
+            :disabled="renaming"
+            @keydown.enter.prevent="commitRename"
+            @keydown.esc.prevent="cancelRename"
+            @blur="commitRename"
+          />
+          <p
+            v-else
+            class="truncate text-sm font-semibold text-slate-700 dark:text-slate-200"
+            title="Double-click to rename"
+            @dblclick="startRename"
+          >
             {{ activeLibrary?.name ?? 'Library' }}
           </p>
-        </div>
-
-        <div v-else class="p-3 pb-0">
-          <LibrarySwitcher />
         </div>
 
         <nav class="space-y-1 p-3">
@@ -105,6 +164,13 @@ watch(
             </span>
           </RouterLink>
         </nav>
+
+        <div
+          v-if="showQuicklinks"
+          class="max-h-56 shrink-0 overflow-y-auto border-b border-slate-100 dark:border-slate-800"
+        >
+          <Quicklinks />
+        </div>
 
         <Splitter
           v-if="showSections"

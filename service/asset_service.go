@@ -137,7 +137,6 @@ func (s *AssetService) List(ctx context.Context, filter domain.AssetFilter) ([]d
 	query := s.db.WithContext(ctx).
 		Preload("Tags").
 		Preload("Collections").
-		Where("assets.library_id = ?", filter.LibraryID).
 		Order("created_at DESC")
 	if filter.CollectionID != nil {
 		query = query.
@@ -217,7 +216,7 @@ func (s *AssetService) deletePreviews(ctx context.Context, id string) {
 
 // UploadFromSource accepts either a local filesystem path or an http(s) URL,
 // streams it through onProgress and stores it with the default driver.
-func (s *AssetService) UploadFromSource(ctx context.Context, userID, libraryID, source string, onProgress ProgressCallback) (*domain.Asset, error) {
+func (s *AssetService) UploadFromSource(ctx context.Context, userID, source string, onProgress ProgressCallback) (*domain.Asset, error) {
 	var reader io.Reader
 	var filename string
 	var size int64
@@ -289,14 +288,10 @@ func (s *AssetService) UploadFromSource(ctx context.Context, userID, libraryID, 
 	}
 
 	// Uses default driver ("")
-	return s.Upload(ctx, userID, libraryID, "", filename, mimeType, size, reader)
+	return s.Upload(ctx, userID, "", filename, mimeType, size, reader)
 }
 
-func (s *AssetService) Upload(ctx context.Context, userID, libraryID, driverName, filename, mimeType string, size int64, reader io.Reader) (*domain.Asset, error) {
-	if err := s.ensureLibrary(ctx, libraryID); err != nil {
-		return nil, err
-	}
-
+func (s *AssetService) Upload(ctx context.Context, userID, driverName, filename, mimeType string, size int64, reader io.Reader) (*domain.Asset, error) {
 	driver, err := s.registry.Get(driverName)
 	if err != nil {
 		return nil, err
@@ -314,7 +309,7 @@ func (s *AssetService) Upload(ctx context.Context, userID, libraryID, driverName
 	// Sniff the real type, refine audio-only containers, then validate against
 	// the library's upload policy.
 	cleanMime := classifyContainerMime(sniffMime(mimeType, bytesData), bytesData)
-	allowed, maxBytes := s.uploadPolicy(ctx, libraryID)
+	allowed, maxBytes := s.uploadPolicy(ctx)
 	if !mimeAllowed(cleanMime, allowed) {
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedFormat, cleanMime)
 	}
@@ -342,7 +337,6 @@ func (s *AssetService) Upload(ctx context.Context, userID, libraryID, driverName
 	now := time.Now().UTC()
 	asset := &domain.Asset{
 		ID:            id,
-		LibraryID:     libraryID,
 		UploadedBy:    userID,
 		Filename:      filename,
 		StorageDriver: driverName,
@@ -361,7 +355,7 @@ func (s *AssetService) Upload(ctx context.Context, userID, libraryID, driverName
 	}
 
 	if s.backup != nil {
-		_ = s.backup.EnqueueAsset(ctx, libraryID, id, driverName, storageKey, int64(len(bytesData)))
+		_ = s.backup.EnqueueAsset(ctx, id, driverName, storageKey, int64(len(bytesData)))
 	}
 
 	return s.GetByID(ctx, id)
@@ -405,7 +399,7 @@ func (s *AssetService) ReplaceContent(ctx context.Context, id, mimeType string, 
 	bytesData := buf.Bytes()
 
 	cleanMime := classifyContainerMime(sniffMime(mimeType, bytesData), bytesData)
-	allowed, maxBytes := s.uploadPolicy(ctx, asset.LibraryID)
+	allowed, maxBytes := s.uploadPolicy(ctx)
 	if !mimeAllowed(cleanMime, allowed) {
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedFormat, cleanMime)
 	}
@@ -438,7 +432,7 @@ func (s *AssetService) ReplaceContent(ctx context.Context, id, mimeType string, 
 		return nil, err
 	}
 	if s.backup != nil {
-		_ = s.backup.EnqueueAsset(ctx, asset.LibraryID, id, asset.StorageDriver, asset.StorageKey, int64(len(bytesData)))
+		_ = s.backup.EnqueueAsset(ctx, id, asset.StorageDriver, asset.StorageKey, int64(len(bytesData)))
 	}
 	return s.GetByID(ctx, id)
 }
@@ -554,13 +548,13 @@ func (s *AssetService) Download(ctx context.Context, assetID, destPath string, t
 
 func (s *AssetService) AddTag(ctx context.Context, assetID, tagName string) error {
 	var asset store.Asset
-	if err := s.db.WithContext(ctx).Select("library_id").First(&asset, "id = ?", assetID).Error; err != nil {
+	if err := s.db.WithContext(ctx).Select("id").First(&asset, "id = ?", assetID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return domain.ErrNotFound
 		}
 		return err
 	}
-	tag, err := s.tags.GetOrCreate(ctx, asset.LibraryID, tagName)
+	tag, err := s.tags.GetOrCreate(ctx, tagName)
 	if err != nil {
 		return err
 	}
@@ -569,25 +563,21 @@ func (s *AssetService) AddTag(ctx context.Context, assetID, tagName string) erro
 }
 
 // AddTagByID attaches an existing tag to an asset, so callers that already know
-// the tag id are not affected by name normalization. The tag must belong to the
-// same library as the asset.
+// the tag id are not affected by name normalization.
 func (s *AssetService) AddTagByID(ctx context.Context, assetID, tagID string) error {
 	var asset store.Asset
-	if err := s.db.WithContext(ctx).Select("library_id").First(&asset, "id = ?", assetID).Error; err != nil {
+	if err := s.db.WithContext(ctx).Select("id").First(&asset, "id = ?", assetID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return domain.ErrNotFound
 		}
 		return err
 	}
 	var tag store.Tag
-	if err := s.db.WithContext(ctx).Select("library_id").First(&tag, "id = ?", tagID).Error; err != nil {
+	if err := s.db.WithContext(ctx).Select("id").First(&tag, "id = ?", tagID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return domain.ErrNotFound
 		}
 		return err
-	}
-	if tag.LibraryID != asset.LibraryID {
-		return domain.ErrNotFound
 	}
 	return s.db.WithContext(ctx).
 		Exec("INSERT OR IGNORE INTO asset_tags (asset_id, tag_id) VALUES (?, ?)", assetID, tagID).Error
@@ -598,24 +588,21 @@ func (s *AssetService) RemoveTag(ctx context.Context, assetID, tagID string) err
 		Exec("DELETE FROM asset_tags WHERE asset_id = ? AND tag_id = ?", assetID, tagID).Error
 }
 
-// AddToCollection adds an asset to a collection in the same library.
+// AddToCollection adds an asset to a collection.
 func (s *AssetService) AddToCollection(ctx context.Context, assetID, collectionID string) error {
 	var asset store.Asset
-	if err := s.db.WithContext(ctx).Select("library_id").First(&asset, "id = ?", assetID).Error; err != nil {
+	if err := s.db.WithContext(ctx).Select("id").First(&asset, "id = ?", assetID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return domain.ErrNotFound
 		}
 		return err
 	}
 	var collection store.Collection
-	if err := s.db.WithContext(ctx).Select("library_id").First(&collection, "id = ?", collectionID).Error; err != nil {
+	if err := s.db.WithContext(ctx).Select("id").First(&collection, "id = ?", collectionID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return domain.ErrNotFound
 		}
 		return err
-	}
-	if collection.LibraryID != asset.LibraryID {
-		return domain.ErrNotFound
 	}
 	return s.db.WithContext(ctx).
 		Exec("INSERT OR IGNORE INTO asset_collections (asset_id, collection_id) VALUES (?, ?)", assetID, collectionID).Error
@@ -627,52 +614,49 @@ func (s *AssetService) RemoveFromCollection(ctx context.Context, assetID, collec
 }
 
 // AddToCollectionBulk adds many assets to one collection in a single statement.
-// Only assets sharing the collection's library are linked, so unknown or
-// foreign ids are ignored rather than failing the whole batch.
 func (s *AssetService) AddToCollectionBulk(ctx context.Context, collectionID string, assetIDs []string) error {
 	if len(assetIDs) == 0 {
 		return nil
 	}
-	var collection store.Collection
-	if err := s.db.WithContext(ctx).Select("library_id").First(&collection, "id = ?", collectionID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return domain.ErrNotFound
-		}
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&store.Collection{}).Where("id = ?", collectionID).Count(&count).Error; err != nil {
 		return err
+	}
+	if count == 0 {
+		return domain.ErrNotFound
 	}
 	return s.db.WithContext(ctx).Exec(
 		`INSERT OR IGNORE INTO asset_collections (asset_id, collection_id)
-		 SELECT a.id, ? FROM assets a WHERE a.id IN ? AND a.library_id = ?`,
-		collectionID, assetIDs, collection.LibraryID,
+		 SELECT a.id, ? FROM assets a WHERE a.id IN ?`,
+		collectionID, assetIDs,
 	).Error
 }
 
 // AddTagsBulk attaches many tags to many assets in one statement, scoped to the
 // library so assets and tags from other libraries are never linked. Existing
 // links are ignored, so the operation is idempotent.
-func (s *AssetService) AddTagsBulk(ctx context.Context, libraryID string, assetIDs, tagIDs []string) error {
+func (s *AssetService) AddTagsBulk(ctx context.Context, assetIDs, tagIDs []string) error {
 	if len(assetIDs) == 0 || len(tagIDs) == 0 {
 		return nil
 	}
 	return s.db.WithContext(ctx).Exec(
 		`INSERT OR IGNORE INTO asset_tags (asset_id, tag_id)
 		 SELECT a.id, t.id FROM assets a, tags t
-		 WHERE a.id IN ? AND t.id IN ? AND a.library_id = ? AND t.library_id = ?`,
-		assetIDs, tagIDs, libraryID, libraryID,
+		 WHERE a.id IN ? AND t.id IN ?`,
+		assetIDs, tagIDs,
 	).Error
 }
 
 // ReplaceTagsBulk makes tagIDs the exact tag set of every given asset (scoped to
 // the library), in one transaction. Pass an empty tagIDs to clear tags.
-func (s *AssetService) ReplaceTagsBulk(ctx context.Context, libraryID string, assetIDs, tagIDs []string) error {
+func (s *AssetService) ReplaceTagsBulk(ctx context.Context, assetIDs, tagIDs []string) error {
 	if len(assetIDs) == 0 {
 		return nil
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(
-			`DELETE FROM asset_tags
-			 WHERE asset_id IN (SELECT id FROM assets WHERE id IN ? AND library_id = ?)`,
-			assetIDs, libraryID,
+			`DELETE FROM asset_tags WHERE asset_id IN ?`,
+			assetIDs,
 		).Error; err != nil {
 			return err
 		}
@@ -682,8 +666,8 @@ func (s *AssetService) ReplaceTagsBulk(ctx context.Context, libraryID string, as
 		return tx.Exec(
 			`INSERT OR IGNORE INTO asset_tags (asset_id, tag_id)
 			 SELECT a.id, t.id FROM assets a, tags t
-			 WHERE a.id IN ? AND t.id IN ? AND a.library_id = ? AND t.library_id = ?`,
-			assetIDs, tagIDs, libraryID, libraryID,
+			 WHERE a.id IN ? AND t.id IN ?`,
+			assetIDs, tagIDs,
 		).Error
 	})
 }
@@ -695,7 +679,7 @@ func (s *AssetService) Delete(ctx context.Context, id string) error {
 	}
 
 	if s.backup != nil {
-		_ = s.backup.EnqueueDelete(ctx, asset.LibraryID, asset.ID, asset.StorageKey)
+		_ = s.backup.EnqueueDelete(ctx, asset.ID, asset.StorageKey)
 	}
 
 	res := s.db.WithContext(ctx).Delete(&store.Asset{}, "id = ?", id)
@@ -706,13 +690,13 @@ func (s *AssetService) Delete(ctx context.Context, id string) error {
 		return domain.ErrNotFound
 	}
 
-	// A deleted asset can no longer back a library cover or watermark.
+	// A deleted asset can no longer back the instance cover or watermark.
 	_ = s.db.WithContext(ctx).
-		Model(&store.Library{}).
+		Model(&store.Instance{}).
 		Where("cover_asset_id = ?", id).
 		Update("cover_asset_id", nil).Error
 	_ = s.db.WithContext(ctx).
-		Model(&store.Library{}).
+		Model(&store.Instance{}).
 		Where("watermark_asset_id = ?", id).
 		Update("watermark_asset_id", nil).Error
 
@@ -723,28 +707,4 @@ func (s *AssetService) Delete(ctx context.Context, id string) error {
 	s.deletePreviews(ctx, id)
 
 	return nil
-}
-
-// DeleteByLibrary removes every asset in a library and its stored files. It is
-// used when a whole library is deleted.
-func (s *AssetService) DeleteByLibrary(ctx context.Context, libraryID string) error {
-	var ids []string
-	if err := s.db.WithContext(ctx).
-		Model(&store.Asset{}).
-		Where("library_id = ?", libraryID).
-		Pluck("id", &ids).Error; err != nil {
-		return err
-	}
-	for _, id := range ids {
-		if err := s.Delete(ctx, id); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// ensureLibrary verifies a library exists before persisting scoped rows, so an
-// unknown library yields ErrNotFound (404) instead of a foreign key error.
-func (s *AssetService) ensureLibrary(ctx context.Context, libraryID string) error {
-	return ensureLibraryExists(ctx, s.db, libraryID)
 }

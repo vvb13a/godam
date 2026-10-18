@@ -6,11 +6,10 @@ export interface User {
   updated_at: string
 }
 
-export interface Library {
+export interface Instance {
   id: string
   name: string
   color: string
-  sort: number
   cover_asset_id?: string
   watermark_asset_id?: string
   allowed_mime_types?: string[]
@@ -19,9 +18,10 @@ export interface Library {
   updated_at: string
 }
 
+export type Library = Instance
+
 export interface Tag {
   id: string
-  library_id: string
   name: string
   description: string
   group_id?: string
@@ -33,7 +33,6 @@ export interface Tag {
 
 export interface TagGroup {
   id: string
-  library_id: string
   name: string
   description: string
   color: string
@@ -44,7 +43,6 @@ export interface TagGroup {
 
 export interface Collection {
   id: string
-  library_id: string
   parent_id?: string
   name: string
   description: string
@@ -64,7 +62,6 @@ export interface SmartCollectionFilter {
 
 export interface SmartCollection {
   id: string
-  library_id: string
   name: string
   description: string
   color: string
@@ -85,7 +82,6 @@ export interface AssetMetadata {
 
 export interface Asset {
   id: string
-  library_id: string
   uploaded_by?: string
   uploaded_by_name?: string
   filename: string

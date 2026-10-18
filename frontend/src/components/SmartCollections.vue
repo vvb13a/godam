@@ -3,7 +3,15 @@ import ContextMenu from 'primevue/contextmenu'
 import Popover from 'primevue/popover'
 import { useToast } from 'primevue/usetoast'
 import type { MenuItem } from 'primevue/menuitem'
-import { Check, Filter, Palette, Pencil, Plus, SortAlt } from '@primeicons/vue'
+import {
+  Bookmark,
+  Check,
+  Filter,
+  Palette,
+  Pencil,
+  Plus,
+  SortAlt,
+} from '@primeicons/vue'
 import type { Component } from 'vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -11,6 +19,7 @@ import * as api from '../api/client'
 import { library } from '../lib/library'
 import { LIBRARY_COLORS, libraryColorHex } from '../lib/libraryColors'
 import { confirmDeleteMenuItem } from '../lib/menu'
+import { isPinned, toggleQuicklink } from '../lib/quicklinks'
 import { selectSmartCollection } from '../lib/smartSelection'
 import type { SmartCollection, SmartCollectionFilter } from '../types'
 
@@ -193,15 +202,13 @@ function cancelCreate(): void {
 
 async function commitCreate(): Promise<void> {
   if (!creating.value) return
-  const libraryId = library.currentId
   const name = draftName.value.trim()
   const filter = currentFilter()
   creating.value = false
   draftName.value = ''
-  if (!name || !libraryId) return
+  if (!name) return
   try {
     const created = await api.createSmartCollection(
-      libraryId,
       name,
       DEFAULT_SMART_COLOR,
       filter,
@@ -318,6 +325,19 @@ const menuItems = computed<SmartMenuItem[]>(() => {
         command: () => void setColor(option.value),
       })),
     },
+    {
+      label: isPinned('smart', item.id)
+        ? 'Unpin from Quicklinks'
+        : 'Pin to Quicklinks',
+      menuIcon: Bookmark,
+      command: () =>
+        toggleQuicklink({
+          type: 'smart',
+          id: item.id,
+          name: item.name,
+          color: libraryColorHex(item.color),
+        }),
+    },
     { separator: true },
     confirmDeleteMenuItem('Delete', () => void remove(item)),
   ]
@@ -387,11 +407,8 @@ async function commitDrag(): Promise<void> {
     item.sort = position
   })
   library.smartCollections = list
-  const libraryId = library.currentId
-  if (!libraryId) return
   try {
     await api.reorderSmartCollections(
-      libraryId,
       list.map((item, position) => ({ id: item.id, sort: position })),
     )
   } catch (e) {

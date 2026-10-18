@@ -4,6 +4,7 @@ import { reactive, watch } from 'vue'
 // per-device preference (like the asset grid display settings) persisted to
 // localStorage.
 export interface SidebarPrefs {
+  quicklinks: boolean
   collections: boolean
   smartCollections: boolean
   tags: boolean
@@ -12,6 +13,7 @@ export interface SidebarPrefs {
 const SIDEBAR_STORAGE_KEY = 'godam:sidebar'
 
 const DEFAULT_PREFS: SidebarPrefs = {
+  quicklinks: true,
   collections: true,
   smartCollections: true,
   tags: true,
@@ -42,7 +44,11 @@ watch(
   { deep: true },
 )
 
-export type SidebarToggleKey = 'collections' | 'smartCollections' | 'tags'
+export type SidebarToggleKey =
+  | 'quicklinks'
+  | 'collections'
+  | 'smartCollections'
+  | 'tags'
 
 export interface SidebarToggle {
   key: SidebarToggleKey
@@ -50,6 +56,7 @@ export interface SidebarToggle {
 }
 
 export const SIDEBAR_TOGGLES: SidebarToggle[] = [
+  { key: 'quicklinks', label: 'Quicklinks' },
   { key: 'collections', label: 'Collections' },
   { key: 'smartCollections', label: 'Smart Collections' },
   { key: 'tags', label: 'Tags' },

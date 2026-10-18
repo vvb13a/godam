@@ -9,7 +9,6 @@ import { RouterView, useRoute } from 'vue-router'
 import AppSidebar from './components/AppSidebar.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import LibraryBackupDialog from './components/LibraryBackupDialog.vue'
-import LibraryOnboarding from './components/LibraryOnboarding.vue'
 import LibraryUploadSettingsDialog from './components/LibraryUploadSettingsDialog.vue'
 import TagsDialog from './components/TagsDialog.vue'
 import UploadDialog from './components/UploadDialog.vue'
@@ -161,9 +160,7 @@ watch(
   () => auth.user,
   (user) => {
     if (user) {
-      void initLibrary(
-        embed.active && embed.libraryId ? embed.libraryId : undefined,
-      )
+      void initLibrary()
     } else {
       resetLibrary()
     }
@@ -194,13 +191,11 @@ onBeforeUnmount(() => {
       </div>
 
       <p
-        v-else-if="embed.active && !library.libraries.length"
+        v-else-if="!library.id"
         class="flex h-full w-full items-center justify-center text-sm text-slate-400"
       >
-        No libraries are available in this workspace.
+        No library is configured for this instance.
       </p>
-
-      <LibraryOnboarding v-else-if="!library.libraries.length" />
 
       <template v-else>
         <AppSidebar :embed="embed.active" />

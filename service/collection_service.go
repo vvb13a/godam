@@ -22,25 +22,21 @@ func NewCollectionService(db *gorm.DB) *CollectionService {
 
 // Create inserts a folder, optionally under a parent, appended after its
 // siblings. Names are made unique within the library.
-func (s *CollectionService) Create(ctx context.Context, libraryID string, parentID *string, name, description, color string) (*domain.Collection, error) {
-	if err := ensureLibraryExists(ctx, s.db, libraryID); err != nil {
+func (s *CollectionService) Create(ctx context.Context, parentID *string, name, description, color string) (*domain.Collection, error) {
+	if err := s.ensureValidParent(ctx, "", parentID); err != nil {
 		return nil, err
 	}
-	if err := s.ensureValidParent(ctx, libraryID, "", parentID); err != nil {
-		return nil, err
-	}
-	unique, err := s.uniqueName(ctx, libraryID, name)
+	unique, err := s.uniqueName(ctx, name)
 	if err != nil {
 		return nil, err
 	}
-	sort, err := s.nextSort(ctx, libraryID, parentID)
+	sort, err := s.nextSort(ctx, parentID)
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
 	col := &domain.Collection{
 		ID:          uuid.New().String(),
-		LibraryID:   libraryID,
 		ParentID:    parentID,
 		Name:        unique,
 		Description: description,
@@ -86,10 +82,9 @@ func (s *CollectionService) GetByID(ctx context.Context, id string) (*domain.Col
 	return m.ToDomain(), nil
 }
 
-func (s *CollectionService) List(ctx context.Context, libraryID string) ([]domain.Collection, error) {
+func (s *CollectionService) List(ctx context.Context) ([]domain.Collection, error) {
 	var models []store.Collection
 	if err := s.db.WithContext(ctx).
-		Where("library_id = ?", libraryID).
 		Order("sort ASC, name ASC").
 		Find(&models).Error; err != nil {
 		return nil, err
@@ -126,11 +121,10 @@ func (s *CollectionService) List(ctx context.Context, libraryID string) ([]domai
 // among its new siblings at the given position. It rejects cycles and foreign
 // parents.
 func (s *CollectionService) Move(ctx context.Context, id string, parentID *string, position int) error {
-	col, err := s.GetByID(ctx, id)
-	if err != nil {
+	if _, err := s.GetByID(ctx, id); err != nil {
 		return err
 	}
-	if err := s.ensureValidParent(ctx, col.LibraryID, id, parentID); err != nil {
+	if err := s.ensureValidParent(ctx, id, parentID); err != nil {
 		return err
 	}
 	if position < 0 {
@@ -145,7 +139,7 @@ func (s *CollectionService) Move(ctx context.Context, id string, parentID *strin
 		}
 
 		var siblings []store.Collection
-		q := tx.Where("library_id = ? AND id <> ?", col.LibraryID, id)
+		q := tx.Where("id <> ?", id)
 		if parentID == nil {
 			q = q.Where("parent_id IS NULL")
 		} else {
@@ -180,7 +174,7 @@ func (s *CollectionService) Move(ctx context.Context, id string, parentID *strin
 
 // ensureValidParent checks the parent exists in the library and that id is not
 // an ancestor of it (which would create a cycle). id is "" when creating.
-func (s *CollectionService) ensureValidParent(ctx context.Context, libraryID, id string, parentID *string) error {
+func (s *CollectionService) ensureValidParent(ctx context.Context, id string, parentID *string) error {
 	if parentID == nil {
 		return nil
 	}
@@ -194,9 +188,6 @@ func (s *CollectionService) ensureValidParent(ctx context.Context, libraryID, id
 	}
 	if err != nil {
 		return err
-	}
-	if parent.LibraryID != libraryID {
-		return domain.ErrNotFound
 	}
 	if id == "" {
 		return nil
@@ -218,11 +209,11 @@ func (s *CollectionService) ensureValidParent(ctx context.Context, libraryID, id
 }
 
 // nextSort returns one past the highest sibling position.
-func (s *CollectionService) nextSort(ctx context.Context, libraryID string, parentID *string) (int, error) {
+func (s *CollectionService) nextSort(ctx context.Context, parentID *string) (int, error) {
 	var row struct {
 		Max *int
 	}
-	q := s.db.WithContext(ctx).Model(&store.Collection{}).Where("library_id = ?", libraryID)
+	q := s.db.WithContext(ctx).Model(&store.Collection{})
 	if parentID == nil {
 		q = q.Where("parent_id IS NULL")
 	} else {
@@ -239,12 +230,12 @@ func (s *CollectionService) nextSort(ctx context.Context, libraryID string, pare
 
 // uniqueName appends an incrementing suffix until the name is free within the
 // library.
-func (s *CollectionService) uniqueName(ctx context.Context, libraryID, base string) (string, error) {
+func (s *CollectionService) uniqueName(ctx context.Context, base string) (string, error) {
 	name := base
 	for i := 2; ; i++ {
 		var count int64
 		if err := s.db.WithContext(ctx).Model(&store.Collection{}).
-			Where("library_id = ? AND name = ?", libraryID, name).Count(&count).Error; err != nil {
+			Where("name = ?", name).Count(&count).Error; err != nil {
 			return "", err
 		}
 		if count == 0 {

@@ -21,7 +21,7 @@ type Deps struct {
 	SmartCollections *service.SmartCollectionService
 	Tags             *service.TagService
 	TagGroups        *service.TagGroupService
-	Libraries        *service.LibraryService
+	Instance         *service.InstanceService
 	Users            *service.UserService
 	Stats            *service.StatsService
 	Backups          *service.BackupService
@@ -68,19 +68,16 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /api/stats", s.handleStats)
 
-	s.mux.HandleFunc("GET /api/libraries", s.handleListLibraries)
-	s.mux.HandleFunc("POST /api/libraries", s.handleCreateLibrary)
-	s.mux.HandleFunc("PUT /api/libraries/sort", s.handleReorderLibraries)
-	s.mux.HandleFunc("PUT /api/libraries/{id}", s.handleUpdateLibrary)
-	s.mux.HandleFunc("PUT /api/libraries/{id}/cover", s.handleSetLibraryCover)
-	s.mux.HandleFunc("PUT /api/libraries/{id}/watermark", s.handleSetLibraryWatermark)
-	s.mux.HandleFunc("PUT /api/libraries/{id}/upload-settings", s.handleSetLibraryUploadSettings)
-	s.mux.HandleFunc("GET /api/libraries/{id}/backup", s.handleGetLibraryBackup)
-	s.mux.HandleFunc("PUT /api/libraries/{id}/backup", s.handleSetLibraryBackup)
-	s.mux.HandleFunc("POST /api/libraries/{id}/backup/test", s.handleTestLibraryBackup)
-	s.mux.HandleFunc("POST /api/libraries/{id}/backup/run", s.handleRunLibraryBackup)
-	s.mux.HandleFunc("GET /api/libraries/{id}/backup/status", s.handleLibraryBackupStatus)
-	s.mux.HandleFunc("DELETE /api/libraries/{id}", s.handleDeleteLibrary)
+	s.mux.HandleFunc("GET /api/instance", s.handleGetInstance)
+	s.mux.HandleFunc("PUT /api/instance", s.handleUpdateInstance)
+	s.mux.HandleFunc("PUT /api/instance/cover", s.handleSetInstanceCover)
+	s.mux.HandleFunc("PUT /api/instance/watermark", s.handleSetInstanceWatermark)
+	s.mux.HandleFunc("PUT /api/instance/upload-settings", s.handleSetInstanceUploadSettings)
+	s.mux.HandleFunc("GET /api/instance/backup", s.handleGetBackup)
+	s.mux.HandleFunc("PUT /api/instance/backup", s.handleSetBackup)
+	s.mux.HandleFunc("POST /api/instance/backup/test", s.handleTestBackup)
+	s.mux.HandleFunc("POST /api/instance/backup/run", s.handleRunBackup)
+	s.mux.HandleFunc("GET /api/instance/backup/status", s.handleBackupStatus)
 
 	s.mux.HandleFunc("GET /api/assets", s.handleListAssets)
 	s.mux.HandleFunc("POST /api/assets/upload", s.handleUploadAsset)
@@ -164,17 +161,6 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	return true
 }
 
-// requireLibraryID reads the mandatory library_id query parameter that scopes
-// every library-owned listing, writing a 400 and returning false when absent.
-func requireLibraryID(w http.ResponseWriter, r *http.Request) (string, bool) {
-	id := r.URL.Query().Get("library_id")
-	if id == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required"})
-		return "", false
-	}
-	return id, true
-}
-
 // ---- Authentication context & ownership ----
 
 type contextKey int
@@ -192,31 +178,12 @@ func currentUser(r *http.Request) *domain.User {
 	return userFromContext(r.Context())
 }
 
-// requireOwnedLibrary verifies the library belongs to the authenticated user,
-// writing an error and returning false when it does not.
-func (s *Server) requireOwnedLibrary(w http.ResponseWriter, r *http.Request, libraryID string) bool {
-	user := currentUser(r)
-	if user == nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
-		return false
-	}
-	if err := s.deps.Libraries.VerifyOwned(r.Context(), libraryID, user.ID); err != nil {
-		writeError(w, err)
-		return false
-	}
-	return true
-}
-
-// The owned* helpers resolve a resource by id and confirm its library belongs
-// to the authenticated user before handing it back.
+// The owned* helpers resolve a resource by id.
 
 func (s *Server) ownedAsset(w http.ResponseWriter, r *http.Request, id string) (*domain.Asset, bool) {
 	asset, err := s.deps.Assets.GetByID(r.Context(), id)
 	if err != nil {
 		writeError(w, err)
-		return nil, false
-	}
-	if !s.requireOwnedLibrary(w, r, asset.LibraryID) {
 		return nil, false
 	}
 	return asset, true
@@ -228,9 +195,6 @@ func (s *Server) ownedTag(w http.ResponseWriter, r *http.Request, id string) (*d
 		writeError(w, err)
 		return nil, false
 	}
-	if !s.requireOwnedLibrary(w, r, tag.LibraryID) {
-		return nil, false
-	}
 	return tag, true
 }
 
@@ -238,9 +202,6 @@ func (s *Server) ownedCollection(w http.ResponseWriter, r *http.Request, id stri
 	collection, err := s.deps.Collections.GetByID(r.Context(), id)
 	if err != nil {
 		writeError(w, err)
-		return nil, false
-	}
-	if !s.requireOwnedLibrary(w, r, collection.LibraryID) {
 		return nil, false
 	}
 	return collection, true
@@ -252,9 +213,6 @@ func (s *Server) ownedTagGroup(w http.ResponseWriter, r *http.Request, id string
 		writeError(w, err)
 		return nil, false
 	}
-	if !s.requireOwnedLibrary(w, r, group.LibraryID) {
-		return nil, false
-	}
 	return group, true
 }
 
@@ -262,9 +220,6 @@ func (s *Server) ownedSmartCollection(w http.ResponseWriter, r *http.Request, id
 	collection, err := s.deps.SmartCollections.GetByID(r.Context(), id)
 	if err != nil {
 		writeError(w, err)
-		return nil, false
-	}
-	if !s.requireOwnedLibrary(w, r, collection.LibraryID) {
 		return nil, false
 	}
 	return collection, true

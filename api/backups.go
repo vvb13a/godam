@@ -6,7 +6,7 @@ import (
 	"github.com/vvb13a/godam/service"
 )
 
-type libraryBackupRequest struct {
+type backupRequest struct {
 	Enabled            bool   `json:"enabled"`
 	Driver             string `json:"driver"`
 	Host               string `json:"host"`
@@ -19,7 +19,7 @@ type libraryBackupRequest struct {
 	HostKeyFingerprint string `json:"host_key_fingerprint"`
 }
 
-func (r libraryBackupRequest) toService() service.BackupSettingsRequest {
+func (r backupRequest) toService() service.BackupSettingsRequest {
 	return service.BackupSettingsRequest{
 		Enabled:            r.Enabled,
 		Driver:             r.Driver,
@@ -34,12 +34,8 @@ func (r libraryBackupRequest) toService() service.BackupSettingsRequest {
 	}
 }
 
-func (s *Server) handleGetLibraryBackup(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if !s.requireOwnedLibrary(w, r, id) {
-		return
-	}
-	settings, err := s.deps.Backups.GetSettings(r.Context(), id)
+func (s *Server) handleGetBackup(w http.ResponseWriter, r *http.Request) {
+	settings, err := s.deps.Backups.GetSettings(r.Context())
 	if err != nil {
 		writeError(w, err)
 		return
@@ -47,16 +43,12 @@ func (s *Server) handleGetLibraryBackup(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, settings)
 }
 
-func (s *Server) handleSetLibraryBackup(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if !s.requireOwnedLibrary(w, r, id) {
-		return
-	}
-	var req libraryBackupRequest
+func (s *Server) handleSetBackup(w http.ResponseWriter, r *http.Request) {
+	var req backupRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	settings, err := s.deps.Backups.SetSettings(r.Context(), id, req.toService())
+	settings, err := s.deps.Backups.SetSettings(r.Context(), req.toService())
 	if err != nil {
 		writeError(w, err)
 		return
@@ -64,28 +56,20 @@ func (s *Server) handleSetLibraryBackup(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, settings)
 }
 
-func (s *Server) handleTestLibraryBackup(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if !s.requireOwnedLibrary(w, r, id) {
-		return
-	}
-	var req libraryBackupRequest
+func (s *Server) handleTestBackup(w http.ResponseWriter, r *http.Request) {
+	var req backupRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := s.deps.Backups.TestConnection(r.Context(), id, req.toService()); err != nil {
+	if err := s.deps.Backups.TestConnection(r.Context(), req.toService()); err != nil {
 		writeError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (s *Server) handleRunLibraryBackup(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if !s.requireOwnedLibrary(w, r, id) {
-		return
-	}
-	queued, err := s.deps.Backups.BackupNow(r.Context(), id)
+func (s *Server) handleRunBackup(w http.ResponseWriter, r *http.Request) {
+	queued, err := s.deps.Backups.BackupNow(r.Context())
 	if err != nil {
 		writeError(w, err)
 		return
@@ -93,12 +77,8 @@ func (s *Server) handleRunLibraryBackup(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]int{"queued": queued})
 }
 
-func (s *Server) handleLibraryBackupStatus(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if !s.requireOwnedLibrary(w, r, id) {
-		return
-	}
-	status, err := s.deps.Backups.Status(r.Context(), id)
+func (s *Server) handleBackupStatus(w http.ResponseWriter, r *http.Request) {
+	status, err := s.deps.Backups.Status(r.Context())
 	if err != nil {
 		writeError(w, err)
 		return
