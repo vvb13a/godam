@@ -1,0 +1,57 @@
+services:
+  godam:
+    build: .
+    restart: unless-stopped
+    environment:
+      GODAM_DOMAIN: ${GODAM_DOMAIN:?GODAM_DOMAIN is required}
+      GODAM_CONVERSION_DIR: /conversions
+      GODAM_IMGPROXY_URL: http://imgproxy:8080
+      GODAM_INTERNAL_URL: http://godam:8080
+      GODAM_IMGPROXY_KEY: ${IMGPROXY_KEY:?IMGPROXY_KEY is required}
+      GODAM_IMGPROXY_SALT: ${IMGPROXY_SALT:?IMGPROXY_SALT is required}
+    volumes:
+      - godam-data:/data
+      - conversions:/conversions
+    expose:
+      - "8080"
+    depends_on:
+      - imgproxy
+
+  imgproxy:
+    image: ghcr.io/imgproxy/imgproxy:latest
+    restart: unless-stopped
+    environment:
+      IMGPROXY_KEY: ${IMGPROXY_KEY:?IMGPROXY_KEY is required}
+      IMGPROXY_SALT: ${IMGPROXY_SALT:?IMGPROXY_SALT is required}
+      # imgproxy may only fetch sources from godam's internal route.
+      IMGPROXY_ALLOWED_SOURCES: http://godam:8080/
+      IMGPROXY_ALLOW_PRIVATE_SOURCE_ADDRESSES: "true"
+      IMGPROXY_MAX_SRC_RESOLUTION: "50"
+      IMGPROXY_MAX_SRC_FILE_SIZE: "104857600"
+      IMGPROXY_MAX_RESULT_DIMENSION: "4096"
+      IMGPROXY_TTL: "86400"
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      GODAM_DOMAIN: ${GODAM_DOMAIN:?GODAM_DOMAIN is required}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+      - conversions:/srv/conversions:ro
+    depends_on:
+      - godam
+
+volumes:
+  godam-data:
+  conversions:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,31 @@
+# Hybrid development stack: Caddy and imgproxy run in Docker, while godam
+# (go run) and Vite run on the host for fast iteration and HMR.
+#
+#   make dev-stack   # start Caddy + imgproxy
+#   make dev         # start godam + Vite on the host
+#
+# This file is not for a full-stack deployment; use docker-compose.yml alone
+# for that.
+services:
+  caddy:
+    environment:
+      # localhost uses Caddy's local CA automatically; this also makes
+      # .test/.internal domains work in development.
+      CADDY_GLOBAL_OPTIONS: local_certs
+      GODAM_APP_UPSTREAM: host.docker.internal:5173
+      GODAM_ASSET_UPSTREAM: host.docker.internal:8080
+      GODAM_CONVERSION_ROOT: /srv/dev-conversions
+    volumes:
+      # Host godam writes conversions here (GODAM_CONVERSION_DIR).
+      - ./.dev/conversions:/srv/dev-conversions
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  imgproxy:
+    environment:
+      IMGPROXY_ALLOWED_SOURCES: http://host.docker.internal:8080/
+    ports:
+      # Only host-run godam needs to reach imgproxy; not published publicly.
+      - "127.0.0.1:8081:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

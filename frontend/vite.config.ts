@@ -18,6 +18,9 @@ export default defineConfig({
     emptyOutDir: false,
   },
   server: {
+    // `make dev` binds Vite to 0.0.0.0 so the Caddy container can reach it
+    // through host.docker.internal; HMR still connects through Caddy.
+    allowedHosts: ['localhost', 'host.docker.internal'],
     proxy: {
       // The Go backend will own /api; proxying keeps the browser same-origin
       // during development.

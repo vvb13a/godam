@@ -17,6 +17,7 @@ import (
 // Deps carries the services the HTTP handlers operate on.
 type Deps struct {
 	Assets           *service.AssetService
+	Conversions      *service.ConversionService
 	Collections      *service.CollectionService
 	SmartCollections *service.SmartCollectionService
 	Tags             *service.TagService
@@ -55,6 +56,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) routes() {
+	// Conversion routes live outside /api so Caddy can fall back to them from
+	// the assets subdomain cache. The internal source route is fetched by
+	// imgproxy and is never proxied to the public site.
+	s.mux.HandleFunc("GET /convert/{id}/{spec}", s.handleConversion)
+	s.mux.HandleFunc("GET /internal/source/{id}", s.handleConversionSource)
+
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/system/info", s.handleSystemInfo)
 	s.mux.HandleFunc("GET /api/system/metrics", s.handleSystemMetrics)
@@ -146,6 +153,10 @@ func writeError(w http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 	case errors.Is(err, service.ErrUnsupportedFormat), errors.Is(err, service.ErrFileTooLarge):
 		status = http.StatusBadRequest
+	case errors.Is(err, service.ErrNotImage):
+		status = http.StatusUnsupportedMediaType
+	case errors.Is(err, service.ErrConversionFailed):
+		status = http.StatusBadGateway
 	case errors.Is(err, storage.ErrDriverNotFound):
 		status = http.StatusBadRequest
 	}

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -19,11 +20,31 @@ var publicPaths = map[string]bool{
 	"/api/system/metrics": true,
 }
 
+// publicPrefixes are unauthenticated route families. /internal is only reachable
+// from the Docker network (Caddy blocks it publicly); /convert is the early,
+// not-yet-authorized conversion handoff.
+var publicPrefixes = []string{
+	"/convert/",
+	"/internal/source/",
+}
+
+func isPublicPath(path string) bool {
+	if publicPaths[path] {
+		return true
+	}
+	for _, prefix := range publicPrefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // authMiddleware resolves the session cookie into a user and injects it into
 // the request context. Unauthenticated requests to protected routes get 401.
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if publicPaths[r.URL.Path] {
+		if isPublicPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}

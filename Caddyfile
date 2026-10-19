@@ -1,0 +1,34 @@
+{
+	admin off
+	# Set to "local_certs" in development (see docker-compose.dev.yml) so
+	# Caddy's internal CA signs .test/.internal domains instead of public ACME.
+	{$CADDY_GLOBAL_OPTIONS}
+}
+
+# Consuming application: API, embedded frontend, and authenticated asset routes.
+# In hybrid development this points at Vite instead of the godam container.
+{$GODAM_DOMAIN} {
+	handle /internal/* {
+		respond 404
+	}
+	reverse_proxy {$GODAM_APP_UPSTREAM:godam:8080}
+}
+
+# Public conversion origin. Caddy serves cached conversions from the shared
+# volume and falls back to godam (which calls imgproxy) on a cache miss.
+assets.{$GODAM_DOMAIN} {
+	root * {$GODAM_CONVERSION_ROOT:/srv/conversions}
+	header Cache-Control "public, max-age=86400"
+
+	@miss {
+		not file {path}
+		path_regexp conversion ^/[^/]+/[^/]+\.(jpe?g|png|webp|gif|avif)$
+	}
+	handle @miss {
+		rewrite * /convert{uri}
+		reverse_proxy {$GODAM_ASSET_UPSTREAM:godam:8080}
+	}
+	handle {
+		file_server
+	}
+}
