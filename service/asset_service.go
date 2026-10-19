@@ -223,6 +223,27 @@ func (s *AssetService) applyAssetFilters(query *gorm.DB, filter domain.AssetFilt
 		query = query.Where("("+strings.Join(clauses, " OR ")+")", args...)
 	}
 
+	if filter.PresetID != "" {
+		allowed := `(
+			EXISTS (SELECT 1 FROM presets p WHERE p.id = ? AND p.library_wide = 1)
+			OR assets.id IN (
+				SELECT ac.asset_id FROM asset_collections ac
+				JOIN preset_collections pc ON pc.collection_id = ac.collection_id
+				WHERE pc.preset_id = ?
+			)
+			OR assets.id IN (
+				SELECT at.asset_id FROM asset_tags at
+				JOIN preset_tags pt ON pt.tag_id = at.tag_id
+				WHERE pt.preset_id = ?
+			)
+		)`
+		if filter.PresetExclude {
+			query = query.Where("NOT "+allowed, filter.PresetID, filter.PresetID, filter.PresetID)
+		} else {
+			query = query.Where(allowed, filter.PresetID, filter.PresetID, filter.PresetID)
+		}
+	}
+
 	if len(filter.Colors) > 0 {
 		colors := make([]string, 0, len(filter.Colors))
 		seen := make(map[string]bool, len(filter.Colors))

@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import Message from 'primevue/message'
-import { Plus, Refresh, Times } from '@primeicons/vue'
+import { Bolt, Plus, Refresh, Times } from '@primeicons/vue'
 import { computed, ref, watch } from 'vue'
 import * as api from '../api/client'
+import { conversionCacheVersion } from '../lib/conversionCache'
 import { formatDateTime, formatDuration, formatRelative, formatSize } from '../lib/format'
 import { library } from '../lib/library'
 import { libraryColorHex } from '../lib/libraryColors'
+import { openPresetsDialog } from '../lib/presetsDialog'
 import { openAssetTags } from '../lib/tagsDialog'
+import { warmPresets, warmProgress } from '../lib/warmPresets'
 import type { Asset, Conversion, Tag } from '../types'
 import TagBadge from './TagBadge.vue'
 
@@ -102,6 +105,12 @@ watch(
   { immediate: true },
 )
 
+watch(conversionCacheVersion, () => {
+  if (props.asset.mime_type.startsWith('image/')) {
+    void loadConversions(props.asset.id)
+  }
+})
+
 function toMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
@@ -127,7 +136,18 @@ async function loadConversions(id: string): Promise<void> {
   }
 }
 
+async function warmAsset(): Promise<void> {
+  await warmPresets([props.asset.id])
+  await loadConversions(props.asset.id)
+}
+
 function conversionLabel(conversion: Conversion): string {
+  if (conversion.kind === 'preset') {
+    return `${conversion.label || conversion.preset || 'Preset'} · ${conversion.format.toUpperCase()}`
+  }
+  if (conversion.kind === 'signed') {
+    return `Signed · ${conversion.format.toUpperCase()}`
+  }
   const width = conversion.width || 'auto'
   const height = conversion.height || 'auto'
   return `${width} × ${height} · ${conversion.format.toUpperCase()}`
@@ -302,6 +322,21 @@ function removeCollection(collectionId: string): void {
             >
               {{ conversions.length }}
             </span>
+            <button
+              class="text-xs text-violet-600 hover:underline dark:text-violet-400"
+              title="Manage presets"
+              @click="openPresetsDialog(null, asset.id)"
+            >
+              Manage
+            </button>
+            <button
+              class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 disabled:opacity-40"
+              title="Warm all presets for this asset"
+              :disabled="warmProgress.active"
+              @click="warmAsset"
+            >
+              <Bolt :size="14" />
+            </button>
             <button
               class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
               title="Refresh conversions"

@@ -3,19 +3,55 @@ package service
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/vvb13a/godam/domain"
+	"github.com/vvb13a/godam/storage"
 	"github.com/vvb13a/godam/store"
 	"gorm.io/gorm"
 )
 
-// StatsService aggregates library-wide numbers for the dashboard.
+// StatsService aggregates library-wide numbers for the dashboard. Conversion
+// stats come from the conversion store and are cached briefly because they
+// require a filesystem walk.
 type StatsService struct {
-	db *gorm.DB
+	db          *gorm.DB
+	conversions storage.ConversionStore
+
+	mu        sync.Mutex
+	convStats storage.ConversionStats
+	convAt    time.Time
 }
 
-func NewStatsService(db *gorm.DB) *StatsService {
-	return &StatsService{db: db}
+func NewStatsService(db *gorm.DB, conversions storage.ConversionStore) *StatsService {
+	return &StatsService{db: db, conversions: conversions}
+}
+
+// Invalidate drops the conversion stats cache after the conversion store
+// changes (warm-up or purge).
+func (s *StatsService) Invalidate() {
+	s.mu.Lock()
+	s.convAt = time.Time{}
+	s.mu.Unlock()
+}
+
+func (s *StatsService) conversionStats(ctx context.Context) (storage.ConversionStats, error) {
+	if s.conversions == nil {
+		return storage.ConversionStats{}, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.convAt.IsZero() && time.Since(s.convAt) < 30*time.Second {
+		return s.convStats, nil
+	}
+	stats, err := s.conversions.Stats(ctx)
+	if err != nil {
+		return storage.ConversionStats{}, err
+	}
+	s.convStats = stats
+	s.convAt = time.Now()
+	return stats, nil
 }
 
 func (s *StatsService) Get(ctx context.Context) (*domain.Stats, error) {
@@ -75,13 +111,20 @@ func (s *StatsService) Get(ctx context.Context) (*domain.Stats, error) {
 		})
 	}
 
+	conversionStats, err := s.conversionStats(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("conversion stats: %w", err)
+	}
+
 	return &domain.Stats{
-		Assets:        int(assets),
-		Collections:   int(collections),
-		Tags:          int(tags),
-		Uncategorized: int(uncategorized),
-		Untagged:      int(untagged),
-		StorageBytes:  storageBytes,
-		Types:         types,
+		Assets:          int(assets),
+		Collections:     int(collections),
+		Tags:            int(tags),
+		Uncategorized:   int(uncategorized),
+		Untagged:        int(untagged),
+		StorageBytes:    storageBytes,
+		Conversions:     conversionStats.Count,
+		ConversionBytes: conversionStats.Bytes,
+		Types:           types,
 	}, nil
 }

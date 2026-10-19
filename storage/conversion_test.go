@@ -57,6 +57,32 @@ func TestLocalConversions(t *testing.T) {
 	if _, err := store.Open(ctx, "asset/800x600.jpg"); err == nil {
 		t.Fatal("expected missing file")
 	}
+
+	if err := store.Save(ctx, "asset/a.webp", strings.NewReader("a")); err != nil {
+		t.Fatalf("save a: %v", err)
+	}
+	if err := store.Save(ctx, "asset/b.webp", strings.NewReader("bb")); err != nil {
+		t.Fatalf("save b: %v", err)
+	}
+	stats, err := store.Stats(ctx)
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	if stats.Count != 3 || stats.Bytes != 4 {
+		t.Fatalf("stats = %+v, want count=3 bytes=4", stats)
+	}
+
+	removed, err := store.Purge(ctx)
+	if err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+	if removed != 3 {
+		t.Fatalf("removed = %d, want 3", removed)
+	}
+	entries, err = store.List(ctx, "asset")
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("entries after purge = %+v err=%v", entries, err)
+	}
 }
 
 func TestLocalConversionsRejectsTraversal(t *testing.T) {

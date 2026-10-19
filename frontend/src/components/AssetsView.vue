@@ -17,6 +17,7 @@ import { useToast } from 'primevue/usetoast'
 import type { MenuItem } from 'primevue/menuitem'
 import {
   AngleRight,
+  Bolt,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -41,6 +42,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as api from '../api/client'
 import { assetDrag, endAssetDrag, startAssetDrag } from '../lib/assetDrag'
+import { notifyConversionCacheChanged } from '../lib/conversionCache'
 import { confirmDeleteMenuItem } from '../lib/menu'
 import {
   CARD_SHAPES,
@@ -69,6 +71,7 @@ import { SIDEBAR_TOGGLES, sidebarPrefs } from '../lib/sidebar'
 import { clearSmartSelection, smartSelection } from '../lib/smartSelection'
 import { openAssetTags, openBulkAssetTags } from '../lib/tagsDialog'
 import { openUpload } from '../lib/upload'
+import { warmPresets } from '../lib/warmPresets'
 import type {
   Asset,
   Collection,
@@ -466,6 +469,7 @@ function formatDateKey(value: Date | null): string {
 }
 
 type OptionalFilterKey =
+  | 'preset'
   | 'color'
   | 'mime'
   | 'uploader'
@@ -477,6 +481,7 @@ type OptionalFilterKey =
   | 'modified'
 
 const OPTIONAL_FILTERS: { key: OptionalFilterKey; label: string }[] = [
+  { key: 'preset', label: 'Preset' },
   { key: 'color', label: 'Color' },
   { key: 'mime', label: 'MIME type' },
   { key: 'uploader', label: 'Uploaded by' },
@@ -489,6 +494,7 @@ const OPTIONAL_FILTERS: { key: OptionalFilterKey; label: string }[] = [
 ]
 
 const OPTIONAL_FILTER_QUERY_KEYS: Record<OptionalFilterKey, string[]> = {
+  preset: ['preset', 'preset_exclude'],
   color: ['color'],
   mime: ['mime'],
   uploader: ['uploader'],
@@ -577,6 +583,14 @@ const uploaderFilter = computed<string[]>({
   get: () => parseList(route.query.uploader),
   set: (values) => setQueryList('uploader', values),
 })
+const presetFilter = computed<string>({
+  get: () => queryValue('preset'),
+  set: (value) => setQueryValue('preset', value),
+})
+const presetExclude = computed<boolean>({
+  get: () => queryValue('preset_exclude') === 'true',
+  set: (value) => setQueryValue('preset_exclude', value ? 'true' : ''),
+})
 const sort = computed({
   get: () => (route.query.sort as string | undefined) ?? 'date-desc',
   set: (value: string) => setQueryValue('sort', value),
@@ -638,6 +652,14 @@ async function loadUsers(): Promise<void> {
 
 const uploaderOptions = computed(() =>
   users.value.map((user) => ({ value: user.id, label: user.name })),
+)
+
+const presetOptions = computed(() =>
+  library.presets.map((preset) => ({
+    value: preset.id,
+    label: preset.label,
+    name: preset.name,
+  })),
 )
 
 const DOCUMENT_MIMES = new Set([
@@ -709,6 +731,8 @@ const filterFingerprint = computed(() =>
     color: colorFilter.value,
     mime: mimeFilter.value,
     uploader: uploaderFilter.value,
+    preset: presetFilter.value,
+    presetExclude: presetExclude.value,
     sort: sort.value,
     minSize: minSize.value,
     maxSize: maxSize.value,
@@ -867,6 +891,7 @@ const hasActiveFilters = computed(
     colorFilter.value.length > 0 ||
     mimeFilter.value.length > 0 ||
     uploaderFilter.value.length > 0 ||
+    Boolean(presetFilter.value) ||
     minSize.value !== null ||
     maxSize.value !== null ||
     minDuration.value !== null ||
@@ -1044,6 +1069,15 @@ const menuItems = computed<MenuItem[]>(() => {
       icon: Refresh,
       command: () => void regeneratePreviews(selectedAssets.value.slice()),
     })
+    if (selectedAssets.value[0]?.mime_type.startsWith('image/')) {
+      items.push({
+        label: 'Warm presets',
+        icon: Bolt,
+        command: () => {
+          void warmPresets(selectedIds.value.slice()).then(notifyConversionCacheChanged)
+        },
+      })
+    }
     items.push({
       label: 'Tags',
       icon: Tag,
@@ -1070,6 +1104,15 @@ const menuItems = computed<MenuItem[]>(() => {
       icon: Refresh,
       command: () => void regeneratePreviews(selectedAssets.value.slice()),
     })
+    if (selectedAssets.value.some((asset) => asset.mime_type.startsWith('image/'))) {
+      items.push({
+        label: `Warm presets for ${count} assets`,
+        icon: Bolt,
+        command: () => {
+          void warmPresets(selectedIds.value.slice()).then(notifyConversionCacheChanged)
+        },
+      })
+    }
     items.push({
       label: 'Tags',
       icon: Tag,
@@ -1105,6 +1148,8 @@ function assetParams(): api.AssetListParams {
     colors: colorFilter.value.length ? colorFilter.value : undefined,
     mimeTypes: mimeFilter.value.length ? mimeFilter.value : undefined,
     uploadedBy: uploaderFilter.value.length ? uploaderFilter.value : undefined,
+    presetId: presetFilter.value || undefined,
+    presetExclude: presetFilter.value ? presetExclude.value : undefined,
     minDuration: minDuration.value ?? undefined,
     maxDuration: maxDuration.value ?? undefined,
     minPages: minPages.value ?? undefined,
@@ -1963,6 +2008,52 @@ onBeforeUnmount(() => {
               </p>
             </div>
           </Popover>
+
+          <div
+            v-if="visibleFilters.includes('preset')"
+            class="flex items-center gap-1"
+          >
+            <Select
+              v-model="presetFilter"
+              :options="presetOptions"
+              option-label="label"
+              option-value="value"
+              placeholder="Preset"
+              filter
+              showClear
+              class="w-56"
+            >
+              <template #option="slotProps">
+                <span class="flex w-full items-center gap-2">
+                  <span class="min-w-0 flex-1 truncate">
+                    {{ slotProps.option.label }}
+                  </span>
+                  <span class="shrink-0 font-mono text-[11px] text-slate-400">
+                    {{ slotProps.option.name }}
+                  </span>
+                </span>
+              </template>
+            </Select>
+            <label
+              class="flex shrink-0 items-center gap-1.5 text-xs text-slate-500"
+              title="Show assets that are not allowed to use the selected preset"
+            >
+              <input
+                v-model="presetExclude"
+                type="checkbox"
+                :disabled="!presetFilter"
+              />
+              Not allowed
+            </label>
+            <button
+              type="button"
+              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+              title="Remove preset filter"
+              @click="removeFilter('preset')"
+            >
+              <Times :size="14" />
+            </button>
+          </div>
 
           <div
             v-if="visibleFilters.includes('color')"

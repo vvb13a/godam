@@ -3,6 +3,7 @@ package api
 import (
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/vvb13a/godam/service"
 )
@@ -11,13 +12,26 @@ import (
 // intentionally unauthenticated for now; presets and authorization will be
 // layered on before it is exposed as a public API.
 func (s *Server) handleConversion(w http.ResponseWriter, r *http.Request) {
-	spec, err := service.ParseConversionSpec(r.PathValue("spec"))
-	if err != nil {
-		writeError(w, err)
-		return
-	}
+	assetID := r.PathValue("id")
+	segment := r.PathValue("spec")
 
-	result, err := s.deps.Conversions.Convert(r.Context(), r.PathValue("id"), spec)
+	var (
+		result *service.ConversionResult
+		err    error
+	)
+	switch {
+	case strings.HasPrefix(segment, "~"):
+		result, err = s.deps.Conversions.ConvertSigned(r.Context(), assetID, segment)
+	case service.IsSizeConversion(segment):
+		spec, parseErr := service.ParseConversionSpec(segment)
+		if parseErr != nil {
+			writeError(w, parseErr)
+			return
+		}
+		result, err = s.deps.Conversions.Convert(r.Context(), assetID, spec)
+	default:
+		result, err = s.deps.Conversions.ConvertPreset(r.Context(), assetID, segment)
+	}
 	if err != nil {
 		writeError(w, err)
 		return
@@ -32,6 +46,20 @@ func (s *Server) handleConversion(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Godam-Conversion", "MISS")
 	}
 	_, _ = io.Copy(w, result.Reader)
+}
+
+// handlePurgeConversions removes every generated conversion. Originals and
+// preset definitions are untouched.
+func (s *Server) handlePurgeConversions(w http.ResponseWriter, r *http.Request) {
+	removed, err := s.deps.Conversions.Purge(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if s.deps.Stats != nil {
+		s.deps.Stats.Invalidate()
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"removed": removed})
 }
 
 // handleListConversions returns the stored conversions for an asset, sorted by

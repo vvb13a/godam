@@ -18,6 +18,8 @@ import (
 type Deps struct {
 	Assets           *service.AssetService
 	Conversions      *service.ConversionService
+	Presets          *service.PresetService
+	AssetsBaseURL    string
 	Collections      *service.CollectionService
 	SmartCollections *service.SmartCollectionService
 	Tags             *service.TagService
@@ -61,6 +63,7 @@ func (s *Server) routes() {
 	// imgproxy and is never proxied to the public site.
 	s.mux.HandleFunc("GET /convert/{id}/{spec}", s.handleConversion)
 	s.mux.HandleFunc("GET /internal/source/{id}", s.handleConversionSource)
+	s.mux.HandleFunc("POST /api/conversions/purge", s.handlePurgeConversions)
 
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/system/info", s.handleSystemInfo)
@@ -75,6 +78,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/auth/password", s.handleChangePassword)
 
 	s.mux.HandleFunc("GET /api/stats", s.handleStats)
+
+	s.mux.HandleFunc("GET /api/presets", s.handleListPresets)
+	s.mux.HandleFunc("GET /api/presets/catalog", s.handlePresetCatalog)
+	s.mux.HandleFunc("POST /api/presets", s.handleCreatePreset)
+	s.mux.HandleFunc("PUT /api/presets/{id}", s.handleUpdatePreset)
+	s.mux.HandleFunc("DELETE /api/presets/{id}", s.handleDeletePreset)
+	s.mux.HandleFunc("POST /api/imgproxy/sign", s.handleSignImgproxy)
+	s.mux.HandleFunc("POST /api/assets/{id}/preset-preview", s.handlePresetPreview)
+	s.mux.HandleFunc("POST /api/assets/presets/warm", s.handleWarmPresets)
 
 	s.mux.HandleFunc("GET /api/instance", s.handleGetInstance)
 	s.mux.HandleFunc("PUT /api/instance", s.handleUpdateInstance)
@@ -148,7 +160,7 @@ func writeError(w http.ResponseWriter, err error) {
 		status = http.StatusNotFound
 	case errors.Is(err, service.ErrInvalidCredentials):
 		status = http.StatusUnauthorized
-	case errors.Is(err, service.ErrEmailTaken):
+	case errors.Is(err, service.ErrEmailTaken), errors.Is(err, service.ErrPresetNameTaken):
 		status = http.StatusConflict
 	case errors.Is(err, service.ErrInvalidInput), errors.Is(err, service.ErrWeakPassword):
 		status = http.StatusBadRequest
@@ -156,6 +168,8 @@ func writeError(w http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 	case errors.Is(err, service.ErrNotImage):
 		status = http.StatusUnsupportedMediaType
+	case errors.Is(err, service.ErrPresetNotAllowed):
+		status = http.StatusForbidden
 	case errors.Is(err, service.ErrConversionFailed):
 		status = http.StatusBadGateway
 	case errors.Is(err, storage.ErrDriverNotFound):

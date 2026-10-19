@@ -113,11 +113,80 @@ export interface Asset {
 export interface Conversion {
   key: string
   url: string
+  kind: 'preset' | 'size' | 'signed'
+  preset?: string
+  label?: string
   width: number
   height: number
   format: string
   byte_size: number
   modified_at: string
+}
+
+export interface PresetOption {
+  name: string
+  args: string[]
+}
+
+export interface PresetParameters {
+  format: string
+  options: PresetOption[]
+}
+
+export interface Preset {
+  id: string
+  added_by?: string
+  added_by_name?: string
+  label: string
+  name: string
+  parameters: PresetParameters
+  library_wide: boolean
+  collection_ids: string[]
+  tag_ids: string[]
+  created_at: string
+  modified_at: string
+}
+
+export interface CatalogChoice {
+  value: string
+  label: string
+}
+
+export type CatalogArgKind =
+  | 'int'
+  | 'float'
+  | 'string'
+  | 'bool'
+  | 'enum'
+  | 'color'
+  | 'base64'
+
+export interface CatalogArg {
+  name: string
+  label: string
+  kind: CatalogArgKind
+  required?: boolean
+  default?: string
+  options?: CatalogChoice[]
+  min?: number
+  max?: number
+  placeholder?: string
+  help?: string
+}
+
+export interface CatalogOption {
+  name: string
+  label: string
+  category: string
+  description: string
+  pro?: boolean
+  raw?: boolean
+  args?: CatalogArg[]
+}
+
+export interface ImgProxyCatalog {
+  formats: string[]
+  options: CatalogOption[]
 }
 
 export interface TypeCount {
@@ -133,6 +202,8 @@ export interface Stats {
   uncategorized: number
   untagged: number
   storage_bytes: number
+  conversions: number
+  conversion_bytes: number
   types: TypeCount[]
 }
 

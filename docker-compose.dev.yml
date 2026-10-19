@@ -18,8 +18,6 @@ services:
     volumes:
       # Host godam writes conversions here (GODAM_CONVERSION_DIR).
       - ./.dev/conversions:/srv/dev-conversions
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   imgproxy:
     environment:
@@ -27,5 +25,3 @@ services:
     ports:
       # Only host-run godam needs to reach imgproxy; not published publicly.
       - "127.0.0.1:8081:8080"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"

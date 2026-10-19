@@ -17,7 +17,18 @@ import (
 // keyset order.
 func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	presetID := q.Get("preset_id")
+	if presetID == "" {
+		// Allow ?preset=<name> for shareable URLs; the service filter works on ids.
+		if name := q.Get("preset"); name != "" && s.deps.Presets != nil {
+			if preset, err := s.deps.Presets.GetByName(r.Context(), name); err == nil {
+				presetID = preset.ID
+			}
+		}
+	}
 	filter := domain.AssetFilter{
+		PresetID:       presetID,
+		PresetExclude:  q.Get("preset_exclude") == "true",
 		Search:         q.Get("search"),
 		Sort:           q.Get("sort"),
 		Cursor:         q.Get("cursor"),

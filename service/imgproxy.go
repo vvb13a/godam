@@ -89,6 +89,66 @@ func (p *ImgProxy) sign(path string) string {
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
+// SignRequest creates an opaque, signed path segment for an ad-hoc processing
+// pipeline. The segment is shaped "~<payload>~<signature>.<format>" and can be
+// used on the public assets domain or through /convert.
+func (p *ImgProxy) SignRequest(assetID, format, processing string) (string, error) {
+	if !p.Signed() {
+		return "", fmt.Errorf("imgproxy signing is not configured")
+	}
+	// The token doubles as the cache filename, so keep it within a portable
+	// single path component. Long pipelines should become named presets.
+	if len(processing) > 120 {
+		return "", fmt.Errorf("%w: processing pipeline is too long for a signed URL (max 120 bytes)", ErrInvalidInput)
+	}
+	format, err := NormalizeFormat(format)
+	if err != nil {
+		return "", err
+	}
+	payload := base64.RawURLEncoding.EncodeToString([]byte(processing))
+	return "~" + payload + "~" + p.requestSignature(assetID, format, payload) + "." + format, nil
+}
+
+// VerifyRequest validates a signed path segment and returns its format and
+// processing pipeline.
+func (p *ImgProxy) VerifyRequest(assetID, segment string) (string, string, error) {
+	if !p.Signed() {
+		return "", "", fmt.Errorf("imgproxy signing is not configured")
+	}
+	body, ext, ok := strings.Cut(strings.TrimPrefix(segment, "~"), ".")
+	if !ok {
+		return "", "", fmt.Errorf("invalid signed conversion")
+	}
+	payload, signature, ok := strings.Cut(body, "~")
+	if !ok || payload == "" || signature == "" {
+		return "", "", fmt.Errorf("invalid signed conversion")
+	}
+	format, err := NormalizeFormat(ext)
+	if err != nil {
+		return "", "", err
+	}
+	expected := p.requestSignature(assetID, format, payload)
+	if !hmac.Equal([]byte(signature), []byte(expected)) {
+		return "", "", fmt.Errorf("invalid conversion signature")
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid signed conversion payload")
+	}
+	return format, string(decoded), nil
+}
+
+func (p *ImgProxy) requestSignature(assetID, format, payload string) string {
+	mac := hmac.New(sha256.New, p.key)
+	mac.Write(p.salt)
+	mac.Write([]byte(assetID))
+	mac.Write([]byte{0})
+	mac.Write([]byte(format))
+	mac.Write([]byte{0})
+	mac.Write([]byte(payload))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
 // Get requests a URL from imgproxy. The caller owns the response body.
 func (p *ImgProxy) Get(ctx context.Context, rawURL string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)

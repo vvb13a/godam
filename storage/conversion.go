@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -20,6 +21,8 @@ type ConversionStore interface {
 	Open(ctx context.Context, key string) (io.ReadCloser, error)
 	Delete(ctx context.Context, key string) error
 	List(ctx context.Context, prefix string) ([]ConversionEntry, error)
+	Stats(ctx context.Context) (ConversionStats, error)
+	Purge(ctx context.Context) (int, error)
 	URL(key string) string
 }
 
@@ -28,6 +31,12 @@ type ConversionEntry struct {
 	Key        string
 	ByteSize   int64
 	ModifiedAt time.Time
+}
+
+// ConversionStats is the total number and size of stored conversions.
+type ConversionStats struct {
+	Count int
+	Bytes int64
 }
 
 // LocalConversions stores conversions on the local filesystem under a base
@@ -146,6 +155,64 @@ func (s *LocalConversions) List(_ context.Context, prefix string) ([]ConversionE
 		})
 	}
 	return out, nil
+}
+
+// Stats walks the conversion tree and returns the file count and total bytes.
+func (s *LocalConversions) Stats(_ context.Context) (ConversionStats, error) {
+	var stats ConversionStats
+	err := filepath.WalkDir(s.baseDir, func(_ string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return nil
+		}
+		stats.Count++
+		stats.Bytes += info.Size()
+		return nil
+	})
+	if os.IsNotExist(err) {
+		return stats, nil
+	}
+	return stats, err
+}
+
+// Purge removes every stored conversion and returns the number of files that
+// were deleted. The base directory itself is kept for the running server.
+func (s *LocalConversions) Purge(_ context.Context) (int, error) {
+	entries, err := os.ReadDir(s.baseDir)
+	if os.IsNotExist(err) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	removed := 0
+	for _, entry := range entries {
+		full := filepath.Join(s.baseDir, entry.Name())
+		if entry.IsDir() {
+			_ = filepath.WalkDir(full, func(_ string, item fs.DirEntry, err error) error {
+				if err == nil && !item.IsDir() && !strings.HasPrefix(item.Name(), ".") {
+					removed++
+				}
+				return nil
+			})
+		} else if !strings.HasPrefix(entry.Name(), ".") {
+			removed++
+		}
+		if err := os.RemoveAll(full); err != nil {
+			return removed, err
+		}
+	}
+	return removed, nil
 }
 
 func (s *LocalConversions) URL(key string) string {

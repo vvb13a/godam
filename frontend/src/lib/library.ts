@@ -3,6 +3,7 @@ import * as api from '../api/client'
 import type {
   Collection,
   Instance,
+  Preset,
   SmartCollection,
   Stats,
   Tag,
@@ -24,6 +25,7 @@ export const library = reactive({
   smartCollections: [] as SmartCollection[],
   tags: [] as Tag[],
   tagGroups: [] as TagGroup[],
+  presets: [] as Preset[],
   stats: null as Stats | null,
   version: 0,
 })
@@ -62,6 +64,10 @@ export async function loadTagGroups(): Promise<void> {
   library.tagGroups = await api.listTagGroups()
 }
 
+export async function loadPresets(): Promise<void> {
+  library.presets = await api.listPresets()
+}
+
 export async function loadStats(): Promise<void> {
   library.stats = await api.getStats()
 }
@@ -71,6 +77,7 @@ export function clearScopedData(): void {
   library.smartCollections = []
   library.tags = []
   library.tagGroups = []
+  library.presets = []
   library.stats = null
 }
 
@@ -92,6 +99,7 @@ async function loadScopedData(): Promise<void> {
     loadSmartCollections(),
     loadTags(),
     loadTagGroups(),
+    loadPresets(),
     loadStats(),
   ])
 }

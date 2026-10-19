@@ -71,6 +71,16 @@ async function removeCover(): Promise<void> {
             </dd>
           </div>
           <div class="flex justify-between gap-4">
+            <dt class="text-slate-400">Conversions</dt>
+            <dd class="text-right">{{ stats?.conversions ?? '—' }}</dd>
+          </div>
+          <div class="flex justify-between gap-4">
+            <dt class="text-slate-400">Conversion size</dt>
+            <dd class="text-right">
+              {{ stats ? formatSize(stats.conversion_bytes) : '—' }}
+            </dd>
+          </div>
+          <div class="flex justify-between gap-4">
             <dt class="text-slate-400">Collections</dt>
             <dd class="text-right">{{ stats?.collections ?? '—' }}</dd>
           </div>

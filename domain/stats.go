@@ -7,8 +7,10 @@ type Stats struct {
 	Tags          int         `json:"tags"`
 	Uncategorized int         `json:"uncategorized"`
 	Untagged      int         `json:"untagged"`
-	StorageBytes  int64       `json:"storage_bytes"`
-	Types         []TypeCount `json:"types"`
+	StorageBytes    int64       `json:"storage_bytes"`
+	Conversions     int         `json:"conversions"`
+	ConversionBytes int64       `json:"conversion_bytes"`
+	Types           []TypeCount `json:"types"`
 }
 
 // TypeCount is the asset count and storage volume for one MIME type.

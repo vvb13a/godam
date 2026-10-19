@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	// MaxConversionDimension caps a single rendered edge. Presets will tighten
-	// this further once they exist.
+	// MaxConversionDimension caps a single rendered edge. Presets are validated
+	// against catalog limits as well.
 	MaxConversionDimension = 4096
 	// ConversionCacheControl is deliberately conservative: without cache
 	// busting yet, a long TTL would keep stale conversions around after an
@@ -39,8 +39,9 @@ var conversionContentTypes = map[string]string{
 	"avif": "image/avif",
 }
 
-// ConversionSpec is the path-encoded transform, e.g. "800x600.webp". A zero
-// width or height lets imgproxy preserve the source aspect ratio.
+// ConversionSpec is the legacy path-encoded size transform, e.g.
+// "800x600.webp". A zero width or height lets imgproxy preserve the source
+// aspect ratio.
 type ConversionSpec struct {
 	Width  int
 	Height int
@@ -106,16 +107,153 @@ type ConversionResult struct {
 // ConversionService renders image conversions through imgproxy and stores the
 // successful output in the configured conversion store.
 type ConversionService struct {
-	assets *AssetService
-	proxy  *ImgProxy
-	store  storage.ConversionStore
+	assets  *AssetService
+	presets *PresetService
+	proxy   *ImgProxy
+	store   storage.ConversionStore
 }
 
-func NewConversionService(assets *AssetService, proxy *ImgProxy, store storage.ConversionStore) *ConversionService {
-	return &ConversionService{assets: assets, proxy: proxy, store: store}
+func NewConversionService(assets *AssetService, presets *PresetService, proxy *ImgProxy, store storage.ConversionStore) *ConversionService {
+	return &ConversionService{assets: assets, presets: presets, proxy: proxy, store: store}
 }
 
+// Convert renders the legacy size syntax (WIDTHxHEIGHT.ext).
 func (s *ConversionService) Convert(ctx context.Context, assetID string, spec ConversionSpec) (*ConversionResult, error) {
+	processing := fmt.Sprintf("format:%s", spec.Format)
+	if spec.Width > 0 || spec.Height > 0 {
+		processing = fmt.Sprintf("rs:fit:%d:%d", spec.Width, spec.Height)
+	}
+	return s.convert(ctx, assetID, processing, spec.Format, fmt.Sprintf("%dx%d", spec.Width, spec.Height))
+}
+
+// ConvertPreset resolves a named preset and renders it.
+func (s *ConversionService) ConvertPreset(ctx context.Context, assetID, segment string) (*ConversionResult, error) {
+	name, format, err := splitConversionSegment(segment)
+	if err != nil {
+		return nil, err
+	}
+	if !presetNamePattern.MatchString(name) || isSizeName(name) {
+		return nil, fmt.Errorf("%w: unknown conversion preset", ErrInvalidInput)
+	}
+	if s.presets == nil {
+		return nil, fmt.Errorf("%w: unknown conversion preset", domain.ErrNotFound)
+	}
+	preset, err := s.presets.GetByName(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if !preset.LibraryWide {
+		allowed, err := s.presets.AllowsAsset(ctx, preset.ID, assetID)
+		if err != nil {
+			return nil, err
+		}
+		if !allowed {
+			return nil, fmt.Errorf("%w: %s", ErrPresetNotAllowed, name)
+		}
+	}
+	if format != preset.Parameters.Format {
+		return nil, fmt.Errorf("%w: preset %q produces %s, not %s", ErrInvalidInput, name, preset.Parameters.Format, format)
+	}
+	processing, err := BuildProcessing(preset.Parameters)
+	if err != nil {
+		return nil, err
+	}
+	return s.convert(ctx, assetID, processing, format, name)
+}
+
+// ConvertSigned verifies an ad-hoc signed pipeline and renders it.
+func (s *ConversionService) ConvertSigned(ctx context.Context, assetID, segment string) (*ConversionResult, error) {
+	cacheName, format, err := splitConversionSegment(segment)
+	if err != nil {
+		return nil, err
+	}
+	_, processing, err := s.proxy.VerifyRequest(assetID, segment)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	options, err := ParseProcessing(processing)
+	if err != nil {
+		return nil, err
+	}
+	processing, err = BuildProcessing(domain.PresetParameters{Format: format, Options: options})
+	if err != nil {
+		return nil, err
+	}
+	return s.convert(ctx, assetID, processing, format, cacheName)
+}
+
+// Preview renders a preset pipeline for an asset without writing the image to
+// the conversion cache. The caller owns the returned stream.
+func (s *ConversionService) Preview(ctx context.Context, assetID string, params domain.PresetParameters) (io.ReadCloser, string, error) {
+	normalized, err := ValidatePresetParameters(params)
+	if err != nil {
+		return nil, "", err
+	}
+	asset, err := s.assets.GetByID(ctx, assetID)
+	if err != nil {
+		return nil, "", err
+	}
+	if !strings.HasPrefix(asset.MimeType, "image/") {
+		return nil, "", fmt.Errorf("%w: %s", ErrNotImage, asset.MimeType)
+	}
+	processing, err := BuildProcessing(normalized)
+	if err != nil {
+		return nil, "", err
+	}
+	resp, err := s.proxy.Get(ctx, s.proxy.URL(assetID, processing, normalized.Format))
+	if err != nil {
+		return nil, "", fmt.Errorf("%w: %v", ErrConversionFailed, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer Drain(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		log.Printf("imgproxy: preview %s failed with %s: %s", assetID, resp.Status, strings.TrimSpace(string(body)))
+		return nil, "", fmt.Errorf("%w: upstream status %d", ErrConversionFailed, resp.StatusCode)
+	}
+	return resp.Body, conversionContentTypes[normalized.Format], nil
+}
+
+// Purge removes every generated conversion from the conversion store.
+func (s *ConversionService) Purge(ctx context.Context) (int, error) {
+	return s.store.Purge(ctx)
+}
+
+// WarmPreset renders a preset for an asset and stores it in the conversion
+// cache. The returned image is not read; the store owns the file.
+func (s *ConversionService) WarmPreset(ctx context.Context, assetID string, preset domain.Preset) error {
+	processing, err := BuildProcessing(preset.Parameters)
+	if err != nil {
+		return err
+	}
+	result, err := s.convert(ctx, assetID, processing, preset.Parameters.Format, preset.Name)
+	if err != nil {
+		return err
+	}
+	return result.Reader.Close()
+}
+
+// Sign validates an ad-hoc processing pipeline and returns a signed path
+// segment for the asset. The segment is accepted by ConvertSigned.
+func (s *ConversionService) Sign(ctx context.Context, assetID, format, processing string) (string, error) {
+	asset, err := s.assets.GetByID(ctx, assetID)
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(asset.MimeType, "image/") {
+		return "", fmt.Errorf("%w: %s", ErrNotImage, asset.MimeType)
+	}
+	options, err := ParseProcessing(processing)
+	if err != nil {
+		return "", err
+	}
+	normalized, err := BuildProcessing(domain.PresetParameters{Format: format, Options: options})
+	if err != nil {
+		return "", err
+	}
+	return s.proxy.SignRequest(assetID, format, normalized)
+}
+
+func (s *ConversionService) convert(ctx context.Context, assetID, processing, format, cacheName string) (*ConversionResult, error) {
 	asset, err := s.assets.GetByID(ctx, assetID)
 	if err != nil {
 		return nil, err
@@ -123,23 +261,21 @@ func (s *ConversionService) Convert(ctx context.Context, assetID string, spec Co
 	if !strings.HasPrefix(asset.MimeType, "image/") {
 		return nil, fmt.Errorf("%w: %s", ErrNotImage, asset.MimeType)
 	}
+	if processing == "" {
+		return nil, fmt.Errorf("%w: empty processing pipeline", ErrInvalidInput)
+	}
 
-	key := spec.Key(assetID)
+	key := fmt.Sprintf("%s/%s.%s", assetID, cacheName, format)
 	if rc, err := s.store.Open(ctx, key); err == nil {
 		return &ConversionResult{
 			Reader:      rc,
-			ContentType: spec.ContentType(),
+			ContentType: conversionContentTypes[format],
 			Key:         key,
 			CacheHit:    true,
 		}, nil
 	}
 
-	processing := "format:" + spec.Format
-	if spec.Width > 0 || spec.Height > 0 {
-		processing = fmt.Sprintf("rs:fit:%d:%d/format:%s", spec.Width, spec.Height, spec.Format)
-	}
-
-	resp, err := s.proxy.Get(ctx, s.proxy.URL(assetID, processing, spec.Format))
+	resp, err := s.proxy.Get(ctx, s.proxy.URL(assetID, processing, format))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrConversionFailed, err)
 	}
@@ -160,13 +296,13 @@ func (s *ConversionService) Convert(ctx context.Context, assetID string, spec Co
 	}
 	return &ConversionResult{
 		Reader:      rc,
-		ContentType: spec.ContentType(),
+		ContentType: conversionContentTypes[format],
 		Key:         key,
 	}, nil
 }
 
 // List returns every conversion currently stored for an asset, ordered by file
-// size (smallest first). Files that do not match the conversion key format are
+// size (smallest first). Files that do not match a known key format are
 // ignored.
 func (s *ConversionService) List(ctx context.Context, assetID string) ([]domain.Conversion, error) {
 	asset, err := s.assets.GetByID(ctx, assetID)
@@ -184,23 +320,51 @@ func (s *ConversionService) List(ctx context.Context, assetID string) ([]domain.
 
 	conversions := make([]domain.Conversion, 0, len(entries))
 	for _, entry := range entries {
-		spec, err := ParseConversionSpec(path.Base(entry.Key))
+		base := path.Base(entry.Key)
+		stem, format, err := splitConversionSegment(base)
 		if err != nil {
 			continue
 		}
+
+		conversion := domain.Conversion{
+			Key:        entry.Key,
+			Kind:       "preset",
+			Preset:     stem,
+			Format:     format,
+			ByteSize:   entry.ByteSize,
+			ModifiedAt: entry.ModifiedAt,
+		}
+		switch {
+		case strings.HasPrefix(stem, "~"):
+			conversion.Kind = "signed"
+			conversion.Preset = ""
+			conversion.Label = "Signed request"
+		case isSizeName(stem):
+			spec, err := ParseConversionSpec(base)
+			if err != nil {
+				continue
+			}
+			conversion.Kind = "size"
+			conversion.Preset = ""
+			conversion.Width = spec.Width
+			conversion.Height = spec.Height
+		default:
+			if !presetNamePattern.MatchString(stem) {
+				continue
+			}
+			if s.presets != nil {
+				if preset, err := s.presets.GetByName(ctx, stem); err == nil {
+					conversion.Label = preset.Label
+				}
+			}
+		}
+
 		url := s.store.URL(entry.Key)
 		if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 			url = ""
 		}
-		conversions = append(conversions, domain.Conversion{
-			Key:        entry.Key,
-			URL:        url,
-			Width:      spec.Width,
-			Height:     spec.Height,
-			Format:     spec.Format,
-			ByteSize:   entry.ByteSize,
-			ModifiedAt: entry.ModifiedAt,
-		})
+		conversion.URL = url
+		conversions = append(conversions, conversion)
 	}
 
 	sort.Slice(conversions, func(i, j int) bool {
@@ -210,4 +374,37 @@ func (s *ConversionService) List(ctx context.Context, assetID string) ([]domain.
 		return conversions[i].ByteSize < conversions[j].ByteSize
 	})
 	return conversions, nil
+}
+
+func splitConversionSegment(segment string) (string, string, error) {
+	dot := strings.LastIndex(segment, ".")
+	if dot <= 0 || dot == len(segment)-1 {
+		return "", "", fmt.Errorf("%w: conversion is missing a format", ErrInvalidInput)
+	}
+	format, err := NormalizeFormat(segment[dot+1:])
+	if err != nil {
+		return "", "", err
+	}
+	return segment[:dot], format, nil
+}
+
+// IsSizeConversion reports whether a conversion segment uses the legacy
+// WIDTHxHEIGHT.ext syntax.
+func IsSizeConversion(segment string) bool {
+	stem, _, err := splitConversionSegment(segment)
+	return err == nil && isSizeName(stem)
+}
+
+func isSizeName(name string) bool {
+	width, height, ok := strings.Cut(name, "x")
+	if !ok {
+		return false
+	}
+	if _, err := strconv.Atoi(width); err != nil {
+		return false
+	}
+	if _, err := strconv.Atoi(height); err != nil {
+		return false
+	}
+	return true
 }

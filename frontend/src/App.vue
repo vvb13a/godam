@@ -10,7 +10,9 @@ import AppSidebar from './components/AppSidebar.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import LibraryBackupDialog from './components/LibraryBackupDialog.vue'
 import LibraryUploadSettingsDialog from './components/LibraryUploadSettingsDialog.vue'
+import PresetsDialog from './components/PresetsDialog.vue'
 import TagsDialog from './components/TagsDialog.vue'
+import WarmPresetsProgress from './components/WarmPresetsProgress.vue'
 import UploadDialog from './components/UploadDialog.vue'
 import { auth } from './lib/auth'
 import { commandMenu } from './lib/command'
@@ -224,6 +226,8 @@ onBeforeUnmount(() => {
       <UploadDialog />
       <CommandPalette />
       <TagsDialog />
+      <PresetsDialog />
+      <WarmPresetsProgress />
       <LibraryUploadSettingsDialog />
       <LibraryBackupDialog />
     </template>

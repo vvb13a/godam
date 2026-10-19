@@ -38,6 +38,8 @@ type AssetColor struct {
 type AssetFilter struct {
 	CollectionIDs  []string
 	TagIDs         []string
+	PresetID       string
+	PresetExclude  bool
 	Uncategorized  bool
 	Untagged       bool
 	Search         string

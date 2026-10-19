@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import CommandMenu from 'primevue/commandmenu'
 import type { CommandMenuItem } from 'primevue/commandmenu'
+import ConfirmDialog from 'primevue/confirmdialog'
 import Dialog from 'primevue/dialog'
+import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 import {
   CloudUpload,
@@ -25,9 +27,11 @@ import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import * as api from '../api/client'
 import { logout } from '../lib/auth'
 import { openBackupSettings } from '../lib/backupSettings'
+import { notifyConversionCacheChanged } from '../lib/conversionCache'
 import { commandMenu } from '../lib/command'
-import { library, notifyLibraryChanged } from '../lib/library'
+import { library, loadStats, notifyLibraryChanged } from '../lib/library'
 import { libraryColorHex } from '../lib/libraryColors'
+import { openPresetsDialog } from '../lib/presetsDialog'
 import { SIDEBAR_TOGGLES, sidebarPrefs } from '../lib/sidebar'
 import { clearSmartSelection, selectSmartCollection } from '../lib/smartSelection'
 import { openTagsDialog } from '../lib/tagsDialog'
@@ -53,6 +57,7 @@ interface PaletteGroup extends CommandMenuItem {
 const router = useRouter()
 const route = useRoute()
 const toast = useToast()
+const confirm = useConfirm()
 
 const commandRef = ref<{ $el?: HTMLElement } | null>(null)
 const scope = ref<Scope>('all')
@@ -174,6 +179,27 @@ async function createSmartCollection(name: string): Promise<void> {
   }
 }
 
+async function purgeCache(): Promise<void> {
+  try {
+    const result = await api.purgeConversions()
+    notifyConversionCacheChanged()
+    await loadStats()
+    toast.add({
+      severity: 'success',
+      summary: 'Conversion cache purged',
+      detail: `${result.removed} file${result.removed === 1 ? '' : 's'} removed`,
+      life: 3000,
+    })
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: 'Could not purge the conversion cache',
+      detail: e instanceof Error ? e.message : String(e),
+      life: 4000,
+    })
+  }
+}
+
 const groups = computed<PaletteGroup[]>(() => {
   const commands: PaletteItem[] = []
   const term = search.value.trim()
@@ -193,6 +219,34 @@ const groups = computed<PaletteGroup[]>(() => {
       command: () => {
         close()
         openTagsDialog()
+      },
+    },
+    {
+      label: 'Manage image presets',
+      icon: Images,
+      keywords: ['presets', 'imgproxy', 'conversions', 'image', 'manipulations'],
+      command: () => {
+        close()
+        openPresetsDialog()
+      },
+    },
+    {
+      label: 'Purge conversion cache',
+      icon: Trash,
+      keywords: ['cache', 'purge', 'conversions', 'clean', 'delete'],
+      command: () => {
+        close()
+        confirm.require({
+          group: 'cache',
+          header: 'Purge conversion cache?',
+          message:
+            'Every generated conversion will be deleted. Originals and preset definitions are kept.',
+          acceptLabel: 'Purge',
+          rejectLabel: 'Cancel',
+          acceptProps: { severity: 'danger' },
+          rejectProps: { text: true },
+          accept: () => void purgeCache(),
+        })
       },
     },
     {
@@ -472,4 +526,5 @@ const emptyFilterMessage = computed(() =>
       </CommandMenu>
     </div>
   </Dialog>
+  <ConfirmDialog group="cache" />
 </template>

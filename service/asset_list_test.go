@@ -498,3 +498,78 @@ func TestAssetListMultiValueAndRangeFilters(t *testing.T) {
 	modifiedAfter := base.Add(24 * time.Hour)
 	expect(domain.AssetFilter{ModifiedAfter: &modifiedAfter}, "a2", "a3")
 }
+
+func TestAssetListPresetFilter(t *testing.T) {
+	db := newTestDB(t)
+	assets := &AssetService{db: db}
+	ctx := context.Background()
+	base := time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC)
+
+	for _, id := range []string{"a1", "a2", "a3"} {
+		asset := store.Asset{
+			ID: id, Filename: id + ".jpg", MimeType: "image/jpeg", ByteSize: 1,
+			StorageDriver: "local", StorageKey: id, CreatedAt: base, UpdatedAt: base,
+		}
+		if err := db.Create(&asset).Error; err != nil {
+			t.Fatalf("create asset: %v", err)
+		}
+	}
+
+	collection, err := NewCollectionService(db).Create(ctx, nil, "Campaign", "", "")
+	if err != nil {
+		t.Fatalf("create collection: %v", err)
+	}
+	tag, err := NewTagService(db).GetOrCreate(ctx, "Needs thumbnail")
+	if err != nil {
+		t.Fatalf("create tag: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO asset_collections (asset_id, collection_id) VALUES (?, ?)`, "a1", collection.ID).Error; err != nil {
+		t.Fatalf("link collection: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO asset_tags (asset_id, tag_id) VALUES (?, ?)`, "a2", tag.ID).Error; err != nil {
+		t.Fatalf("link tag: %v", err)
+	}
+
+	presets := NewPresetService(db)
+	restricted, err := presets.Create(ctx, "user", "Restricted", "restricted", testPresetParameters(), false, []string{collection.ID}, []string{tag.ID})
+	if err != nil {
+		t.Fatalf("create preset: %v", err)
+	}
+
+	ids := func(filter domain.AssetFilter) []string {
+		t.Helper()
+		page, err := assets.List(ctx, filter)
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		out := make([]string, 0, len(page.Items))
+		for _, asset := range page.Items {
+			out = append(out, asset.ID)
+		}
+		return out
+	}
+	assertIDs := func(got []string, want ...string) {
+		t.Helper()
+		if len(got) != len(want) {
+			t.Fatalf("ids = %v, want %v", got, want)
+		}
+		seen := map[string]bool{}
+		for _, id := range got {
+			seen[id] = true
+		}
+		for _, id := range want {
+			if !seen[id] {
+				t.Fatalf("ids = %v, want %v", got, want)
+			}
+		}
+	}
+
+	assertIDs(ids(domain.AssetFilter{PresetID: restricted.ID, Sort: "name-asc"}), "a1", "a2")
+	assertIDs(ids(domain.AssetFilter{PresetID: restricted.ID, PresetExclude: true, Sort: "name-asc"}), "a3")
+
+	global, err := presets.Create(ctx, "user", "Global", "global", testPresetParameters(), true, nil, nil)
+	if err != nil {
+		t.Fatalf("create global preset: %v", err)
+	}
+	assertIDs(ids(domain.AssetFilter{PresetID: global.ID, Sort: "name-asc"}), "a1", "a2", "a3")
+}

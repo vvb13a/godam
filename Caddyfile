@@ -11,7 +11,10 @@
 	handle /internal/* {
 		respond 404
 	}
-	reverse_proxy {$GODAM_APP_UPSTREAM:godam:8080}
+	reverse_proxy {$GODAM_APP_UPSTREAM:godam:8080} {
+		# Preset warm-up streams progress over SSE; don't buffer it.
+		flush_interval -1
+	}
 }
 
 # Public conversion origin. Caddy serves cached conversions from the shared

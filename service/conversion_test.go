@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"image"
 	"image/png"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/vvb13a/godam/domain"
 	"github.com/vvb13a/godam/storage"
 	"github.com/vvb13a/godam/store"
 )
@@ -64,7 +66,8 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("conversion store: %v", err)
 	}
-	svc := NewConversionService(assets, proxy, conversions)
+	presets := NewPresetService(db)
+	svc := NewConversionService(assets, presets, proxy, conversions)
 
 	spec, err := ParseConversionSpec("100x50.webp")
 	if err != nil {
@@ -121,5 +124,103 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 	}
 	if list[1].Key != spec.Key(asset.ID) {
 		t.Fatalf("second conversion = %+v", list[1])
+	}
+
+	preset, err := presets.Create(ctx, "user", "Thumb", "thumb", domain.PresetParameters{
+		Format: "webp",
+		Options: []domain.PresetOption{
+			{Name: "resize", Args: []string{"fit", "200", "0"}},
+			{Name: "quality", Args: []string{"82"}},
+		},
+	}, true, nil, nil)
+	if err != nil {
+		t.Fatalf("create preset: %v", err)
+	}
+	_ = preset
+
+	presetResult, err := svc.ConvertPreset(ctx, asset.ID, "thumb.webp")
+	if err != nil {
+		t.Fatalf("convert preset: %v", err)
+	}
+	presetData, err := io.ReadAll(presetResult.Reader)
+	_ = presetResult.Reader.Close()
+	if err != nil || string(presetData) != "webp-bytes" {
+		t.Fatalf("preset result = %q err=%v", presetData, err)
+	}
+	if presetResult.Key != asset.ID+"/thumb.webp" {
+		t.Fatalf("preset key = %q", presetResult.Key)
+	}
+	if _, err := svc.ConvertPreset(ctx, asset.ID, "thumb.png"); err == nil {
+		t.Fatal("expected preset format mismatch to fail")
+	}
+
+	other, err := NewCollectionService(db).Create(ctx, nil, "Other", "", "")
+	if err != nil {
+		t.Fatalf("create other collection: %v", err)
+	}
+	if _, err := presets.Create(ctx, "user", "Restricted", "restricted", domain.PresetParameters{
+		Format: "webp",
+		Options: []domain.PresetOption{
+			{Name: "resize", Args: []string{"fit", "100", "0"}},
+		},
+	}, false, []string{other.ID}, nil); err != nil {
+		t.Fatalf("create restricted preset: %v", err)
+	}
+	if _, err := svc.ConvertPreset(ctx, asset.ID, "restricted.webp"); !errors.Is(err, ErrPresetNotAllowed) {
+		t.Fatalf("expected restricted preset to be denied, got %v", err)
+	}
+
+	beforePreview, err := svc.List(ctx, asset.ID)
+	if err != nil {
+		t.Fatalf("list before preview: %v", err)
+	}
+	preview, contentType, err := svc.Preview(ctx, asset.ID, domain.PresetParameters{
+		Format: "webp",
+		Options: []domain.PresetOption{
+			{Name: "resize", Args: []string{"fit", "50", "50"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	previewData, err := io.ReadAll(preview)
+	_ = preview.Close()
+	if err != nil || string(previewData) != "webp-bytes" || contentType != "image/webp" {
+		t.Fatalf("preview = %q type=%q err=%v", previewData, contentType, err)
+	}
+	afterPreview, err := svc.List(ctx, asset.ID)
+	if err != nil {
+		t.Fatalf("list after preview: %v", err)
+	}
+	if len(afterPreview) != len(beforePreview) {
+		t.Fatalf("preview should not be cached: before=%d after=%d", len(beforePreview), len(afterPreview))
+	}
+
+	signedSegment, err := proxy.SignRequest(asset.ID, "webp", "rs:fit:300:0")
+	if err != nil {
+		t.Fatalf("sign request: %v", err)
+	}
+	signedResult, err := svc.ConvertSigned(ctx, asset.ID, signedSegment)
+	if err != nil {
+		t.Fatalf("convert signed: %v", err)
+	}
+	signedData, err := io.ReadAll(signedResult.Reader)
+	_ = signedResult.Reader.Close()
+	if err != nil || string(signedData) != "webp-bytes" {
+		t.Fatalf("signed result = %q err=%v", signedData, err)
+	}
+
+	list, err = svc.List(ctx, asset.ID)
+	if err != nil {
+		t.Fatalf("list conversions after presets: %v", err)
+	}
+	var foundPreset bool
+	for _, conversion := range list {
+		if conversion.Kind == "preset" && conversion.Preset == "thumb" && conversion.Label == "Thumb" {
+			foundPreset = true
+		}
+	}
+	if !foundPreset {
+		t.Fatalf("preset conversion missing from list: %+v", list)
 	}
 }

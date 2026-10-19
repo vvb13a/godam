@@ -2,9 +2,12 @@ import type {
   Asset,
   Collection,
   Conversion,
+  ImgProxyCatalog,
   Library,
   LibraryBackup,
   LibraryBackupStatus,
+  Preset,
+  PresetParameters,
   SmartCollection,
   SmartCollectionFilter,
   Stats,
@@ -184,6 +187,8 @@ export interface AssetListParams {
   tagIds?: string[]
   uncategorized?: boolean
   untagged?: boolean
+  presetId?: string
+  presetExclude?: boolean
   search?: string
   types?: string[]
   colors?: string[]
@@ -224,6 +229,8 @@ export function listAssets(params: AssetListParams): Promise<AssetPage> {
   if (params.tagIds?.length) query.set('tag_ids', params.tagIds.join(','))
   if (params.uncategorized) query.set('uncategorized', 'true')
   if (params.untagged) query.set('untagged', 'true')
+  if (params.presetId) query.set('preset_id', params.presetId)
+  if (params.presetExclude) query.set('preset_exclude', 'true')
   if (params.search) query.set('search', params.search)
   if (params.types?.length) query.set('types', params.types.join(','))
   if (params.colors?.length) query.set('colors', params.colors.join(','))
@@ -285,6 +292,97 @@ export function listAssetConversions(id: string): Promise<Conversion[]> {
   return getJSON<Conversion[]>(
     `/api/assets/${encodeURIComponent(id)}/conversions`,
   )
+}
+
+// purgeConversions removes every generated conversion from the cache.
+export function purgeConversions(): Promise<{ removed: number }> {
+  return requestJSON<{ removed: number }>('/api/conversions/purge', {
+    method: 'POST',
+  })
+}
+
+// ---- Image presets ----
+
+export function listPresets(): Promise<Preset[]> {
+  return getJSON<Preset[]>('/api/presets')
+}
+
+export function getPresetCatalog(): Promise<ImgProxyCatalog> {
+  return getJSON<ImgProxyCatalog>('/api/presets/catalog')
+}
+
+export interface PresetInput {
+  label: string
+  name: string
+  parameters: PresetParameters
+  library_wide: boolean
+  collection_ids: string[]
+  tag_ids: string[]
+}
+
+export function createPreset(input: PresetInput): Promise<Preset> {
+  return sendJSON<Preset>('/api/presets', 'POST', input)
+}
+
+export function updatePreset(
+  id: string,
+  input: PresetInput,
+): Promise<Preset> {
+  return sendJSON<Preset>(
+    `/api/presets/${encodeURIComponent(id)}`,
+    'PUT',
+    input,
+  )
+}
+
+export function deletePreset(id: string): Promise<void> {
+  return requestVoid(`/api/presets/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+}
+
+// previewPreset renders unsaved preset parameters for one asset. The response
+// is an image blob and is never written to the conversion cache.
+export async function previewPreset(
+  assetId: string,
+  parameters: PresetParameters,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const res = await fetch(
+    `/api/assets/${encodeURIComponent(assetId)}/preset-preview`,
+    {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(parameters),
+      signal,
+    },
+  )
+  await ensureOk(res)
+  const blob = await res.blob()
+  if (!blob.size) {
+    throw new Error('Preview returned an empty image')
+  }
+  return blob
+}
+
+export interface SignedImgproxyRequest {
+  url: string
+  segment: string
+}
+
+// signImgproxy signs an ad-hoc imgproxy processing pipeline for an asset. The
+// returned URL writes through the same conversion cache as named presets.
+export function signImgproxy(
+  assetId: string,
+  format: string,
+  processing: string,
+): Promise<SignedImgproxyRequest> {
+  return sendJSON<SignedImgproxyRequest>('/api/imgproxy/sign', 'POST', {
+    asset_id: assetId,
+    format,
+    processing,
+  })
 }
 
 export function deleteAsset(id: string): Promise<void> {

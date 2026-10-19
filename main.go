@@ -26,6 +26,7 @@ var (
 	appConfig              *service.Config
 	assetService           *service.AssetService
 	conversionService      *service.ConversionService
+	presetService          *service.PresetService
 	collectionService      *service.CollectionService
 	smartCollectionService *service.SmartCollectionService
 	tagService             *service.TagService
@@ -47,6 +48,8 @@ func main() {
 	runServer(addr, api.Deps{
 		Assets:           assetService,
 		Conversions:      conversionService,
+		Presets:          presetService,
+		AssetsBaseURL:    appConfig.AssetsBaseURL(),
 		Collections:      collectionService,
 		SmartCollections: smartCollectionService,
 		Tags:             tagService,
@@ -136,7 +139,8 @@ func initDependencies() {
 	tagGroupService = service.NewTagGroupService(db)
 	collectionService = service.NewCollectionService(db)
 	smartCollectionService = service.NewSmartCollectionService(db)
-	statsService = service.NewStatsService(db)
+	presetService = service.NewPresetService(db)
+	statsService = service.NewStatsService(db, conversionStore)
 	userService = service.NewUserService(db)
 	if err := userService.Load(context.Background()); err != nil {
 		log.Printf("warning: could not prime user session cache: %v", err)
@@ -157,7 +161,7 @@ func initDependencies() {
 		tagService,
 		backupService,
 	)
-	conversionService = service.NewConversionService(assetService, proxy, conversionStore)
+	conversionService = service.NewConversionService(assetService, presetService, proxy, conversionStore)
 	instanceService = service.NewInstanceService(db, assetService)
 	instanceName := os.Getenv("GODAM_LIBRARY_NAME")
 	if instanceName == "" {
