@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -100,5 +101,25 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 	}
 	if got := conversions.URL(spec.Key(asset.ID)); got != "https://assets.example.com/"+spec.Key(asset.ID) {
 		t.Fatalf("url = %q", got)
+	}
+
+	if err := conversions.Save(ctx, asset.ID+"/10x10.png", strings.NewReader("x")); err != nil {
+		t.Fatalf("save second conversion: %v", err)
+	}
+	list, err := svc.List(ctx, asset.ID)
+	if err != nil {
+		t.Fatalf("list conversions: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("conversions = %+v", list)
+	}
+	if list[0].Width != 10 || list[0].Height != 10 || list[0].Format != "png" || list[0].ByteSize != 1 {
+		t.Fatalf("smallest conversion = %+v", list[0])
+	}
+	if list[0].URL != "https://assets.example.com/"+list[0].Key {
+		t.Fatalf("smallest URL = %q", list[0].URL)
+	}
+	if list[1].Key != spec.Key(asset.ID) {
+		t.Fatalf("second conversion = %+v", list[1])
 	}
 }

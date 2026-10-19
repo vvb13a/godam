@@ -7,9 +7,12 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"path"
+	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/vvb13a/godam/domain"
 	"github.com/vvb13a/godam/storage"
 )
 
@@ -160,4 +163,51 @@ func (s *ConversionService) Convert(ctx context.Context, assetID string, spec Co
 		ContentType: spec.ContentType(),
 		Key:         key,
 	}, nil
+}
+
+// List returns every conversion currently stored for an asset, ordered by file
+// size (smallest first). Files that do not match the conversion key format are
+// ignored.
+func (s *ConversionService) List(ctx context.Context, assetID string) ([]domain.Conversion, error) {
+	asset, err := s.assets.GetByID(ctx, assetID)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.HasPrefix(asset.MimeType, "image/") {
+		return nil, fmt.Errorf("%w: %s", ErrNotImage, asset.MimeType)
+	}
+
+	entries, err := s.store.List(ctx, assetID)
+	if err != nil {
+		return nil, err
+	}
+
+	conversions := make([]domain.Conversion, 0, len(entries))
+	for _, entry := range entries {
+		spec, err := ParseConversionSpec(path.Base(entry.Key))
+		if err != nil {
+			continue
+		}
+		url := s.store.URL(entry.Key)
+		if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+			url = ""
+		}
+		conversions = append(conversions, domain.Conversion{
+			Key:        entry.Key,
+			URL:        url,
+			Width:      spec.Width,
+			Height:     spec.Height,
+			Format:     spec.Format,
+			ByteSize:   entry.ByteSize,
+			ModifiedAt: entry.ModifiedAt,
+		})
+	}
+
+	sort.Slice(conversions, func(i, j int) bool {
+		if conversions[i].ByteSize == conversions[j].ByteSize {
+			return conversions[i].Key < conversions[j].Key
+		}
+		return conversions[i].ByteSize < conversions[j].ByteSize
+	})
+	return conversions, nil
 }

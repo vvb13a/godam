@@ -34,6 +34,21 @@ func (s *Server) handleConversion(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, result.Reader)
 }
 
+// handleListConversions returns the stored conversions for an asset, sorted by
+// size by the service. This is an authenticated library route.
+func (s *Server) handleListConversions(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := s.ownedAsset(w, r, id); !ok {
+		return
+	}
+	conversions, err := s.deps.Conversions.List(r.Context(), id)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, conversions)
+}
+
 // handleConversionSource streams an original asset to imgproxy. It is
 // registered outside the user-auth boundary on purpose: imgproxy fetches it
 // over the internal network, and Caddy blocks /internal/* on the public site.

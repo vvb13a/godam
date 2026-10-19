@@ -30,6 +30,27 @@ func TestLocalConversions(t *testing.T) {
 	if got := store.URL("asset/800x600.jpg"); got != "https://assets.example.com/asset/800x600.jpg" {
 		t.Fatalf("url = %q", got)
 	}
+
+	if err := store.Save(ctx, "asset/10x10.png", strings.NewReader("x")); err != nil {
+		t.Fatalf("save second: %v", err)
+	}
+	entries, err := store.List(ctx, "asset")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("entries = %+v", entries)
+	}
+	if entries[0].Key != "asset/10x10.png" || entries[0].ByteSize != 1 {
+		t.Fatalf("first entry = %+v", entries[0])
+	}
+	if entries[1].Key != "asset/800x600.jpg" || entries[1].ByteSize != int64(len("jpeg-bytes")) {
+		t.Fatalf("second entry = %+v", entries[1])
+	}
+	if missing, err := store.List(ctx, "missing"); err != nil || missing != nil {
+		t.Fatalf("missing prefix = %+v err=%v", missing, err)
+	}
+
 	if err := store.Delete(ctx, "asset/800x600.jpg"); err != nil {
 		t.Fatalf("delete: %v", err)
 	}

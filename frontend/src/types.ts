@@ -110,6 +110,16 @@ export interface Asset {
   updated_at: string
 }
 
+export interface Conversion {
+  key: string
+  url: string
+  width: number
+  height: number
+  format: string
+  byte_size: number
+  modified_at: string
+}
+
 export interface TypeCount {
   mime_type: string
   count: number

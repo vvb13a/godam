@@ -1,6 +1,7 @@
 import type {
   Asset,
   Collection,
+  Conversion,
   Library,
   LibraryBackup,
   LibraryBackupStatus,
@@ -276,6 +277,14 @@ export async function listAllAssets(
 
 export function getAsset(id: string): Promise<Asset> {
   return getJSON<Asset>(`/api/assets/${encodeURIComponent(id)}`)
+}
+
+// listAssetConversions returns the conversions currently stored for an asset,
+// already sorted by file size by the server.
+export function listAssetConversions(id: string): Promise<Conversion[]> {
+  return getJSON<Conversion[]>(
+    `/api/assets/${encodeURIComponent(id)}/conversions`,
+  )
 }
 
 export function deleteAsset(id: string): Promise<void> {

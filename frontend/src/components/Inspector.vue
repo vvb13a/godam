@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import Message from 'primevue/message'
-import { Plus, Times } from '@primeicons/vue'
+import { Plus, Refresh, Times } from '@primeicons/vue'
 import { computed, ref, watch } from 'vue'
 import * as api from '../api/client'
 import { formatDateTime, formatDuration, formatRelative, formatSize } from '../lib/format'
 import { library } from '../lib/library'
 import { libraryColorHex } from '../lib/libraryColors'
 import { openAssetTags } from '../lib/tagsDialog'
-import type { Asset, Tag } from '../types'
+import type { Asset, Conversion, Tag } from '../types'
 import TagBadge from './TagBadge.vue'
 
 const props = defineProps<{ asset: Asset }>()
@@ -16,6 +16,12 @@ const emit = defineEmits<{ close: []; changed: [asset: Asset] }>()
 const busy = ref(false)
 const error = ref<string | null>(null)
 const previewFailed = ref(false)
+
+const conversions = ref<Conversion[]>([])
+const conversionsLoading = ref(false)
+const conversionsError = ref<string | null>(null)
+let conversionsRequest = 0
+let conversionsAssetID = ''
 
 const title = ref('')
 const note = ref('')
@@ -75,8 +81,56 @@ watch(
   { immediate: true },
 )
 
+// Conversions are derived files, so refresh the list when the selected asset
+// changes or its content is replaced (updated_at moves).
+watch(
+  () => [props.asset.id, props.asset.updated_at] as const,
+  ([id]) => {
+    if (id !== conversionsAssetID) {
+      conversionsAssetID = id
+      conversions.value = []
+    }
+    conversionsError.value = null
+    if (props.asset.mime_type.startsWith('image/')) {
+      void loadConversions(id)
+    } else {
+      conversionsRequest++
+      conversionsLoading.value = false
+      conversions.value = []
+    }
+  },
+  { immediate: true },
+)
+
 function toMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
+}
+
+async function loadConversions(id: string): Promise<void> {
+  const request = ++conversionsRequest
+  conversionsLoading.value = true
+  conversionsError.value = null
+  try {
+    const list = await api.listAssetConversions(id)
+    if (request === conversionsRequest) {
+      conversions.value = list
+    }
+  } catch (e) {
+    if (request === conversionsRequest) {
+      conversions.value = []
+      conversionsError.value = toMessage(e)
+    }
+  } finally {
+    if (request === conversionsRequest) {
+      conversionsLoading.value = false
+    }
+  }
+}
+
+function conversionLabel(conversion: Conversion): string {
+  const width = conversion.width || 'auto'
+  const height = conversion.height || 'auto'
+  return `${width} × ${height} · ${conversion.format.toUpperCase()}`
 }
 
 function tagColor(tag: Tag): string | undefined {
@@ -230,6 +284,67 @@ function removeCollection(collectionId: string): void {
             </span>
             <span class="ml-auto shrink-0 text-slate-400">
               {{ color.percentage.toFixed(1) }}%
+            </span>
+          </li>
+        </ul>
+      </section>
+
+      <section v-if="asset.mime_type.startsWith('image/')">
+        <div class="mb-2 flex items-center justify-between gap-2">
+          <h3 class="text-sm font-semibold">Conversions</h3>
+          <div class="flex items-center gap-2">
+            <span v-if="conversionsLoading" class="text-xs text-slate-400">
+              Loading…
+            </span>
+            <span
+              v-else-if="conversions.length"
+              class="text-xs text-slate-400"
+            >
+              {{ conversions.length }}
+            </span>
+            <button
+              class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
+              title="Refresh conversions"
+              :disabled="conversionsLoading"
+              @click="loadConversions(asset.id)"
+            >
+              <Refresh :size="14" />
+            </button>
+          </div>
+        </div>
+        <p
+          v-if="conversionsError"
+          class="text-xs text-red-600 dark:text-red-400"
+        >
+          {{ conversionsError }}
+        </p>
+        <p
+          v-else-if="!conversionsLoading && !conversions.length"
+          class="text-xs text-slate-400"
+        >
+          No conversions yet
+        </p>
+        <ul v-if="conversions.length" class="space-y-1.5 text-sm">
+          <li
+            v-for="conversion in conversions"
+            :key="conversion.key"
+            class="flex items-center justify-between gap-3"
+          >
+            <a
+              v-if="conversion.url"
+              :href="conversion.url"
+              target="_blank"
+              rel="noopener"
+              :title="conversion.url"
+              class="min-w-0 truncate text-violet-600 hover:underline dark:text-violet-400"
+            >
+              {{ conversionLabel(conversion) }}
+            </a>
+            <span v-else class="min-w-0 truncate">
+              {{ conversionLabel(conversion) }}
+            </span>
+            <span class="shrink-0 text-xs text-slate-400">
+              {{ formatSize(conversion.byte_size) }}
             </span>
           </li>
         </ul>

@@ -97,6 +97,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/assets/{id}", s.handleUpdateAsset)
 	s.mux.HandleFunc("DELETE /api/assets/{id}", s.handleDeleteAsset)
 	s.mux.HandleFunc("GET /api/assets/{id}/content", s.handleAssetContent)
+	s.mux.HandleFunc("GET /api/assets/{id}/conversions", s.handleListConversions)
 	s.mux.HandleFunc("PUT /api/assets/{id}/content", s.handleReplaceAssetContent)
 	s.mux.HandleFunc("GET /api/assets/{id}/preview", s.handleAssetPreview)
 	s.mux.HandleFunc("POST /api/assets/{id}/preview", s.handleRegeneratePreview)

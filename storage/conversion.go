@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // ConversionStore persists rendered conversions. Implementations can write to
@@ -17,7 +19,15 @@ type ConversionStore interface {
 	Save(ctx context.Context, key string, r io.Reader) error
 	Open(ctx context.Context, key string) (io.ReadCloser, error)
 	Delete(ctx context.Context, key string) error
+	List(ctx context.Context, prefix string) ([]ConversionEntry, error)
 	URL(key string) string
+}
+
+// ConversionEntry describes one stored conversion file.
+type ConversionEntry struct {
+	Key        string
+	ByteSize   int64
+	ModifiedAt time.Time
 }
 
 // LocalConversions stores conversions on the local filesystem under a base
@@ -103,6 +113,39 @@ func (s *LocalConversions) Delete(_ context.Context, key string) error {
 		return nil
 	}
 	return err
+}
+
+// List returns the conversions stored under prefix (an asset id). A missing
+// prefix is not an error; it simply has no conversions yet.
+func (s *LocalConversions) List(_ context.Context, prefix string) ([]ConversionEntry, error) {
+	dir, err := s.path(prefix)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]ConversionEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		out = append(out, ConversionEntry{
+			Key:        path.Join(prefix, entry.Name()),
+			ByteSize:   info.Size(),
+			ModifiedAt: info.ModTime(),
+		})
+	}
+	return out, nil
 }
 
 func (s *LocalConversions) URL(key string) string {
