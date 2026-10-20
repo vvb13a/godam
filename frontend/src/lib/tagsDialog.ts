@@ -11,12 +11,14 @@ export const tagsDialog = reactive({
   assetId: null as string | null,
   assetIds: [] as string[],
   mode: null as TagAssetMode | null,
+  upload: false,
 })
 
 export function openTagsDialog(): void {
   tagsDialog.assetId = null
   tagsDialog.assetIds = []
   tagsDialog.mode = null
+  tagsDialog.upload = false
   tagsDialog.visible = true
 }
 
@@ -24,6 +26,7 @@ export function openAssetTags(assetId: string): void {
   tagsDialog.assetId = assetId
   tagsDialog.assetIds = []
   tagsDialog.mode = null
+  tagsDialog.upload = false
   tagsDialog.visible = true
 }
 
@@ -34,5 +37,16 @@ export function openBulkAssetTags(
   tagsDialog.assetId = null
   tagsDialog.assetIds = [...assetIds]
   tagsDialog.mode = mode
+  tagsDialog.upload = false
+  tagsDialog.visible = true
+}
+
+// openUploadTags reuses the tag manager as a picker for assets that are still
+// staged in the upload dialog.
+export function openUploadTags(): void {
+  tagsDialog.assetId = null
+  tagsDialog.assetIds = []
+  tagsDialog.mode = null
+  tagsDialog.upload = true
   tagsDialog.visible = true
 }

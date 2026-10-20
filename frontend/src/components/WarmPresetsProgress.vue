@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Times } from '@primeicons/vue'
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, watch } from 'vue'
 import {
   cancelWarm,
   dismissWarm,
@@ -13,6 +13,28 @@ const percent = computed(() => {
     100,
     Math.round((warmProgress.done / warmProgress.totalConversions) * 100),
   )
+})
+
+let closeTimer: number | undefined
+
+watch(
+  () => warmProgress.finished,
+  (finished) => {
+    if (closeTimer !== undefined) {
+      window.clearTimeout(closeTimer)
+      closeTimer = undefined
+    }
+    if (!finished) return
+    closeTimer = window.setTimeout(() => {
+      closeTimer = undefined
+      dismissWarm()
+    }, 3000)
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(() => {
+  if (closeTimer !== undefined) window.clearTimeout(closeTimer)
 })
 </script>
 
@@ -38,9 +60,10 @@ const percent = computed(() => {
         </p>
       </div>
       <button
+        v-if="warmProgress.active"
         class="shrink-0 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
         title="Cancel"
-        @click="warmProgress.active ? cancelWarm() : dismissWarm()"
+        @click="cancelWarm"
       >
         <Times :size="14" />
       </button>
@@ -69,13 +92,5 @@ const percent = computed(() => {
       </li>
     </ul>
 
-    <div v-if="warmProgress.finished" class="mt-3 flex justify-end">
-      <button
-        class="rounded bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-        @click="dismissWarm"
-      >
-        Close
-      </button>
-    </div>
   </div>
 </template>

@@ -27,9 +27,13 @@ const name = ref('')
 const description = ref('')
 
 const count = computed(() => props.total ?? props.assets.length)
-const countLabel = computed(
-  () => `${count.value}${props.totalCapped ? '+' : ''}`,
-)
+const countLabel = computed(() => {
+  const loaded = props.assets.length
+  if (!count.value) return '0'
+  const totalLabel = `${count.value}${props.totalCapped ? '+' : ''}`
+  if (!props.totalCapped && loaded >= count.value) return totalLabel
+  return `${loaded} of ${totalLabel}`
+})
 
 function tagColor(tag?: Tag): string {
   if (!tag?.group_id) return '#94a3b8'
@@ -174,7 +178,7 @@ function setColor(color: string): void {
         <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-300">{{ subject.kind }}</h3>
       </div>
 
-      <AssetPreviewGrid :assets="assets" />
+      <AssetPreviewGrid :assets="assets" :total="count" />
 
       <section class="space-y-3">
         <div>

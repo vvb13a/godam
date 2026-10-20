@@ -3,7 +3,9 @@ import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import * as api from '../api/client'
 import type { CardShape } from '../lib/display'
 import { formatDuration, formatSize } from '../lib/format'
+import { hasMediaPreview } from '../lib/mimeTypes'
 import type { Asset } from '../types'
+import FileTypePreview from './FileTypePreview.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -55,6 +57,7 @@ let hoverTimer: number | null = null
 let seeking = false
 const HOVER_DELAY = 700
 
+const useTypePreview = computed(() => !hasMediaPreview(props.asset.mime_type))
 const isAudio = computed(() => props.asset.mime_type.startsWith('audio/'))
 const isVideo = computed(() => props.asset.mime_type.startsWith('video/'))
 const progress = computed(() =>
@@ -239,8 +242,13 @@ const extensionClass =
     @dragend="$emit('dragend')"
   >
     <div :class="mediaClass" :style="mediaStyle">
+      <FileTypePreview
+        v-if="useTypePreview"
+        :mime-type="asset.mime_type"
+        :filename="asset.filename"
+      />
       <img
-        v-if="!imageFailed"
+        v-else-if="!imageFailed"
         :src="api.assetPreviewUrl(asset.id, asset.updated_at)"
         :alt="asset.filename"
         loading="lazy"
@@ -249,12 +257,11 @@ const extensionClass =
         @load="onImageLoad"
         @error="imageFailed = true"
       />
-      <div
+      <FileTypePreview
         v-else
-        class="flex h-full w-full items-center justify-center text-xs text-slate-400"
-      >
-        No preview
-      </div>
+        :mime-type="asset.mime_type"
+        :filename="asset.filename"
+      />
 
       <video
         v-if="playing && isVideo"

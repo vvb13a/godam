@@ -110,3 +110,17 @@ export function isTextMime(mime: string): boolean {
     mime === 'application/javascript'
   )
 }
+
+// Asset types for which the backend produces a real visual preview (image,
+// audio waveform, video frame, or PDF first page). Everything else uses the
+// app's default file-type artwork instead.
+export function hasMediaPreview(mime: string): boolean {
+  const clean = mime.split(';')[0].trim().toLowerCase()
+  return (
+    clean.startsWith('image/') ||
+    clean.startsWith('audio/') ||
+    clean === 'application/ogg' ||
+    clean.startsWith('video/') ||
+    clean === 'application/pdf'
+  )
+}

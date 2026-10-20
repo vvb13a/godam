@@ -2,6 +2,7 @@ package api
 
 import (
 	"archive/zip"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/vvb13a/godam/domain"
+	"github.com/vvb13a/godam/service"
 )
 
 // handleListAssets returns one cursor-paginated slice of assets. Search matches
@@ -149,6 +151,7 @@ func (s *Server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid upload"})
 		return
 	}
+	defer r.MultipartForm.RemoveAll()
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing file"})
@@ -172,26 +175,84 @@ func (s *Server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, asset)
 }
 
-type importRequest struct {
-	Source string `json:"source"`
+type startUploadRequest struct {
+	Driver   string `json:"driver"`
+	Filename string `json:"filename"`
+	MimeType string `json:"mime_type"`
+	Size     int64  `json:"size"`
 }
 
-// handleImportAsset pulls an asset from a local path or an http(s) URL.
-func (s *Server) handleImportAsset(w http.ResponseWriter, r *http.Request) {
-	var req importRequest
+// handleStartUpload opens a resumable upload session for a large file. The
+// client sends sequential chunks to the returned session id and then completes
+// the upload.
+func (s *Server) handleStartUpload(w http.ResponseWriter, r *http.Request) {
+	var req startUploadRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if req.Source == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "source is required"})
+	session, err := s.deps.Assets.StartUpload(
+		r.Context(),
+		currentUser(r).ID,
+		req.Driver,
+		req.Filename,
+		req.MimeType,
+		req.Size,
+	)
+	if err != nil {
+		writeError(w, err)
 		return
 	}
-	asset, err := s.deps.Assets.UploadFromSource(r.Context(), currentUser(r).ID, req.Source, nil)
+	writeJSON(w, http.StatusCreated, session)
+}
+
+// handleUploadChunk appends one raw chunk at the given byte offset.
+func (s *Server) handleUploadChunk(w http.ResponseWriter, r *http.Request) {
+	offset, err := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 64)
+	if err != nil || offset < 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid chunk offset"})
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, service.UploadChunkSize+1)
+
+	written, err := s.deps.Assets.WriteUploadChunk(
+		r.Context(),
+		r.PathValue("id"),
+		currentUser(r).ID,
+		offset,
+		r.Body,
+	)
+	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "upload chunk is too large"})
+			return
+		}
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{
+		"received": written,
+		"offset":   offset + written,
+	})
+}
+
+// handleCompleteUpload validates the assembled file and creates the asset.
+func (s *Server) handleCompleteUpload(w http.ResponseWriter, r *http.Request) {
+	asset, err := s.deps.Assets.CompleteUpload(r.Context(), r.PathValue("id"), currentUser(r).ID)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, asset)
+}
+
+// handleCancelUpload discards an in-progress upload.
+func (s *Server) handleCancelUpload(w http.ResponseWriter, r *http.Request) {
+	if err := s.deps.Assets.CancelUpload(r.PathValue("id"), currentUser(r).ID); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleDeleteAsset(w http.ResponseWriter, r *http.Request) {

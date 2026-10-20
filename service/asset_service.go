@@ -11,8 +11,6 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,26 +24,6 @@ import (
 	"golang.org/x/image/draw"
 	"gorm.io/gorm"
 )
-
-type ProgressCallback func(percent float64)
-
-type progressReader struct {
-	r        io.Reader
-	total    int64
-	read     int64
-	callback ProgressCallback
-}
-
-func (pr *progressReader) Read(p []byte) (int, error) {
-	n, err := pr.r.Read(p)
-	if n > 0 {
-		pr.read += int64(n)
-		if pr.callback != nil && pr.total > 0 {
-			pr.callback(float64(pr.read) / float64(pr.total))
-		}
-	}
-	return n, err
-}
 
 var (
 	ErrUnsupportedFormat = errors.New("file format not supported")
@@ -64,6 +42,7 @@ type AssetService struct {
 	previewGen *DefaultPreviewGenerator
 	tags       *TagService
 	backup     *BackupService
+	uploads    *uploadManager
 }
 
 func NewAssetService(
@@ -76,6 +55,10 @@ func NewAssetService(
 	tags *TagService,
 	backup *BackupService,
 ) *AssetService {
+	stagingDir := ""
+	if cfg != nil && cfg.StoragePath != "" {
+		stagingDir = filepath.Join(cfg.StoragePath, ".uploads")
+	}
 	return &AssetService{
 		cfg:        cfg,
 		db:         db,
@@ -85,6 +68,7 @@ func NewAssetService(
 		previewGen: previewGen,
 		tags:       tags,
 		backup:     backup,
+		uploads:    newUploadManager(stagingDir),
 	}
 }
 
@@ -515,10 +499,14 @@ func (s *AssetService) List(ctx context.Context, filter domain.AssetFilter) (*do
 }
 
 func (s *AssetService) colorsForData(mimeType string, data []byte) []domain.AssetColor {
+	return s.colorsForReader(mimeType, bytes.NewReader(data))
+}
+
+func (s *AssetService) colorsForReader(mimeType string, reader io.Reader) []domain.AssetColor {
 	if !strings.HasPrefix(mimeType, "image/") {
 		return nil
 	}
-	colors, _ := extractImageColors(data)
+	colors, _ := extractImageColorsReader(reader)
 	return colors
 }
 
@@ -639,84 +627,101 @@ func (s *AssetService) deletePreviews(ctx context.Context, id string) {
 	_ = s.local.Delete(ctx, fmt.Sprintf("previews/%s.png", id))
 }
 
-// UploadFromSource accepts either a local filesystem path or an http(s) URL,
-// streams it through onProgress and stores it with the default driver.
-func (s *AssetService) UploadFromSource(ctx context.Context, userID, source string, onProgress ProgressCallback) (*domain.Asset, error) {
-	var reader io.Reader
-	var filename string
-	var size int64
-	var mimeType string
-
-	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
-		resp, err := http.Get(source)
-		if err != nil {
-			return nil, fmt.Errorf("download failed: %w", err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("HTTP %s", resp.Status)
-		}
-
-		size = resp.ContentLength
-		parsedURL, _ := url.Parse(source)
-		filename = filepath.Base(parsedURL.Path)
-		if filename == "" || filename == "/" || filename == "." {
-			filename = "downloaded_asset"
-		}
-
-		pr := &progressReader{r: resp.Body, total: size, callback: onProgress}
-		buf := new(bytes.Buffer)
-		_, err = io.Copy(buf, pr)
-		if err != nil {
-			return nil, err
-		}
-
-		mimeType = resp.Header.Get("Content-Type")
-		if mimeType == "" || strings.Contains(mimeType, "octet-stream") {
-			mimeType = http.DetectContentType(buf.Bytes())
-		}
-		reader = buf
-		size = int64(buf.Len())
-	} else {
-		cleanPath := filepath.Clean(source)
-		if strings.HasPrefix(cleanPath, "~/") {
-			home, _ := os.UserHomeDir()
-			cleanPath = filepath.Join(home, cleanPath[2:])
-		}
-
-		file, err := os.Open(cleanPath)
-		if err != nil {
-			return nil, err
-		}
-		defer file.Close()
-
-		info, err := file.Stat()
-		if err != nil {
-			return nil, err
-		}
-		size = info.Size()
-		filename = filepath.Base(cleanPath)
-
-		buf := make([]byte, 512)
-		n, _ := file.Read(buf)
-		mimeType = http.DetectContentType(buf[:n])
-		_, _ = file.Seek(0, 0)
-
-		pr := &progressReader{r: file, total: size, callback: onProgress}
-		memBuf := new(bytes.Buffer)
-		_, err = io.Copy(memBuf, pr)
-		if err != nil {
-			return nil, err
-		}
-		reader = memBuf
+// StartUpload creates a resumable upload session. Large files are sent in
+// chunks so the server never needs to hold the whole asset in memory.
+func (s *AssetService) StartUpload(ctx context.Context, userID, driverName, filename, mimeType string, size int64) (*UploadSession, error) {
+	filename = strings.TrimSpace(filename)
+	if filename == "" {
+		return nil, fmt.Errorf("%w: filename is required", ErrInvalidInput)
 	}
+	if size < 0 {
+		return nil, fmt.Errorf("%w: upload size cannot be negative", ErrInvalidInput)
+	}
+	if _, err := s.registry.Get(driverName); err != nil {
+		return nil, err
+	}
+	_, maxBytes := s.uploadPolicy(ctx)
+	if maxBytes > 0 && size > maxBytes {
+		return nil, fmt.Errorf("%w: %d bytes (limit: %d)", ErrFileTooLarge, size, maxBytes)
+	}
+	return s.uploads.create(userID, driverName, filename, mimeType, size)
+}
 
-	// Uses default driver ("")
-	return s.Upload(ctx, userID, "", filename, mimeType, size, reader)
+// WriteUploadChunk appends one sequential chunk to an upload session.
+func (s *AssetService) WriteUploadChunk(ctx context.Context, id, userID string, offset int64, reader io.Reader) (int64, error) {
+	return s.uploads.write(id, userID, offset, reader)
+}
+
+// CompleteUpload validates the assembled file against the upload policy and
+// stores it as a new asset.
+func (s *AssetService) CompleteUpload(ctx context.Context, id, userID string) (*domain.Asset, error) {
+	session, err := s.uploads.detach(id, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(session.Path)
+
+	if session.Received != session.Size {
+		return nil, fmt.Errorf("%w: upload incomplete (%d of %d bytes)", ErrInvalidInput, session.Received, session.Size)
+	}
+	return s.storeUploadFile(ctx, session.UserID, session.Driver, session.Filename, session.MimeType, session.Received, session.Path)
+}
+
+// CancelUpload discards an in-progress upload and removes its staging file.
+func (s *AssetService) CancelUpload(id, userID string) error {
+	return s.uploads.remove(id, userID)
 }
 
 func (s *AssetService) Upload(ctx context.Context, userID, driverName, filename, mimeType string, size int64, reader io.Reader) (*domain.Asset, error) {
+	path, written, err := s.spoolUpload(ctx, reader)
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(path)
+	return s.storeUploadFile(ctx, userID, driverName, filename, mimeType, written, path)
+}
+
+// spoolUpload streams a request body to a staging file, enforcing the library
+// upload limit as it copies so a large request cannot exhaust memory or disk.
+func (s *AssetService) spoolUpload(ctx context.Context, reader io.Reader) (string, int64, error) {
+	if err := os.MkdirAll(s.uploads.dir, 0o700); err != nil {
+		return "", 0, fmt.Errorf("create upload staging directory: %w", err)
+	}
+	file, err := os.CreateTemp(s.uploads.dir, "incoming-*.part")
+	if err != nil {
+		return "", 0, err
+	}
+	path := file.Name()
+
+	_, maxBytes := s.uploadPolicy(ctx)
+	var written int64
+	if maxBytes > 0 {
+		written, err = io.Copy(file, io.LimitReader(reader, maxBytes+1))
+	} else {
+		written, err = io.Copy(file, reader)
+	}
+	closeErr := file.Close()
+	if err != nil {
+		_ = os.Remove(path)
+		return "", 0, err
+	}
+	if closeErr != nil {
+		_ = os.Remove(path)
+		return "", 0, closeErr
+	}
+	if maxBytes > 0 && written > maxBytes {
+		_ = os.Remove(path)
+		return "", 0, fmt.Errorf("%w: %d bytes (limit: %d)", ErrFileTooLarge, written, maxBytes)
+	}
+	return path, written, nil
+}
+
+const uploadSniffBytes int64 = 1 << 20
+
+// storeUploadFile finalises a staged file: it sniffs the content, stores the
+// original through the selected driver, generates a preview, and records the
+// asset plus its metadata and colors.
+func (s *AssetService) storeUploadFile(ctx context.Context, userID, driverName, filename, mimeType string, size int64, path string) (*domain.Asset, error) {
 	driver, err := s.registry.Get(driverName)
 	if err != nil {
 		return nil, err
@@ -725,21 +730,15 @@ func (s *AssetService) Upload(ctx context.Context, userID, driverName, filename,
 		driverName = "local"
 	}
 
-	buf := new(bytes.Buffer)
-	if _, err := io.Copy(buf, reader); err != nil {
+	file, err := os.Open(path)
+	if err != nil {
 		return nil, err
 	}
-	bytesData := buf.Bytes()
+	defer file.Close()
 
-	// Sniff the real type, refine audio-only containers, then validate against
-	// the library's upload policy.
-	cleanMime := classifyContainerMime(sniffMime(mimeType, bytesData), bytesData)
-	allowed, maxBytes := s.uploadPolicy(ctx)
-	if !mimeAllowed(cleanMime, allowed) {
-		return nil, fmt.Errorf("%w: %s", ErrUnsupportedFormat, cleanMime)
-	}
-	if maxBytes > 0 && int64(len(bytesData)) > maxBytes {
-		return nil, fmt.Errorf("%w: %d bytes (limit: %d)", ErrFileTooLarge, len(bytesData), maxBytes)
+	cleanMime, meta, colors, err := s.inspectUpload(ctx, file, mimeType, size)
+	if err != nil {
+		return nil, err
 	}
 
 	id := uuid.New().String()
@@ -747,18 +746,16 @@ func (s *AssetService) Upload(ctx context.Context, userID, driverName, filename,
 	storageKey := fmt.Sprintf("uploads/%s%s", id, ext)
 
 	// 1. Save original to target storage driver (Local, SFTP, S3)
-	if err := driver.Save(ctx, storageKey, bytes.NewReader(bytesData)); err != nil {
+	if err := driver.Save(ctx, storageKey, file); err != nil {
 		return nil, fmt.Errorf("failed to save to %s storage: %w", driverName, err)
 	}
 
 	// 2. Save preview to local storage for zero-latency previews
-	if previewReader, err := s.previewGen.Generate(ctx, cleanMime, bytes.NewReader(bytesData)); err == nil && previewReader != nil {
-		s.savePreview(ctx, id, cleanMime, previewReader)
+	if _, err := file.Seek(0, io.SeekStart); err == nil {
+		if previewReader, err := s.previewGen.Generate(ctx, cleanMime, file); err == nil && previewReader != nil {
+			s.savePreview(ctx, id, cleanMime, previewReader)
+		}
 	}
-
-	// 3. Extract metadata and colors
-	meta, _ := s.extractor.Extract(ctx, cleanMime, bytes.NewReader(bytesData), int64(len(bytesData)))
-	colors := s.colorsForData(cleanMime, bytesData)
 
 	now := time.Now().UTC()
 	asset := &domain.Asset{
@@ -768,7 +765,7 @@ func (s *AssetService) Upload(ctx context.Context, userID, driverName, filename,
 		StorageDriver: driverName,
 		StorageKey:    storageKey,
 		MimeType:      cleanMime,
-		ByteSize:      int64(len(bytesData)),
+		ByteSize:      size,
 		Metadata:      meta,
 		CreatedAt:     now,
 		UpdatedAt:     now,
@@ -782,10 +779,50 @@ func (s *AssetService) Upload(ctx context.Context, userID, driverName, filename,
 	s.saveColors(ctx, id, colors)
 
 	if s.backup != nil {
-		_ = s.backup.EnqueueAsset(ctx, id, driverName, storageKey, int64(len(bytesData)))
+		_ = s.backup.EnqueueAsset(ctx, id, driverName, storageKey, size)
 	}
 
 	return s.GetByID(ctx, id)
+}
+
+// inspectUpload detects the real type, validates it against the upload policy,
+// and extracts metadata and colors without reading the whole file into memory.
+func (s *AssetService) inspectUpload(ctx context.Context, file *os.File, providedMime string, size int64) (string, domain.Metadata, []domain.AssetColor, error) {
+	head, err := readHead(file, uploadSniffBytes)
+	if err != nil {
+		return "", domain.Metadata{}, nil, err
+	}
+	cleanMime := classifyContainerMime(sniffMime(providedMime, head), head)
+
+	allowed, maxBytes := s.uploadPolicy(ctx)
+	if !mimeAllowed(cleanMime, allowed) {
+		return "", domain.Metadata{}, nil, fmt.Errorf("%w: %s", ErrUnsupportedFormat, cleanMime)
+	}
+	if maxBytes > 0 && size > maxBytes {
+		return "", domain.Metadata{}, nil, fmt.Errorf("%w: %d bytes (limit: %d)", ErrFileTooLarge, size, maxBytes)
+	}
+
+	meta, _ := s.extractor.Extract(ctx, cleanMime, file, size)
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", domain.Metadata{}, nil, err
+	}
+	colors := s.colorsForReader(cleanMime, file)
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", domain.Metadata{}, nil, err
+	}
+	return cleanMime, meta, colors, nil
+}
+
+func readHead(file *os.File, limit int64) ([]byte, error) {
+	buf := make([]byte, limit)
+	n, err := io.ReadFull(file, buf)
+	if err == io.EOF || err == io.ErrUnexpectedEOF {
+		err = nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return buf[:n], nil
 }
 
 // Update changes the editable presentation fields of an asset. An empty title
@@ -819,37 +856,39 @@ func (s *AssetService) ReplaceContent(ctx context.Context, id, mimeType string, 
 		return nil, err
 	}
 
-	buf := new(bytes.Buffer)
-	if _, err := io.Copy(buf, reader); err != nil {
+	path, size, err := s.spoolUpload(ctx, reader)
+	if err != nil {
 		return nil, err
 	}
-	bytesData := buf.Bytes()
+	defer os.Remove(path)
 
-	cleanMime := classifyContainerMime(sniffMime(mimeType, bytesData), bytesData)
-	allowed, maxBytes := s.uploadPolicy(ctx)
-	if !mimeAllowed(cleanMime, allowed) {
-		return nil, fmt.Errorf("%w: %s", ErrUnsupportedFormat, cleanMime)
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
 	}
-	if maxBytes > 0 && int64(len(bytesData)) > maxBytes {
-		return nil, fmt.Errorf("%w: %d bytes (limit: %d)", ErrFileTooLarge, len(bytesData), maxBytes)
+	defer file.Close()
+
+	cleanMime, meta, colors, err := s.inspectUpload(ctx, file, mimeType, size)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := driver.Save(ctx, asset.StorageKey, bytes.NewReader(bytesData)); err != nil {
+	if err := driver.Save(ctx, asset.StorageKey, file); err != nil {
 		return nil, fmt.Errorf("failed to save to %s storage: %w", asset.StorageDriver, err)
 	}
 
-	if previewReader, err := s.previewGen.Generate(ctx, cleanMime, bytes.NewReader(bytesData)); err == nil && previewReader != nil {
-		s.savePreview(ctx, id, cleanMime, previewReader)
+	if _, err := file.Seek(0, io.SeekStart); err == nil {
+		if previewReader, err := s.previewGen.Generate(ctx, cleanMime, file); err == nil && previewReader != nil {
+			s.savePreview(ctx, id, cleanMime, previewReader)
+		}
 	}
 
-	meta, _ := s.extractor.Extract(ctx, cleanMime, bytes.NewReader(bytesData), int64(len(bytesData)))
-	colors := s.colorsForData(cleanMime, bytesData)
 	if err := s.db.WithContext(ctx).
 		Model(&store.Asset{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
 			"mime_type":    cleanMime,
-			"byte_size":    int64(len(bytesData)),
+			"byte_size":    size,
 			"width":        meta.Width,
 			"height":       meta.Height,
 			"duration_sec": meta.DurationSec,
@@ -861,7 +900,7 @@ func (s *AssetService) ReplaceContent(ctx context.Context, id, mimeType string, 
 	}
 	s.saveColors(ctx, id, colors)
 	if s.backup != nil {
-		_ = s.backup.EnqueueAsset(ctx, id, asset.StorageDriver, asset.StorageKey, int64(len(bytesData)))
+		_ = s.backup.EnqueueAsset(ctx, id, asset.StorageDriver, asset.StorageKey, size)
 	}
 	return s.GetByID(ctx, id)
 }

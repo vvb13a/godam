@@ -26,6 +26,12 @@ func Open(path string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("access sql db: %w", err)
 	}
+	// SQLite allows only one writer at a time. Serialising connections avoids
+	// SQLITE_BUSY errors when concurrent uploads write assets and colors at the
+	// same moment, and makes the busy_timeout pragma a last-resort guard rather
+	// than normal operation.
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
 	if err := migrate(sqlDB); err != nil {
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}

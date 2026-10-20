@@ -101,7 +101,10 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /api/assets", s.handleListAssets)
 	s.mux.HandleFunc("POST /api/assets/upload", s.handleUploadAsset)
-	s.mux.HandleFunc("POST /api/assets/import", s.handleImportAsset)
+	s.mux.HandleFunc("POST /api/assets/uploads", s.handleStartUpload)
+	s.mux.HandleFunc("PUT /api/assets/uploads/{id}/chunks", s.handleUploadChunk)
+	s.mux.HandleFunc("POST /api/assets/uploads/{id}/complete", s.handleCompleteUpload)
+	s.mux.HandleFunc("DELETE /api/assets/uploads/{id}", s.handleCancelUpload)
 	s.mux.HandleFunc("POST /api/assets/collections", s.handleAddAssetsToCollection)
 	s.mux.HandleFunc("POST /api/assets/tags", s.handleApplyAssetsTags)
 	s.mux.HandleFunc("GET /api/assets/zip", s.handleDownloadAssetsZip)

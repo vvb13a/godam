@@ -6,11 +6,13 @@ import * as api from '../api/client'
 import { conversionCacheVersion } from '../lib/conversionCache'
 import { formatDateTime, formatDuration, formatRelative, formatSize } from '../lib/format'
 import { library } from '../lib/library'
+import { hasMediaPreview } from '../lib/mimeTypes'
 import { libraryColorHex } from '../lib/libraryColors'
 import { openPresetsDialog } from '../lib/presetsDialog'
 import { openAssetTags } from '../lib/tagsDialog'
 import { warmPresets, warmProgress } from '../lib/warmPresets'
 import type { Asset, Conversion, Tag } from '../types'
+import FileTypePreview from './FileTypePreview.vue'
 import TagBadge from './TagBadge.vue'
 
 const props = defineProps<{ asset: Asset }>()
@@ -222,18 +224,27 @@ function removeCollection(collectionId: string): void {
     </div>
 
     <div class="min-h-0 flex-1 space-y-6 overflow-y-auto px-3 pb-4">
+      <div
+        v-if="!hasMediaPreview(asset.mime_type)"
+        class="aspect-video overflow-hidden rounded"
+      >
+        <FileTypePreview
+          :mime-type="asset.mime_type"
+          :filename="asset.filename"
+        />
+      </div>
       <img
-        v-if="!previewFailed"
+        v-else-if="!previewFailed"
         :src="api.assetPreviewUrl(asset.id, asset.updated_at)"
         :alt="displayTitle"
         class="max-h-72 w-full object-contain"
         @error="previewFailed = true"
       />
-      <div
-        v-else
-        class="flex h-40 items-center justify-center text-sm text-slate-400"
-      >
-        No preview available
+      <div v-else class="aspect-video overflow-hidden rounded">
+        <FileTypePreview
+          :mime-type="asset.mime_type"
+          :filename="asset.filename"
+        />
       </div>
 
       <section class="space-y-3">

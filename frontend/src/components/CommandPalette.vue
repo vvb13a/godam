@@ -19,6 +19,7 @@ import {
   SlidersH,
   Tag,
   Trash,
+  Upload,
   UserEdit,
 } from '@primeicons/vue'
 import type { Component } from 'vue'
@@ -36,6 +37,7 @@ import { SIDEBAR_TOGGLES, sidebarPrefs } from '../lib/sidebar'
 import { clearSmartSelection, selectSmartCollection } from '../lib/smartSelection'
 import { openTagsDialog } from '../lib/tagsDialog'
 import { THEME_OPTIONS, setThemeMode } from '../lib/theme'
+import { openUpload } from '../lib/upload'
 import { openUploadSettings } from '../lib/uploadSettings'
 import { openUserSettings } from '../lib/userSettings'
 import type { SmartCollectionFilter } from '../types'
@@ -121,6 +123,21 @@ const hasFilters = computed(() => {
       (typeof q.type === 'string' && q.type),
   )
 })
+
+function currentCollectionId(): string | null {
+  const collection = route.query.collection
+  if (typeof collection !== 'string' || collection === 'uncategorized') {
+    return null
+  }
+  return collection.includes(',') ? null : collection
+}
+
+function currentTagId(): string | null {
+  const tag = route.query.tag
+  if (typeof tag !== 'string' || !tag) return null
+  if (tag === 'untagged' || tag.includes(',')) return null
+  return tag
+}
 
 function currentFilter(): SmartCollectionFilter {
   const q = route.query
@@ -212,6 +229,15 @@ const groups = computed<PaletteGroup[]>(() => {
     })
   }
   commands.push(
+    {
+      label: 'Upload assets',
+      icon: Upload,
+      keywords: ['upload', 'add', 'import', 'files', 'assets'],
+      command: () => {
+        close()
+        openUpload([], currentCollectionId(), currentTagId())
+      },
+    },
     {
       label: 'Manage tags',
       icon: Tag,

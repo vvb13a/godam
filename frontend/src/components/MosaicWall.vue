@@ -2,7 +2,9 @@
 import { reactive, watch } from 'vue'
 import * as api from '../api/client'
 import { formatSize } from '../lib/format'
+import { hasMediaPreview } from '../lib/mimeTypes'
 import type { Asset } from '../types'
+import FileTypePreview from './FileTypePreview.vue'
 
 // MosaicWall renders a justified, full-width wall: each item's width comes from
 // its real aspect ratio (flex-grow/flex-basis), so a landscape spans roughly
@@ -33,6 +35,11 @@ defineEmits<{
 }>()
 
 const aspects = reactive<Record<string, number>>({})
+const failedIds = reactive(new Set<string>())
+
+function markFailed(id: string): void {
+  failedIds.add(id)
+}
 
 function initialAspect(asset: Asset): number {
   const { width, height } = asset.metadata ?? {}
@@ -95,13 +102,25 @@ function extensionOf(asset: Asset): string {
       @dragstart="$emit('dragstart', asset, $event)"
       @dragend="$emit('dragend')"
     >
+      <FileTypePreview
+        v-if="!hasMediaPreview(asset.mime_type)"
+        :mime-type="asset.mime_type"
+        :filename="asset.filename"
+      />
       <img
+        v-else-if="!failedIds.has(asset.id)"
         :src="api.assetPreviewUrl(asset.id, asset.updated_at)"
         :alt="asset.filename"
         loading="lazy"
         draggable="false"
         class="h-full w-full object-cover transition group-hover:opacity-90"
         @load="onLoad(asset, $event)"
+        @error="markFailed(asset.id)"
+      />
+      <FileTypePreview
+        v-else
+        :mime-type="asset.mime_type"
+        :filename="asset.filename"
       />
       <span
         v-if="showExtension && extensionOf(asset)"

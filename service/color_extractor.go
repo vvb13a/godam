@@ -8,6 +8,7 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"math"
 	"sort"
 	"strconv"
@@ -38,7 +39,11 @@ type colorBin struct {
 }
 
 func extractImageColors(data []byte) ([]domain.AssetColor, error) {
-	img, _, err := image.Decode(bytes.NewReader(data))
+	return extractImageColorsReader(bytes.NewReader(data))
+}
+
+func extractImageColorsReader(reader io.Reader) ([]domain.AssetColor, error) {
+	img, _, err := image.Decode(reader)
 	if err != nil {
 		return nil, err
 	}

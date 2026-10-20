@@ -29,6 +29,7 @@ import { library, notifyLibraryChanged } from '../lib/library'
 import { confirmDeleteMenuItem } from '../lib/menu'
 import { splitNames } from '../lib/names'
 import { tagsDialog } from '../lib/tagsDialog'
+import { upload } from '../lib/upload'
 import type { Tag, TagGroup } from '../types'
 import Kbd from './Kbd.vue'
 import TagBadge from './TagBadge.vue'
@@ -102,7 +103,7 @@ const isBulkContext = computed(
   () => tagsDialog.assetIds.length > 0 && !!tagsDialog.mode,
 )
 const isAssetEditing = computed(
-  () => isAssetContext.value || isBulkContext.value,
+  () => isAssetContext.value || isBulkContext.value || tagsDialog.upload,
 )
 const selectionLoaded = ref(false)
 
@@ -455,8 +456,14 @@ watch(
       draftGroupId.value = null
       selectionLoaded.value = false
       dirty.value = false
-      if (tagsDialog.assetId) void loadAssetSelection(tagsDialog.assetId)
-      else if (isBulkContext.value) selectionLoaded.value = true
+      if (tagsDialog.upload) {
+        selectedTagIds.value = [...upload.destinationTagIds]
+        selectionLoaded.value = true
+      } else if (tagsDialog.assetId) {
+        void loadAssetSelection(tagsDialog.assetId)
+      } else if (isBulkContext.value) {
+        selectionLoaded.value = true
+      }
     } else {
       window.removeEventListener('keydown', onWindowKeydown)
       void saveAssetSelection()
@@ -561,6 +568,11 @@ async function loadAssetSelection(assetId: string): Promise<void> {
 }
 
 async function saveAssetSelection(): Promise<void> {
+  if (tagsDialog.upload) {
+    upload.destinationTagIds = selectedTagIds.value.slice()
+    selectionLoaded.value = false
+    return
+  }
   if (isBulkContext.value) {
     await saveBulkSelection()
     return

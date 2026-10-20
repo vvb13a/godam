@@ -172,14 +172,13 @@ const total = ref(0)
 const totalBytes = ref(0)
 const totalCapped = ref(false)
 const loadingMore = ref(false)
-const loadMoreSentinel = ref<HTMLElement | null>(null)
 const selectedDetail = ref<Asset | null>(null)
 const loading = ref(false)
 const refreshing = ref(false)
 const loadedOnce = ref(false)
 const gridRevision = ref(0)
 const error = ref<string | null>(null)
-let loadMoreObserver: IntersectionObserver | null = null
+let loadMoreTimer: number | null = null
 let searchTimer: number | null = null
 let loadSeq = 0
 
@@ -911,7 +910,11 @@ const hasActiveFilters = computed(
 
 const assetCountLabel = computed(() => {
   if (selectedIds.value.length) return `${selectedIds.value.length} selected`
-  return `${total.value}${totalCapped.value ? '+' : ''} item(s)`
+  const loaded = assets.value.length
+  if (!total.value) return '0 item(s)'
+  const totalLabel = `${total.value}${totalCapped.value ? '+' : ''}`
+  if (!totalCapped.value && loaded >= total.value) return `${totalLabel} item(s)`
+  return `${loaded} of ${totalLabel} item(s)`
 })
 
 // The slider is the preview's shorter axis, so the grid column is widened for
@@ -950,17 +953,55 @@ watch([gridGap, aroundGap], () => {
   void nextTick(measureGrid)
 })
 
-// Fit as many tracks of at least `target` px as possible, then widen them
-// evenly so the row fills the container exactly. Returns null before the
-// container has been measured so callers can fall back to plain auto-fill.
+function clearLoadMoreTimer(): void {
+  if (loadMoreTimer !== null) {
+    window.clearTimeout(loadMoreTimer)
+    loadMoreTimer = null
+  }
+}
+
+function scheduleLoadMore(): void {
+  clearLoadMoreTimer()
+  if (
+    !nextCursor.value ||
+    loadingMore.value ||
+    loading.value ||
+    refreshing.value ||
+    error.value
+  ) {
+    return
+  }
+  loadMoreTimer = window.setTimeout(() => {
+    loadMoreTimer = null
+    const el = gridContainer.value
+    if (
+      !el ||
+      !nextCursor.value ||
+      loadingMore.value ||
+      loading.value ||
+      refreshing.value ||
+      error.value
+    ) {
+      return
+    }
+    const nearBottom =
+      el.scrollTop + el.clientHeight >= el.scrollHeight - 240
+    if (nearBottom) void loadMore()
+  }, 200)
+}
+
 function onGridScroll(): void {
   showBackToTop.value = (gridContainer.value?.scrollTop ?? 0) > 400
+  scheduleLoadMore()
 }
 
 function scrollGridToTop(): void {
   gridContainer.value?.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
+// Fit as many tracks of at least `target` px as possible, then widen them
+// evenly so the row fills the container exactly. Returns null before the
+// container has been measured so callers can fall back to plain auto-fill.
 function fitColumns(
   target: number,
   gap: number,
@@ -1187,6 +1228,7 @@ function assetParams(): api.AssetListParams {
 
 async function load(): Promise<void> {
   transitionScrollTop.value = gridContainer.value?.scrollTop ?? 0
+  clearLoadMoreTimer()
   const seq = ++loadSeq
   const initial = !loadedOnce.value
   if (initial) loading.value = true
@@ -1215,6 +1257,7 @@ async function load(): Promise<void> {
   if (!error.value) {
     loadedOnce.value = true
     gridRevision.value++
+    void nextTick(scheduleLoadMore)
   }
 
   if (embed.active && !error.value) {
@@ -1250,25 +1293,10 @@ async function loadMore(): Promise<void> {
     if (seq === loadSeq) error.value = toMessage(e)
   } finally {
     loadingMore.value = false
+    if (seq === loadSeq) void nextTick(scheduleLoadMore)
   }
 }
 
-function updateLoadMoreObserver(): void {
-  loadMoreObserver?.disconnect()
-  loadMoreObserver = null
-  if (!nextCursor.value || !loadMoreSentinel.value || !gridContainer.value) {
-    return
-  }
-  loadMoreObserver = new IntersectionObserver(
-    (entries) => {
-      if (!error.value && entries.some((entry) => entry.isIntersecting)) {
-        void loadMore()
-      }
-    },
-    { root: gridContainer.value, rootMargin: '300px' },
-  )
-  loadMoreObserver.observe(loadMoreSentinel.value)
-}
 
 function onSelect(asset: Asset, event: MouseEvent): void {
   if (embedSingle.value) {
@@ -1765,10 +1793,6 @@ watch(searchInput, (value) => {
   }, 300)
 })
 
-watch([nextCursor, loadingMore], () => {
-  void nextTick(updateLoadMoreObserver)
-})
-
 const detailRequestId = ref<string | null>(null)
 watch(
   singleAssetId,
@@ -1849,7 +1873,6 @@ onMounted(() => {
     gridResizeObserver = new ResizeObserver(measureGrid)
     gridResizeObserver.observe(gridContainer.value)
   }
-  void nextTick(updateLoadMoreObserver)
 })
 
 onBeforeUnmount(() => {
@@ -1857,7 +1880,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('mouseup', onLassoEnd)
   window.removeEventListener('keydown', onAssetsSelectAll)
   gridResizeObserver?.disconnect()
-  loadMoreObserver?.disconnect()
+  clearLoadMoreTimer()
   if (searchTimer !== null) window.clearTimeout(searchTimer)
   setEditorCloser(null)
 })
@@ -2687,7 +2710,7 @@ onBeforeUnmount(() => {
         <div v-show="!editingAsset" class="relative min-h-0 flex-1">
           <div
             ref="gridContainer"
-            class="relative h-full overflow-y-auto py-1.5"
+            class="relative h-full overflow-y-auto py-1.5 [overflow-anchor:none] [&_*]:[overflow-anchor:none]"
             :style="{
               paddingLeft: `${aroundGapPx}px`,
               paddingRight: `${aroundGapPx}px`,
@@ -2695,7 +2718,7 @@ onBeforeUnmount(() => {
             @mousedown="onLassoStart"
             @scroll.passive="onGridScroll"
           >
-          <Transition name="grid-fade" @after-enter="updateLoadMoreObserver">
+          <Transition name="grid-fade">
             <div
               :key="gridRevision"
               :style="{
@@ -2769,18 +2792,10 @@ onBeforeUnmount(() => {
             />
           </div>
 
-          <div
-            v-if="nextCursor"
-            ref="loadMoreSentinel"
-            class="flex justify-center py-4"
-          >
-            <Button
-              label="Load more"
-              severity="secondary"
-              size="small"
-              :loading="loadingMore"
-              @click="loadMore"
-            />
+          <div v-if="loadingMore" class="flex justify-center py-4">
+            <span
+              class="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-violet-600 dark:border-slate-700 dark:border-t-violet-400"
+            ></span>
           </div>
             </div>
           </Transition>

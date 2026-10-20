@@ -405,8 +405,105 @@ export function updateAsset(
   return sendJSON<Asset>(`/api/assets/${encodeURIComponent(id)}`, 'PUT', input)
 }
 
-export function importAsset(source: string): Promise<Asset> {
-  return sendJSON<Asset>('/api/assets/import', 'POST', { source })
+export interface UploadSession {
+  id: string
+  filename: string
+  mime_type: string
+  size: number
+  received: number
+  chunk_size: number
+  created_at: string
+}
+
+export interface StartUploadInput {
+  filename: string
+  mime_type?: string
+  size: number
+  driver?: string
+}
+
+// startUpload opens a resumable session for a large file. The returned
+// chunk_size is the maximum number of bytes accepted by one uploadChunk call.
+export function startUpload(input: StartUploadInput): Promise<UploadSession> {
+  return sendJSON<UploadSession>('/api/assets/uploads', 'POST', input)
+}
+
+export interface UploadRequestOptions {
+  signal?: AbortSignal
+  onUploadComplete?: () => void
+}
+
+function abortError(): DOMException {
+  return new DOMException('Upload canceled', 'AbortError')
+}
+
+// uploadChunk sends one byte range with XMLHttpRequest so progress can be
+// reported. It resolves with the server's new byte offset.
+export function uploadChunk(
+  id: string,
+  offset: number,
+  chunk: Blob,
+  onProgress?: (fraction: number) => void,
+  options: UploadRequestOptions = {},
+): Promise<number> {
+  if (options.signal?.aborted) return Promise.reject(abortError())
+  return new Promise((resolve, reject) => {
+    const url = `/api/assets/uploads/${encodeURIComponent(id)}/chunks?offset=${offset}`
+    const xhr = new XMLHttpRequest()
+    const abort = () => xhr.abort()
+    const cleanup = () => options.signal?.removeEventListener('abort', abort)
+
+    xhr.open('PUT', url)
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    xhr.upload.onprogress = (event) => {
+      if (onProgress && event.lengthComputable && event.total > 0) {
+        onProgress(event.loaded / event.total)
+      }
+    }
+    xhr.onload = () => {
+      cleanup()
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const body = JSON.parse(xhr.responseText) as { offset?: number }
+          resolve(typeof body.offset === 'number' ? body.offset : offset + chunk.size)
+        } catch {
+          resolve(offset + chunk.size)
+        }
+        return
+      }
+      let message = `Upload failed (${xhr.status})`
+      try {
+        const body = JSON.parse(xhr.responseText) as { error?: string }
+        if (body.error) message = body.error
+      } catch {
+        // Keep the status message.
+      }
+      reject(new Error(message))
+    }
+    xhr.onerror = () => {
+      cleanup()
+      reject(new Error('Upload failed'))
+    }
+    xhr.onabort = () => {
+      cleanup()
+      reject(abortError())
+    }
+    options.signal?.addEventListener('abort', abort)
+    xhr.send(chunk)
+  })
+}
+
+export function completeUpload(id: string, signal?: AbortSignal): Promise<Asset> {
+  return requestJSON<Asset>(
+    `/api/assets/uploads/${encodeURIComponent(id)}/complete`,
+    { method: 'POST', signal },
+  )
+}
+
+export function cancelUpload(id: string): Promise<void> {
+  return requestVoid(`/api/assets/uploads/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
 }
 
 // uploadAsset posts a multipart form with XMLHttpRequest so the caller can
@@ -415,20 +512,27 @@ export function uploadAsset(
   file: File,
   driver?: string,
   onProgress?: (fraction: number) => void,
+  options: UploadRequestOptions = {},
 ): Promise<Asset> {
+  if (options.signal?.aborted) return Promise.reject(abortError())
   return new Promise((resolve, reject) => {
     const form = new FormData()
     form.append('file', file)
     if (driver) form.append('driver', driver)
 
     const xhr = new XMLHttpRequest()
+    const abort = () => xhr.abort()
+    const cleanup = () => options.signal?.removeEventListener('abort', abort)
+
     xhr.open('POST', '/api/assets/upload')
     xhr.upload.onprogress = (event) => {
-      if (onProgress && event.lengthComputable) {
+      if (onProgress && event.lengthComputable && event.total > 0) {
         onProgress(event.loaded / event.total)
       }
     }
+    xhr.upload.onload = () => options.onUploadComplete?.()
     xhr.onload = () => {
+      cleanup()
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(JSON.parse(xhr.responseText) as Asset)
         return
@@ -442,7 +546,15 @@ export function uploadAsset(
       }
       reject(new Error(message))
     }
-    xhr.onerror = () => reject(new Error('Upload failed'))
+    xhr.onerror = () => {
+      cleanup()
+      reject(new Error('Upload failed'))
+    }
+    xhr.onabort = () => {
+      cleanup()
+      reject(abortError())
+    }
+    options.signal?.addEventListener('abort', abort)
     xhr.send(form)
   })
 }

@@ -45,8 +45,9 @@ v2 is not a fourth workflow; it is a better implementation of workflow 2.
   - `frontend/src/components/LibraryBackupDialog.vue`
 - Bulk asset download as ZIP (originals, current filenames only):
   - `GET /api/assets/zip?ids=...` in `api/assets.go`
-- Single-asset import from a local path or HTTP(S) URL:
-  - `POST /api/assets/import` in `api/assets.go`
+- Streaming uploads with chunked sessions for large files:
+  - `POST /api/assets/uploads`, `PUT /api/assets/uploads/{id}/chunks`,
+    `POST /api/assets/uploads/{id}/complete` in `api/assets.go`
 - Local primary storage and preview storage:
   - originals: `storage/uploads/{assetID}{ext}`
   - previews: `storage/previews/{assetID}.{png|jpg}`

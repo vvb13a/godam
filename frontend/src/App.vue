@@ -19,7 +19,7 @@ import { commandMenu } from './lib/command'
 import { editorDirty, setLeaveConfirm } from './lib/editorState'
 import { embed, startEmbedBridge } from './lib/embed'
 import { initLibrary, library, resetLibrary } from './lib/library'
-import { openUpload } from './lib/upload'
+import { openUpload, upload } from './lib/upload'
 
 const route = useRoute()
 const confirm = useConfirm()
@@ -76,24 +76,39 @@ function currentTagId(): string | null {
   return tag
 }
 
+function resetGlobalDrag(): void {
+  dragDepth = 0
+  dragging.value = false
+}
+
 function onDragEnter(event: DragEvent): void {
+  if (upload.visible) {
+    resetGlobalDrag()
+    return
+  }
   if (!hasFiles(event)) return
   dragDepth++
   dragging.value = true
 }
 
 function onDragOver(event: DragEvent): void {
+  if (upload.visible) return
   if (!hasFiles(event)) return
   event.preventDefault()
 }
 
 function onDragLeave(event: DragEvent): void {
+  if (upload.visible) {
+    resetGlobalDrag()
+    return
+  }
   if (!hasFiles(event)) return
   dragDepth = Math.max(0, dragDepth - 1)
   if (dragDepth === 0) dragging.value = false
 }
 
 function onDrop(event: DragEvent): void {
+  if (upload.visible) return
   if (!hasFiles(event)) return
   event.preventDefault()
   dragDepth = 0
@@ -155,6 +170,13 @@ onMounted(() => {
 })
 
 startEmbedBridge()
+
+watch(
+  () => upload.visible,
+  (visible) => {
+    if (visible) resetGlobalDrag()
+  },
+)
 
 // Load (or clear) the library scope whenever the signed-in user changes. An
 // embedding host pins the app to the requested project.
@@ -233,7 +255,9 @@ onBeforeUnmount(() => {
     </template>
 
     <ConfirmDialog group="navigation" />
+    <ConfirmDialog group="upload-discard" />
     <ConfirmPopup group="editor" />
+    <ConfirmPopup group="upload" />
     <Toast />
   </div>
 </template>
