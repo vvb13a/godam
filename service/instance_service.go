@@ -43,12 +43,7 @@ func (s *InstanceService) Ensure(ctx context.Context, name string) (*domain.Inst
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(model).Error; err != nil {
-			return err
-		}
-		return seedDefaultSmartCollections(tx, now)
-	})
+	err = s.db.WithContext(ctx).Create(model).Error
 	if err != nil {
 		return nil, err
 	}

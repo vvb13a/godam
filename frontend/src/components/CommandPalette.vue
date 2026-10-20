@@ -29,6 +29,7 @@ import * as api from '../api/client'
 import { logout } from '../lib/auth'
 import { openBackupSettings } from '../lib/backupSettings'
 import { notifyConversionCacheChanged } from '../lib/conversionCache'
+import { openCollectionsDialog } from '../lib/collectionsDialog'
 import { commandMenu } from '../lib/command'
 import { library, loadStats, notifyLibraryChanged } from '../lib/library'
 import { libraryColorHex } from '../lib/libraryColors'
@@ -236,6 +237,15 @@ const groups = computed<PaletteGroup[]>(() => {
       command: () => {
         close()
         openUpload([], currentCollectionId(), currentTagId())
+      },
+    },
+    {
+      label: 'Manage collections',
+      icon: Folder,
+      keywords: ['collections', 'folders', 'manage', 'select'],
+      command: () => {
+        close()
+        openCollectionsDialog()
       },
     },
     {

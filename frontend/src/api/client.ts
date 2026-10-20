@@ -638,6 +638,24 @@ export function removeFromCollection(
   )
 }
 
+// applyAssetsCollections adds or replaces the collection membership of many
+// assets in one request.
+export function applyAssetsCollections(
+  assetIds: string[],
+  collectionIds: string[],
+  mode: 'add' | 'replace',
+): Promise<void> {
+  return requestVoid('/api/assets/collections', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      asset_ids: assetIds,
+      collection_ids: collectionIds,
+      mode,
+    }),
+  })
+}
+
 // addAssetsToCollection links many assets to one collection in a single request.
 export function addAssetsToCollection(
   collectionId: string,

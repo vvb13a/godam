@@ -532,25 +532,42 @@ func (s *Server) handleRemoveFromCollection(w http.ResponseWriter, r *http.Reque
 }
 
 type bulkCollectionRequest struct {
-	CollectionID string   `json:"collection_id"`
-	AssetIDs     []string `json:"asset_ids"`
+	CollectionID  string   `json:"collection_id"`
+	CollectionIDs []string `json:"collection_ids"`
+	AssetIDs      []string `json:"asset_ids"`
+	Mode          string   `json:"mode"`
 }
 
-// handleAddAssetsToCollection links many assets to one collection in a single
-// request, replacing the per-asset POST /api/assets/{id}/collections calls.
+// handleAddAssetsToCollection applies a collection set to many assets in one
+// request. The legacy single collection_id form adds that collection; the
+// collection_ids + mode form supports bulk add and replace.
 func (s *Server) handleAddAssetsToCollection(w http.ResponseWriter, r *http.Request) {
 	var req bulkCollectionRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if req.CollectionID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "collection_id is required"})
+	ids := req.CollectionIDs
+	if req.CollectionID != "" {
+		ids = append(ids, req.CollectionID)
+	}
+	mode := req.Mode
+	if mode == "" {
+		mode = "add"
+	}
+	if mode != "add" && mode != "replace" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "mode must be add or replace"})
 		return
 	}
-	if _, ok := s.ownedCollection(w, r, req.CollectionID); !ok {
+	if mode == "add" && len(ids) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "collection_id or collection_ids is required"})
 		return
 	}
-	if err := s.deps.Assets.AddToCollectionBulk(r.Context(), req.CollectionID, req.AssetIDs); err != nil {
+	for _, id := range ids {
+		if _, ok := s.ownedCollection(w, r, id); !ok {
+			return
+		}
+	}
+	if err := s.deps.Assets.ApplyCollectionsBulk(r.Context(), req.AssetIDs, ids, mode); err != nil {
 		writeError(w, err)
 		return
 	}

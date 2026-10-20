@@ -487,17 +487,7 @@ const menuItems = computed<TagMenuItem[]>(() => {
   if (!tag) return []
   const items: TagMenuItem[] = [
     {
-      label: tag.starred ? 'Unstar' : 'Star',
-      menuIcon: tag.starred ? StarFill : Star,
-      command: () => void toggleStar(tag),
-    },
-    {
-      label: 'Rename',
-      menuIcon: Pencil,
-      command: () => startRename(tag),
-    },
-    {
-      label: 'Filter',
+      label: 'Open',
       menuIcon: Search,
       command: () => filterByTag(tag),
     },
@@ -513,6 +503,17 @@ const menuItems = computed<TagMenuItem[]>(() => {
           name: tag.name,
           color: tagColor(tag),
         }),
+    },
+    { separator: true },
+    {
+      label: tag.starred ? 'Unstar' : 'Star',
+      menuIcon: tag.starred ? StarFill : Star,
+      command: () => void toggleStar(tag),
+    },
+    {
+      label: 'Rename',
+      menuIcon: Pencil,
+      command: () => startRename(tag),
     },
   ]
   if (library.tagGroups.length) {

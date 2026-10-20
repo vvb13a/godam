@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import Splitter from 'primevue/splitter'
 import SplitterPanel from 'primevue/splitterpanel'
-import { ChevronLeft, ChevronRight, Images } from '@primeicons/vue'
+import { ChevronLeft, ChevronRight, Folder, Images, Tag } from '@primeicons/vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useToast } from 'primevue/usetoast'
@@ -96,6 +96,12 @@ const activeTag = computed(() => (route.query.tag as string | undefined) ?? null
 const allActive = computed(
   () => route.name === 'all' && !activeCollection.value && !activeTag.value,
 )
+const uncategorizedActive = computed(
+  () => route.name === 'all' && route.query.collection === 'uncategorized',
+)
+const untaggedActive = computed(
+  () => route.name === 'all' && route.query.tag === 'untagged',
+)
 
 watch(
   () => library.version,
@@ -144,10 +150,10 @@ watch(
           </p>
         </div>
 
-        <nav class="space-y-1 p-3">
+        <nav class="space-y-0.5 p-3">
           <RouterLink
             :to="{ name: 'all' }"
-            class="flex items-center gap-2 rounded px-3 py-2 text-sm font-medium"
+            class="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium"
             :class="
               allActive
                 ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
@@ -161,6 +167,42 @@ watch(
               class="shrink-0 text-xs text-slate-400"
             >
               {{ library.stats.assets }}
+            </span>
+          </RouterLink>
+          <RouterLink
+            :to="{ name: 'all', query: { collection: 'uncategorized' } }"
+            class="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium"
+            :class="
+              uncategorizedActive
+                ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
+            "
+          >
+            <Folder :size="18" />
+            <span class="flex-1">Uncategorized</span>
+            <span
+              v-if="library.stats?.uncategorized"
+              class="shrink-0 text-xs text-slate-400"
+            >
+              {{ library.stats.uncategorized }}
+            </span>
+          </RouterLink>
+          <RouterLink
+            :to="{ name: 'all', query: { tag: 'untagged' } }"
+            class="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium"
+            :class="
+              untaggedActive
+                ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
+            "
+          >
+            <Tag :size="18" />
+            <span class="flex-1">Untagged</span>
+            <span
+              v-if="library.stats?.untagged"
+              class="shrink-0 text-xs text-slate-400"
+            >
+              {{ library.stats.untagged }}
             </span>
           </RouterLink>
         </nav>

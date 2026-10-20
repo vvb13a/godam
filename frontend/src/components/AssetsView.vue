@@ -26,6 +26,7 @@ import {
   Eye,
   EyeSlash,
   ExternalLink,
+  Folder,
   Images,
   Pencil,
   Plus,
@@ -68,6 +69,7 @@ import {
   toggleTopPanel,
 } from '../lib/panels'
 import { SIDEBAR_TOGGLES, sidebarPrefs } from '../lib/sidebar'
+import { openAssetCollections, openBulkAssetCollections } from '../lib/collectionsDialog'
 import { clearSmartSelection, smartSelection } from '../lib/smartSelection'
 import { openAssetTags, openBulkAssetTags } from '../lib/tagsDialog'
 import { openUpload } from '../lib/upload'
@@ -80,11 +82,13 @@ import type {
   UserOption,
 } from '../types'
 import AssetCard from './AssetCard.vue'
+import CollectionFilterPopover from './CollectionFilterPopover.vue'
 import AssetEditor from './AssetEditor.vue'
 import FilterInspector from './FilterInspector.vue'
 import Inspector from './Inspector.vue'
 import LibraryInspector from './LibraryInspector.vue'
 import MultiSelectionPanel from './MultiSelectionPanel.vue'
+import TagFilterPopover from './TagFilterPopover.vue'
 import TagsList from './TagsList.vue'
 
 const route = useRoute()
@@ -638,6 +642,10 @@ const uploadTagId = computed(() => {
   if (tags.length !== 1 || tags[0] === 'untagged') return null
   return tags[0]
 })
+const uncategorizedView = computed(() =>
+  collectionFilter.value.includes('uncategorized'),
+)
+const untaggedView = computed(() => tagFilter.value.includes('untagged'))
 
 const users = ref<UserOption[]>([])
 
@@ -762,39 +770,6 @@ const SORT_DIRECTIONS = [
   { value: 'desc', label: 'Descending' },
 ]
 
-
-const collectionOptions = computed(() => [
-  {
-    value: 'uncategorized',
-    label: 'Uncategorized',
-    count: library.stats?.uncategorized ?? 0,
-  },
-  ...library.collections.map((collection) => ({
-    value: collection.id,
-    label: collection.name,
-    count: collection.asset_count,
-  })),
-])
-
-const tagOptions = computed(() => [
-  {
-    label: 'Untagged',
-    value: 'untagged',
-    color: undefined as string | undefined,
-    count: library.stats?.untagged ?? 0,
-  },
-  ...library.tags.map((tag) => {
-    const group = tag.group_id
-      ? library.tagGroups.find((item) => item.id === tag.group_id)
-      : undefined
-    return {
-      label: tag.name,
-      value: tag.id,
-      color: group?.color ? `#${group.color}` : undefined,
-      count: tag.asset_count,
-    }
-  }),
-])
 
 const selectedSet = computed(() => new Set(selectedIds.value))
 const selectedAssets = computed(() =>
@@ -1125,6 +1100,14 @@ const menuItems = computed<MenuItem[]>(() => {
       command: openTags,
     })
     items.push({
+      label: 'Collections',
+      icon: Folder,
+      command: () => {
+        const asset = selectedAssets.value[0]
+        if (asset) openAssetCollections(asset.id)
+      },
+    })
+    items.push({
       label: 'Set as library cover',
       icon: Images,
       command: setAsLibraryCover,
@@ -1165,6 +1148,22 @@ const menuItems = computed<MenuItem[]>(() => {
         {
           label: 'Add',
           command: () => openBulkAssetTags(selectedIds.value.slice(), 'add'),
+        },
+      ],
+    })
+    items.push({
+      label: 'Collections',
+      icon: Folder,
+      items: [
+        {
+          label: 'Replace',
+          command: () =>
+            openBulkAssetCollections(selectedIds.value.slice(), 'replace'),
+        },
+        {
+          label: 'Add',
+          command: () =>
+            openBulkAssetCollections(selectedIds.value.slice(), 'add'),
         },
       ],
     })
@@ -1794,32 +1793,33 @@ watch(searchInput, (value) => {
 })
 
 const detailRequestId = ref<string | null>(null)
-watch(
-  singleAssetId,
-  async (id) => {
-    if (!id) {
-      selectedDetail.value = null
-      detailRequestId.value = null
-      return
+async function loadSelectedDetail(id: string | null): Promise<void> {
+  if (!id) {
+    selectedDetail.value = null
+    detailRequestId.value = null
+    return
+  }
+  const requestId = id
+  detailRequestId.value = requestId
+  try {
+    const detail = await api.getAsset(id)
+    if (detailRequestId.value === requestId && singleAssetId.value === id) {
+      selectedDetail.value = detail
     }
-    const requestId = id
-    detailRequestId.value = requestId
-    try {
-      const detail = await api.getAsset(id)
-      if (detailRequestId.value === requestId && singleAssetId.value === id) {
-        selectedDetail.value = detail
-      }
-    } catch {
-      if (detailRequestId.value === requestId) selectedDetail.value = null
-    }
-  },
-  { immediate: true },
-)
+  } catch {
+    if (detailRequestId.value === requestId) selectedDetail.value = null
+  }
+}
+
+watch(singleAssetId, (id) => void loadSelectedDetail(id), {
+  immediate: true,
+})
 
 watch(
   () => library.version,
   () => {
     void load()
+    void loadSelectedDetail(singleAssetId.value)
   },
 )
 
@@ -1909,70 +1909,25 @@ onBeforeUnmount(() => {
               v-if="!panels.topCollapsed"
               class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 shadow-lg"
             >
-          <MultiSelect
+          <CollectionFilterPopover
             v-model="collectionFilter"
-            :options="collectionOptions"
-            option-label="label"
-            option-value="value"
-            display="chip"
-            placeholder="All collections"
-            filter
-            showClear
-            :max-selected-labels="2"
-            class="w-56"
-            :disabled="embedCollectionLocked"
-            :title="
-              embedCollectionLocked
-                ? 'This collection is locked by the host application'
-                : undefined
+            :disabled="embedCollectionLocked || uncategorizedView"
+            :locked-title="
+              uncategorizedView
+                ? 'Uncategorized is automatically applied in this view'
+                : 'This collection is locked by the host application'
             "
-          >
-            <template #option="slotProps">
-              <span class="flex w-full items-center gap-2">
-                <span class="min-w-0 flex-1 truncate">
-                  {{ slotProps.option.label }}
-                </span>
-                <span class="shrink-0 text-xs text-slate-400">
-                  {{ slotProps.option.count }}
-                </span>
-              </span>
-            </template>
-          </MultiSelect>
+          />
 
-          <MultiSelect
+          <TagFilterPopover
             v-model="tagFilter"
-            :options="tagOptions"
-            option-label="label"
-            option-value="value"
-            display="chip"
-            placeholder="All tags"
-            filter
-            showClear
-            :max-selected-labels="2"
-            :disabled="embedTagLocked"
-            :title="
-              embedTagLocked
-                ? 'Tags are locked by the host application'
-                : undefined
+            :disabled="embedTagLocked || untaggedView"
+            :locked-title="
+              untaggedView
+                ? 'Untagged is automatically applied in this view'
+                : 'Tags are locked by the host application'
             "
-            class="w-56"
-          >
-            <template #option="slotProps">
-              <span class="flex w-full items-center gap-2">
-                <span
-                  v-if="slotProps.option.color"
-                  class="h-2.5 w-2.5 shrink-0 rounded-full"
-                  :style="{ backgroundColor: slotProps.option.color }"
-                />
-                <span class="min-w-0 flex-1 truncate">
-                  {{ slotProps.option.label }}
-                </span>
-                <span class="shrink-0 text-xs text-slate-400">
-                  {{ slotProps.option.count }}
-                </span>
-              </span>
-            </template>
-          </MultiSelect>
+          />
 
           <MultiSelect
             v-model="typeFilter"

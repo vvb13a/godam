@@ -7,6 +7,7 @@ import { CloudUpload } from '@primeicons/vue'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import AppSidebar from './components/AppSidebar.vue'
+import CollectionsDialog from './components/CollectionsDialog.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import LibraryBackupDialog from './components/LibraryBackupDialog.vue'
 import LibraryUploadSettingsDialog from './components/LibraryUploadSettingsDialog.vue'
@@ -248,6 +249,7 @@ onBeforeUnmount(() => {
       <UploadDialog />
       <CommandPalette />
       <TagsDialog />
+      <CollectionsDialog />
       <PresetsDialog />
       <WarmPresetsProgress />
       <LibraryUploadSettingsDialog />

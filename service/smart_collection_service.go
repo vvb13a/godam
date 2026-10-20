@@ -13,37 +13,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// defaultSmartCollections are seeded for every library so the built-in
-// Uncategorized/Untagged views are ordinary, editable smart collections.
-var defaultSmartCollections = []struct {
-	name   string
-	color  string
-	filter string
-}{
-	{name: "Uncategorized", color: "8b5cf6", filter: `{"collection":"uncategorized"}`},
-	{name: "Untagged", color: "8b5cf6", filter: `{"tag":"untagged"}`},
-}
-
-// seedDefaultSmartCollections inserts the built-in presets, appended after any
-// existing rows. It runs inside the library-creation transaction.
-func seedDefaultSmartCollections(tx *gorm.DB, now time.Time) error {
-	for i, def := range defaultSmartCollections {
-		model := &store.SmartCollection{
-			ID:        uuid.New().String(),
-			Name:      def.name,
-			Color:     def.color,
-			Sort:      i,
-			Filter:    def.filter,
-			CreatedAt: now,
-			UpdatedAt: now,
-		}
-		if err := tx.Create(model).Error; err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // SmartCollectionSort is a single smart collection's new position.
 type SmartCollectionSort struct {
 	ID   string `json:"id"`

@@ -8,6 +8,7 @@ import { formatDateTime, formatDuration, formatRelative, formatSize } from '../l
 import { library } from '../lib/library'
 import { hasMediaPreview } from '../lib/mimeTypes'
 import { libraryColorHex } from '../lib/libraryColors'
+import { openAssetCollections } from '../lib/collectionsDialog'
 import { openPresetsDialog } from '../lib/presetsDialog'
 import { openAssetTags } from '../lib/tagsDialog'
 import { warmPresets, warmProgress } from '../lib/warmPresets'
@@ -163,6 +164,10 @@ function tagColor(tag: Tag): string | undefined {
 
 function editTags(): void {
   openAssetTags(props.asset.id)
+}
+
+function editCollections(): void {
+  openAssetCollections(props.asset.id)
 }
 
 async function save(): Promise<void> {
@@ -434,7 +439,8 @@ function removeCollection(collectionId: string): void {
           <h3 class="text-sm font-semibold">Collections</h3>
           <button
             class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
-            title="Add to collection"
+            title="Edit collections"
+            @click="editCollections"
           >
             <Plus :size="14" />
           </button>

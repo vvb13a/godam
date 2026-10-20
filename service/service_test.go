@@ -98,10 +98,8 @@ func TestSmartCollections(t *testing.T) {
 		t.Fatalf("create smart collection: %v", err)
 	}
 
-	// Creating a library seeds the built-in Uncategorized/Untagged presets, so
-	// the created collection is listed alongside them.
 	list, err := smart.List(ctx)
-	if err != nil || len(list) != 3 {
+	if err != nil || len(list) != 1 {
 		t.Fatalf("list: n=%d err=%v", len(list), err)
 	}
 	var videos *domain.SmartCollection

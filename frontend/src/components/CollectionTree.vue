@@ -9,6 +9,7 @@ import {
   AngleDoubleUp,
   Bookmark,
   Check,
+  CheckCircle,
   ChevronDown,
   ChevronUp,
   Folder,
@@ -31,6 +32,7 @@ import { LIBRARY_COLORS, libraryColorHex } from '../lib/libraryColors'
 import { confirmDeleteMenuItem } from '../lib/menu'
 import { splitNames } from '../lib/names'
 import { isPinned, toggleQuicklink } from '../lib/quicklinks'
+import { openCollectionsDialog } from '../lib/collectionsDialog'
 import { clearSmartSelection } from '../lib/smartSelection'
 import type { Collection } from '../types'
 
@@ -73,6 +75,33 @@ function loadSortMode(): SortMode {
   const raw = localStorage.getItem(SORT_STORAGE_KEY)
   return SORT_MODES.includes(raw as SortMode) ? (raw as SortMode) : 'custom'
 }
+
+const props = withDefaults(
+  defineProps<{
+    selectable?: boolean
+    selectedIds?: string[]
+    filter?: string
+    showHeader?: boolean
+    navigable?: boolean
+    deferRefresh?: boolean
+    manage?: boolean
+  }>(),
+  {
+    selectable: false,
+    selectedIds: () => [],
+    filter: '',
+    showHeader: true,
+    navigable: true,
+    deferRefresh: false,
+    manage: true,
+  },
+)
+
+const emit = defineEmits<{
+  'update:selectedIds': [ids: string[]]
+  change: []
+  open: [collection: Collection]
+}>()
 
 const route = useRoute()
 const router = useRouter()
@@ -118,8 +147,12 @@ const activeCollection = computed(() => {
 })
 
 const selectionKeys = computed<Record<string, boolean>>(() =>
-  activeCollection.value ? { [activeCollection.value]: true } : {},
+  !props.selectable && activeCollection.value
+    ? { [activeCollection.value]: true }
+    : {},
 )
+
+const selectedSet = computed(() => new Set(props.selectedIds))
 
 // Build the flat collection list into the tree the PrimeVue Tree consumes.
 const nodes = computed<CollectionNode[]>(() => {
@@ -158,6 +191,35 @@ const nodes = computed<CollectionNode[]>(() => {
   }
   return build(null)
 })
+
+const treeNodes = computed<CollectionNode[]>(() => {
+  const query = props.filter.trim().toLowerCase()
+  if (!query) return nodes.value
+  const filterTree = (list: CollectionNode[]): CollectionNode[] => {
+    const result: CollectionNode[] = []
+    for (const node of list) {
+      if (node.key === DRAFT_KEY) continue
+      const children = filterTree(node.children)
+      if (node.label.toLowerCase().includes(query) || children.length) {
+        result.push({ ...node, children })
+      }
+    }
+    return result
+  }
+  return filterTree(nodes.value)
+})
+
+watch(
+  () => props.filter,
+  (value) => {
+    if (!value.trim()) return
+    const next = { ...expandedKeys.value }
+    for (const parent of parentCollections.value) {
+      next[parent.id] = true
+    }
+    expandedKeys.value = next
+  },
+)
 
 // Expand any newly seen parent once, so subfolders are visible by default.
 watch(
@@ -209,6 +271,11 @@ watch(
 
 function toMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
+}
+
+function refreshLibrary(): void {
+  if (props.deferRefresh) emit('change')
+  else notifyLibraryChanged()
 }
 
 // Sibling order depends on the chosen display mode; "custom" keeps the stored
@@ -323,6 +390,7 @@ function focusRename(id: string): void {
 // addCollection opens an inline draft row. Nothing is persisted until a name is
 // entered, so cancelling or leaving it blank creates no folder at all.
 function addCollection(parentId: string | null): void {
+  if (!props.manage) return
   editingId.value = null
   createParent.value = parentId
   draftName.value = ''
@@ -342,25 +410,33 @@ function cancelDraft(): void {
   draftName.value = ''
 }
 
-async function commitDraft(): Promise<void> {
-  if (!creating.value) return
-  const parentId = createParent.value
-  const names = splitNames(draftName.value)
-  creating.value = false
-  draftName.value = ''
-  if (!names.length) return
+async function createCollection(
+  name: string,
+  parentId: string | null = null,
+  color = DEFAULT_COLLECTION_COLOR,
+): Promise<Collection | null> {
+  if (!props.manage) return null
+  const trimmed = name.trim()
+  if (!trimmed) return null
+  const existing = library.collections.find(
+    (collection) =>
+      (collection.parent_id ?? null) === parentId &&
+      collection.name.trim().toLowerCase() === trimmed.toLowerCase(),
+  )
+  if (existing) return existing
   try {
-    for (const name of names) {
-      const collection = await api.createCollection(
-        name,
-        draftColor.value,
-        parentId,
-      )
-      library.collections.push(collection)
+    const collection = await api.createCollection(trimmed, color, parentId)
+    library.collections.push(collection)
+    if (props.selectable) {
+      emit('update:selectedIds', [
+        ...new Set([...props.selectedIds, collection.id]),
+      ])
     }
     if (parentId) {
       expandedKeys.value = { ...expandedKeys.value, [parentId]: true }
     }
+    refreshLibrary()
+    return collection
   } catch (e) {
     toast.add({
       severity: 'error',
@@ -368,6 +444,18 @@ async function commitDraft(): Promise<void> {
       detail: toMessage(e),
       life: 4000,
     })
+    return null
+  }
+}
+
+async function commitDraft(): Promise<void> {
+  if (!creating.value) return
+  const parentId = createParent.value
+  const names = splitNames(draftName.value)
+  creating.value = false
+  draftName.value = ''
+  for (const name of names) {
+    await createCollection(name, parentId, draftColor.value)
   }
 }
 
@@ -394,7 +482,7 @@ async function commitRename(): Promise<void> {
     replaceLocal(
       await api.updateCollection(id, name, collection.color, collection.description),
     )
-    notifyLibraryChanged()
+    refreshLibrary()
   } catch (e) {
     toast.add({
       severity: 'error',
@@ -413,7 +501,7 @@ async function setColor(color: string): Promise<void> {
     replaceLocal(
       await api.updateCollection(collection.id, collection.name, color, collection.description),
     )
-    notifyLibraryChanged()
+    refreshLibrary()
   } catch (e) {
     toast.add({
       severity: 'error',
@@ -429,7 +517,16 @@ async function remove(collection: Collection): Promise<void> {
   const gone = descendantIds(collection.id)
   try {
     await api.deleteCollection(collection.id)
-    notifyLibraryChanged()
+    library.collections = library.collections.filter(
+      (item) => !gone.has(item.id),
+    )
+    if (props.selectable) {
+      emit(
+        'update:selectedIds',
+        props.selectedIds.filter((id) => !gone.has(id)),
+      )
+    }
+    refreshLibrary()
     clearActiveIf(gone)
     toast.add({ severity: 'success', summary: 'Folder deleted', life: 2500 })
   } catch (e) {
@@ -465,11 +562,53 @@ const menuItems = computed<TreeMenuItem[]>(() => {
   if (!collection) return []
   const items: TreeMenuItem[] = [
     {
+      label: 'Open',
+      menuIcon: FolderOpen,
+      command: () => openCollection(collection),
+    },
+    {
+      label: isPinned('collection', collection.id)
+        ? 'Unpin from Quicklinks'
+        : 'Pin to Quicklinks',
+      menuIcon: Bookmark,
+      command: () =>
+        toggleQuicklink({
+          type: 'collection',
+          id: collection.id,
+          name: collection.name,
+          color: collection.color ? `#${collection.color}` : undefined,
+        }),
+    },
+    { separator: true },
+  ]
+  if (props.selectable) {
+    items.push({
+      label: selectedSet.value.has(collection.id) ? 'Deselect' : 'Select',
+      menuIcon: Check,
+      command: () => toggleSelection(collection.id),
+    })
+    if (contextHasChildren.value) {
+      const ids = descendantIds(collection.id)
+      const allSelected = [...ids].every((id) => selectedSet.value.has(id))
+      items.push({
+        label: allSelected ? 'Deselect all' : 'Select all',
+        menuIcon: CheckCircle,
+        command: () => {
+          const next = new Set(props.selectedIds)
+          if (allSelected) ids.forEach((id) => next.delete(id))
+          else ids.forEach((id) => next.add(id))
+          emit('update:selectedIds', [...next])
+        },
+      })
+    }
+  }
+  items.push(
+    {
       label: 'Rename',
       menuIcon: Pencil,
       command: () => startRename(collection),
     },
-  ]
+  )
   if (contextHasChildren.value) {
     items.push({
       label: contextExpanded.value ? 'Collapse' : 'Expand',
@@ -499,19 +638,6 @@ const menuItems = computed<TreeMenuItem[]>(() => {
       menuIcon: FolderOpen,
       command: () => void addCollection(collection.id),
     },
-    {
-      label: isPinned('collection', collection.id)
-        ? 'Unpin from Quicklinks'
-        : 'Pin to Quicklinks',
-      menuIcon: Bookmark,
-      command: () =>
-        toggleQuicklink({
-          type: 'collection',
-          id: collection.id,
-          name: collection.name,
-          color: collection.color ? `#${collection.color}` : undefined,
-        }),
-    },
     { separator: true },
     confirmDeleteMenuItem('Delete', () => void remove(collection)),
   )
@@ -519,7 +645,7 @@ const menuItems = computed<TreeMenuItem[]>(() => {
 })
 
 const SORT_OPTIONS: { value: SortMode; label: string }[] = [
-  { value: 'custom', label: 'Custom (drag & drop)' },
+  { value: 'custom', label: 'Custom order' },
   { value: 'name-asc', label: 'Name A–Z' },
   { value: 'name-desc', label: 'Name Z–A' },
   { value: 'count-desc', label: 'Most assets' },
@@ -554,7 +680,35 @@ function toggleExpandAll(): void {
   expandedKeys.value = next
 }
 
+function toggleSelection(id: string): void {
+  const next = new Set(props.selectedIds)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  emit('update:selectedIds', [...next])
+}
+
+function onRowClick(node: TreeNode): void {
+  if (!props.selectable) return
+  if (node.data) toggleSelection(node.data.id)
+}
+
+function onRowDoubleClick(node: TreeNode): void {
+  if (!props.manage || props.selectable || !node.data) return
+  startRename(node.data)
+}
+
+function openCollection(collection: Collection): void {
+  clearSmartSelection()
+  const query: Record<string, string> = { collection: collection.id }
+  if (typeof route.query.sort === 'string' && route.query.sort) {
+    query.sort = route.query.sort
+  }
+  emit('open', collection)
+  void router.push({ name: 'all', query })
+}
+
 function onSelect(node: TreeNode): void {
+  if (props.selectable || !props.navigable) return
   if (editingId.value) return
   // Selecting a collection drops any smart-collection Inspector selection and
   // resets the other filters (locking comes later).
@@ -567,6 +721,7 @@ function onSelect(node: TreeNode): void {
 }
 
 async function onDrop(event: TreeNodeDropEvent): Promise<void> {
+  if (!props.manage) return
   const drag = (event.dragNode as TreeNode | undefined)?.data as
     | Collection
     | undefined
@@ -588,6 +743,8 @@ async function onDrop(event: TreeNodeDropEvent): Promise<void> {
   }
   try {
     await api.moveCollection(drag.id, parentId, index)
+    applyLocalMove(drag, parentId, index)
+    refreshLibrary()
   } catch (e) {
     toast.add({
       severity: 'error',
@@ -596,7 +753,24 @@ async function onDrop(event: TreeNodeDropEvent): Promise<void> {
       life: 4000,
     })
   }
-  notifyLibraryChanged()
+}
+
+function applyLocalMove(
+  drag: Collection,
+  parentId: string | null,
+  index: number,
+): void {
+  const siblings = library.collections
+    .filter(
+      (item) =>
+        item.id !== drag.id && (item.parent_id ?? null) === parentId,
+    )
+    .sort(compareCollections)
+  drag.parent_id = parentId ?? undefined
+  siblings.splice(Math.min(index, siblings.length), 0, drag)
+  siblings.forEach((item, position) => {
+    item.sort = position
+  })
 }
 
 // treePt tags each row with its collection id so delegated events can resolve
@@ -636,6 +810,7 @@ function collectionFromTarget(target: EventTarget | null): Collection | null {
 }
 
 function onRootContextMenu(event: MouseEvent): void {
+  if (!props.manage) return
   const collection = collectionFromTarget(event.target)
   if (!collection) return
   event.preventDefault()
@@ -643,7 +818,7 @@ function onRootContextMenu(event: MouseEvent): void {
 }
 
 function onAssetDragOver(event: DragEvent): void {
-  if (!assetDrag.active) return
+  if (!props.manage || !assetDrag.active) return
   const collection = collectionFromTarget(event.target)
   if (!collection) return
   // Take over from the Tree's own drag-and-drop while assets are dragged.
@@ -654,7 +829,7 @@ function onAssetDragOver(event: DragEvent): void {
 }
 
 async function onAssetDrop(event: DragEvent): Promise<void> {
-  if (!assetDrag.active) return
+  if (!props.manage || !assetDrag.active) return
   const collection = collectionFromTarget(event.target)
   if (!collection) return
   event.preventDefault()
@@ -675,7 +850,7 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
   if (!ids.length) return
   try {
     await api.addAssetsToCollection(collection.id, ids)
-    notifyLibraryChanged()
+    refreshLibrary()
     toast.add({
       severity: 'success',
       summary: ids.length > 1 ? `Added ${ids.length} assets` : 'Added to folder',
@@ -691,6 +866,14 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
     })
   }
 }
+defineExpose({
+  addCollection,
+  createCollection,
+  toggleExpandAll,
+  toggleSort,
+  allExpanded,
+})
+
 </script>
 
 <template>
@@ -701,6 +884,7 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
     @drop.capture="onAssetDrop"
   >
     <div
+      v-if="showHeader"
       class="sticky top-0 z-10 flex items-center justify-between bg-white dark:bg-slate-900 pt-2 pb-0 pr-3 pl-[1.375rem]"
     >
       <span class="text-xs font-semibold tracking-wide text-slate-400 uppercase">
@@ -710,6 +894,13 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
         </template>
       </span>
       <div class="flex items-center gap-1">
+        <button
+          class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
+          title="Manage collections"
+          @click="openCollectionsDialog"
+        >
+          <FolderOpen :size="14" />
+        </button>
         <button
           class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
           :title="allExpanded ? 'Collapse all' : 'Expand all'"
@@ -756,23 +947,36 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
     </Popover>
 
     <Tree
-      :value="nodes"
+      :value="treeNodes"
       :selection-keys="selectionKeys"
-      selection-mode="single"
+      :selection-mode="selectable || !navigable ? undefined : 'single'"
       v-model:expanded-keys="expandedKeys"
-      :draggable-nodes="sortMode === 'custom'"
-      :droppable-nodes="sortMode === 'custom'"
+      :draggable-nodes="manage"
+      :droppable-nodes="manage"
       :validate-drop="true"
       :pt="treePt"
       class="!border-0 !bg-transparent !pt-1"
       @node-select="onSelect"
       @node-drop="onDrop"
     >
-      <template #empty></template>
+      <template #empty>
+        <p class="px-2 py-6 text-center text-sm text-slate-400">
+          {{ filter.trim() ? 'No matching collections' : 'No collections' }}
+        </p>
+      </template>
       <template #default="{ node }">
         <div
-          class="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1"
-          :class="dragOverId === node.data?.id ? 'bg-slate-100 dark:bg-slate-800' : ''"
+          class="flex w-full min-w-0 items-center gap-2 rounded-md py-1"
+          :class="[
+            'px-2',
+            dragOverId === node.data?.id
+              ? 'bg-slate-100 dark:bg-slate-800'
+              : selectable && node.data && selectedSet.has(node.data.id)
+                ? 'bg-violet-50/60 dark:bg-violet-950/25'
+                : 'hover:bg-slate-100 dark:hover:bg-slate-800',
+          ]"
+          @click="onRowClick(node)"
+          @dblclick="onRowDoubleClick(node)"
         >
           <template v-if="node.key === DRAFT_KEY">
             <component
@@ -781,6 +985,7 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
               class="shrink-0"
               :style="{ color: libraryColorHex(draftColor) }"
               @click="onFolderClick($event, node)"
+              @dblclick.stop
             />
             <input
               v-model="draftName"
@@ -802,6 +1007,7 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
               class="shrink-0"
               :style="{ color: colorOf(node.data) }"
               @click="onFolderClick($event, node)"
+              @dblclick.stop
             />
             <input
               v-if="editingId === node.data.id"
@@ -817,7 +1023,17 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
               @keydown.esc="cancelRename"
               @blur="commitRename"
             />
-            <span v-else class="min-w-0 flex-1 truncate">{{ node.data.name }}</span>
+            <span
+              v-else
+              class="min-w-0 flex-1 truncate border-b border-transparent leading-5"
+            >
+              {{ node.data.name }}
+            </span>
+            <CheckCircle
+              v-if="selectable && selectedSet.has(node.data.id)"
+              :size="14"
+              class="shrink-0 text-violet-600 dark:text-violet-400"
+            />
             <span
               v-if="node.data.asset_count"
               class="shrink-0 text-xs text-slate-400"
@@ -864,9 +1080,9 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
 </template>
 
 <style scoped>
-/* Tree guide lines: an expanded folder draws a vertical line from its icon down
-   the left of its children, ending in a small tick that meets the last child's
-   icon (an "L"). The colour is the parent folder's, exposed as --guide-color. */
+/* Tree guide lines: a dotted line drops from the parent folder icon centre and
+   turns into a small L that stops just before the last child's icon. The colour
+   is the parent folder's, exposed as --guide-color. */
 :deep(.p-tree-node-children > .p-tree-node) {
   position: relative;
 }
@@ -874,40 +1090,38 @@ async function onAssetDrop(event: DragEvent): Promise<void> {
 :deep(.p-tree-node-children > .p-tree-node)::before {
   content: '';
   position: absolute;
-  left: -0.375rem;
+  left: -0.2rem;
   top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--guide-color, transparent);
-  opacity: 0.45;
+  bottom: -2px;
+  width: 2px;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--guide-color, transparent) 0 2px,
+    transparent 2px 4px
+  );
+  opacity: 0.8;
 }
 
-/* Reach up to the parent's folder icon. */
 :deep(.p-tree-node-children > .p-tree-node:first-child)::before {
-  top: -0.875rem;
+  top: -0.5rem;
 }
 
-/* Stop at the last child's icon... */
 :deep(.p-tree-node-children > .p-tree-node:last-child)::before {
-  bottom: auto;
-  height: 0.875rem;
+  bottom: 0.875rem;
 }
 
-/* ...unless it is the only child, then span icon to icon. */
-:deep(.p-tree-node-children > .p-tree-node:first-child:last-child)::before {
-  top: -0.875rem;
-  height: 1.75rem;
-}
-
-/* ...and tick across to meet that last child's icon. */
 :deep(.p-tree-node-children > .p-tree-node:last-child)::after {
   content: '';
   position: absolute;
-  left: -0.375rem;
+  left: -0.2rem;
   top: 0.875rem;
-  width: 0.875rem;
-  height: 1px;
-  background: var(--guide-color, transparent);
-  opacity: 0.45;
+  width: 0.7rem;
+  height: 2px;
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--guide-color, transparent) 0 2px,
+    transparent 2px 4px
+  );
+  opacity: 0.8;
 }
 </style>

@@ -26,6 +26,7 @@ import { formatDuration, formatSize } from '../lib/format'
 import { library, notifyLibraryChanged } from '../lib/library'
 import { libraryColorHex } from '../lib/libraryColors'
 import { ACCEPT_STRING } from '../lib/mimeTypes'
+import { openUploadCollections } from '../lib/collectionsDialog'
 import { openUploadTags } from '../lib/tagsDialog'
 import {
   clearUploadItems,
@@ -1227,11 +1228,10 @@ function onPrimary(): void {
           <div class="mb-2 flex items-center justify-between">
             <h3 class="text-sm font-semibold">Collections</h3>
             <button
-              class="inline-flex cursor-default text-slate-300 dark:text-slate-600"
-              title="Collection selection is coming soon"
-              aria-disabled="true"
-              tabindex="-1"
-              @click.prevent
+              class="inline-flex text-slate-400 hover:text-violet-600 disabled:opacity-40 dark:hover:text-violet-400"
+              title="Select collections"
+              :disabled="running"
+              @click="openUploadCollections"
             >
               <Plus :size="14" />
             </button>

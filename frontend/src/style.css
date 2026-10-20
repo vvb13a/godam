@@ -39,3 +39,12 @@ html.dark {
 .p-multiselect-filter-container .p-inputtext {
   min-width: 0;
 }
+
+/* PrimeVue appends a clone of the dragged tree row to <body>. Keep that helper
+   off-screen so it cannot introduce a temporary page scrollbar/shift. */
+[data-pc-section='drag-image'] {
+  position: fixed !important;
+  top: -10000px !important;
+  left: -10000px !important;
+  pointer-events: none !important;
+}

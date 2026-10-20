@@ -1085,20 +1085,42 @@ func (s *AssetService) RemoveFromCollection(ctx context.Context, assetID, collec
 
 // AddToCollectionBulk adds many assets to one collection in a single statement.
 func (s *AssetService) AddToCollectionBulk(ctx context.Context, collectionID string, assetIDs []string) error {
+	return s.ApplyCollectionsBulk(ctx, assetIDs, []string{collectionID}, "add")
+}
+
+// ApplyCollectionsBulk adds or replaces collection membership for many assets.
+// "replace" makes collectionIDs the exact collection set of every given asset.
+func (s *AssetService) ApplyCollectionsBulk(ctx context.Context, assetIDs, collectionIDs []string, mode string) error {
 	if len(assetIDs) == 0 {
 		return nil
 	}
-	var count int64
-	if err := s.db.WithContext(ctx).Model(&store.Collection{}).Where("id = ?", collectionID).Count(&count).Error; err != nil {
-		return err
+	if mode == "replace" {
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Exec(
+				`DELETE FROM asset_collections WHERE asset_id IN ?`,
+				assetIDs,
+			).Error; err != nil {
+				return err
+			}
+			if len(collectionIDs) == 0 {
+				return nil
+			}
+			return tx.Exec(
+				`INSERT OR IGNORE INTO asset_collections (asset_id, collection_id)
+				 SELECT a.id, c.id FROM assets a, collections c
+				 WHERE a.id IN ? AND c.id IN ?`,
+				assetIDs, collectionIDs,
+			).Error
+		})
 	}
-	if count == 0 {
-		return domain.ErrNotFound
+	if len(collectionIDs) == 0 {
+		return nil
 	}
 	return s.db.WithContext(ctx).Exec(
 		`INSERT OR IGNORE INTO asset_collections (asset_id, collection_id)
-		 SELECT a.id, ? FROM assets a WHERE a.id IN ?`,
-		collectionID, assetIDs,
+		 SELECT a.id, c.id FROM assets a, collections c
+		 WHERE a.id IN ? AND c.id IN ?`,
+		assetIDs, collectionIDs,
 	).Error
 }
 

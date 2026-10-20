@@ -1,46 +1,39 @@
 <script setup lang="ts">
+import Button from 'primevue/button'
 import ContextMenu from 'primevue/contextmenu'
 import Dialog from 'primevue/dialog'
+import Popover from 'primevue/popover'
 import { useToast } from 'primevue/usetoast'
 import type { MenuItem } from 'primevue/menuitem'
 import {
   AngleRight,
-  Bars,
   Bookmark,
   Check,
-  CheckCircle,
+  Cog,
   Folder,
   FolderOpen,
   Palette,
   Pencil,
   Plus,
   Search,
-  SlidersH,
   Star,
   StarFill,
-  ThLarge,
   Times,
 } from '@primeicons/vue'
 import type { Component } from 'vue'
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import * as api from '../api/client'
 import { library, notifyLibraryChanged } from '../lib/library'
 import { confirmDeleteMenuItem } from '../lib/menu'
 import { splitNames } from '../lib/names'
+import { isPinned, toggleQuicklink } from '../lib/quicklinks'
+import { useAnimatedHeight } from '../lib/useAnimatedHeight'
 import { tagsDialog } from '../lib/tagsDialog'
 import { upload } from '../lib/upload'
 import type { Tag, TagGroup } from '../types'
-import Kbd from './Kbd.vue'
 import TagBadge from './TagBadge.vue'
 
-interface NavEntry {
-  key: string
-  label: string
-  count: number
-  icon?: Component
-  color?: string
-}
 
 interface GroupMenuItem extends MenuItem {
   menuIcon?: Component
@@ -49,6 +42,32 @@ interface GroupMenuItem extends MenuItem {
 }
 
 const DEFAULT_COLOR = '6366f1'
+const GROUP_STORAGE_KEY = 'godam:tags:group'
+const SORT_STORAGE_KEY = 'godam:tags:sort'
+
+type GroupMode = 'none' | 'alphabet' | 'groups'
+type SortMode = 'name-asc' | 'name-desc' | 'count-asc' | 'count-desc'
+
+const GROUP_MODES: GroupMode[] = ['none', 'alphabet', 'groups']
+const SORT_MODES: SortMode[] = [
+  'name-asc',
+  'name-desc',
+  'count-asc',
+  'count-desc',
+]
+
+function loadGroupMode(): GroupMode {
+  const raw = localStorage.getItem(GROUP_STORAGE_KEY)
+  return GROUP_MODES.includes(raw as GroupMode) ? (raw as GroupMode) : 'none'
+}
+
+function loadSortMode(): SortMode {
+  const raw = localStorage.getItem(SORT_STORAGE_KEY)
+  return SORT_MODES.includes(raw as SortMode)
+    ? (raw as SortMode)
+    : 'name-asc'
+}
+
 const COLOR_OPTIONS = [
   { name: 'Red', value: '#ef4444' },
   { name: 'Orange', value: '#f97316' },
@@ -66,23 +85,16 @@ const toast = useToast()
 const router = useRouter()
 
 const rootRef = ref<HTMLElement | null>(null)
+const { setWrapper: setHeightWrapper, style: heightStyle } = useAnimatedHeight(rootRef)
 const searchRef = ref<HTMLInputElement | null>(null)
 const menu = ref<InstanceType<typeof ContextMenu> | null>(null)
 const groupMenu = ref<InstanceType<typeof ContextMenu> | null>(null)
-const displayMenu = ref<InstanceType<typeof ContextMenu> | null>(null)
+const displayPopover = ref<InstanceType<typeof Popover> | null>(null)
 
 const search = ref('')
-const activeView = ref('all')
-const focusArea = ref<'nav' | 'tags'>('tags')
-const navIndex = ref(0)
-const tagIndex = ref(0)
 const selectedTagIds = ref<string[]>([])
-const tagLayout = ref<'list' | 'grid'>('list')
-const collapsed = ref(false)
-const sort = ref<'name-asc' | 'name-desc' | 'count-asc' | 'count-desc'>(
-  'name-asc',
-)
-const groupBy = ref<'none' | 'alphabet' | 'groups'>('none')
+const sort = ref<SortMode>(loadSortMode())
+const groupBy = ref<GroupMode>(loadGroupMode())
 
 const editingTagId = ref<string | null>(null)
 const editingTagName = ref('')
@@ -90,13 +102,32 @@ const draftTagId = ref<string | null>(null)
 
 const contextTag = ref<Tag | null>(null)
 const contextGroup = ref<TagGroup | null>(null)
-const pendingAction = ref<'create-tag' | 'create-group' | null>(null)
+const pendingAction = ref<'create-tag' | null>(null)
 const draggingTagId = ref<string | null>(null)
 const dragOverTarget = ref<string | null>(null)
 
 const editingGroupId = ref<string | null>(null)
 const editingName = ref('')
-const draftGroupId = ref<string | null>(null)
+const groupDraftRef = ref<HTMLInputElement | null>(null)
+const creatingGroup = ref(false)
+const groupDraftName = ref('')
+const groupDraftTagId = ref<string | null>(null)
+
+watch(sort, (value) => {
+  try {
+    localStorage.setItem(SORT_STORAGE_KEY, value)
+  } catch {
+    // Storage unavailable: the setting simply won't persist.
+  }
+})
+
+watch(groupBy, (value) => {
+  try {
+    localStorage.setItem(GROUP_STORAGE_KEY, value)
+  } catch {
+    // Storage unavailable: the setting simply won't persist.
+  }
+})
 
 const isAssetContext = computed(() => !!tagsDialog.assetId)
 const isBulkContext = computed(
@@ -106,57 +137,10 @@ const isAssetEditing = computed(
   () => isAssetContext.value || isBulkContext.value || tagsDialog.upload,
 )
 const selectionLoaded = ref(false)
-
-const syntheticNav = computed<NavEntry[]>(() => {
-  const tags = library.tags
-  return [
-    { key: 'all', label: 'All', count: tags.length, icon: Bookmark },
-    {
-      key: 'uncategorized',
-      label: 'Uncategorized',
-      count: tags.filter((tag) => !tag.group_id).length,
-      icon: Folder,
-    },
-    {
-      key: 'starred',
-      label: 'Starred',
-      count: tags.filter((tag) => tag.starred).length,
-      icon: StarFill,
-    },
-  ]
-})
-
-const groupNav = computed<NavEntry[]>(() =>
-  library.tagGroups.map((group) => ({
-    key: `group:${group.id}`,
-    label: group.name,
-    count: group.tag_count,
-    color: group.color,
-  })),
-)
-
-const navItems = computed<NavEntry[]>(() => [
-  ...syntheticNav.value,
-  ...groupNav.value,
-])
-
-const activeNavLabel = computed(
-  () =>
-    navItems.value.find((item) => item.key === activeView.value)?.label ?? 'All',
-)
+let skipSaveOnClose = false
 
 const viewTags = computed(() => {
   let list = library.tags
-  const view = activeView.value
-  if (view === 'uncategorized') {
-    list = list.filter((tag) => !tag.group_id)
-  } else if (view === 'starred') {
-    list = list.filter((tag) => tag.starred)
-  } else if (view.startsWith('group:')) {
-    const id = view.slice('group:'.length)
-    list = list.filter((tag) => tag.group_id === id)
-  }
-
   const query = search.value.trim().toLowerCase()
   if (query) {
     list = list.filter((tag) => tag.name.toLowerCase().includes(query))
@@ -184,6 +168,8 @@ interface TagSection {
   label: string
   color?: string
   tags: Tag[]
+  groupId?: string
+  dropId?: string | null
 }
 
 const sections = computed<TagSection[]>(() => {
@@ -210,21 +196,26 @@ const sections = computed<TagSection[]>(() => {
       result.push({ key: 'starred', label: 'Starred', color: '#f59e0b', tags: starred })
     }
     for (const group of library.tagGroups) {
-      const groupTags = tags.filter(
-        (tag) => tag.group_id === group.id && !tag.starred,
-      )
+      const groupTags = tags.filter((tag) => tag.group_id === group.id)
       if (groupTags.length) {
         result.push({
           key: `group:${group.id}`,
           label: group.name,
           color: group.color ? `#${group.color}` : undefined,
           tags: groupTags,
+          groupId: group.id,
+          dropId: group.id,
         })
       }
     }
-    const uncategorized = tags.filter((tag) => !tag.group_id && !tag.starred)
+    const uncategorized = tags.filter((tag) => !tag.group_id)
     if (uncategorized.length) {
-      result.push({ key: 'uncategorized', label: 'Uncategorized', tags: uncategorized })
+      result.push({
+        key: 'uncategorized',
+        label: 'Uncategorized',
+        tags: uncategorized,
+        dropId: null,
+      })
     }
     return result
   }
@@ -233,124 +224,29 @@ const sections = computed<TagSection[]>(() => {
 
 const flatTags = computed(() => sections.value.flatMap((section) => section.tags))
 
-const tagIndexMap = computed(() => {
-  const map = new Map<string, number>()
-  flatTags.value.forEach((tag, index) => map.set(tag.id, index))
-  return map
-})
-
-const colorFor = (group: TagGroup): string =>
-  group.color ? `#${group.color}` : '#cbd5e1'
-
-const displayMenuItems = computed<MenuItem[]>(() => {
-  return [
-    {
-      label: 'Layout',
-      items: [
-        {
-          label: 'List',
-          icon: Bars,
-          active: tagLayout.value === 'list',
-          command: () => {
-            tagLayout.value = 'list'
-          },
-        },
-        {
-          label: 'Grid',
-          icon: ThLarge,
-          active: tagLayout.value === 'grid',
-          command: () => {
-            tagLayout.value = 'grid'
-          },
-        },
-      ],
-    },
-    {
-      label: 'Sidebar',
-      items: [
-        {
-          label: 'Show',
-          active: !collapsed.value,
-          command: () => {
-            collapsed.value = false
-          },
-        },
-        {
-          label: 'Hide',
-          active: collapsed.value,
-          command: () => {
-            collapsed.value = true
-            focusArea.value = 'tags'
-          },
-        },
-      ],
-    },
-    {
-      label: 'Sort',
-      items: [
-        {
-          label: 'Name A–Z',
-          active: sort.value === 'name-asc',
-          command: () => {
-            sort.value = 'name-asc'
-          },
-        },
-        {
-          label: 'Name Z–A',
-          active: sort.value === 'name-desc',
-          command: () => {
-            sort.value = 'name-desc'
-          },
-        },
-        {
-          label: 'Count low–high',
-          active: sort.value === 'count-asc',
-          command: () => {
-            sort.value = 'count-asc'
-          },
-        },
-        {
-          label: 'Count high–low',
-          active: sort.value === 'count-desc',
-          command: () => {
-            sort.value = 'count-desc'
-          },
-        },
-      ],
-    },
-    {
-      label: 'Group by',
-      items: [
-        {
-          label: 'None',
-          active: groupBy.value === 'none',
-          command: () => {
-            groupBy.value = 'none'
-          },
-        },
-        {
-          label: 'Alphabet',
-          active: groupBy.value === 'alphabet',
-          command: () => {
-            groupBy.value = 'alphabet'
-          },
-        },
-        {
-          label: 'Groups',
-          active: groupBy.value === 'groups',
-          command: () => {
-            groupBy.value = 'groups'
-          },
-        },
-      ],
-    },
-  ]
-})
-
 const tagMenuItems = computed<MenuItem[]>(() => {
   const tag = contextTag.value
   if (!tag) return []
   const items: MenuItem[] = [
+    {
+      label: 'Open',
+      icon: Search,
+      command: () => filterByTag(tag),
+    },
+    {
+      label: isPinned('tag', tag.id)
+        ? 'Unpin from Quicklinks'
+        : 'Pin to Quicklinks',
+      icon: Bookmark,
+      command: () =>
+        toggleQuicklink({
+          type: 'tag',
+          id: tag.id,
+          name: tag.name,
+          color: tagColor(tag),
+        }),
+    },
+    { separator: true },
     {
       label: tag.starred ? 'Unstar' : 'Star',
       icon: tag.starred ? StarFill : Star,
@@ -361,17 +257,12 @@ const tagMenuItems = computed<MenuItem[]>(() => {
       icon: Pencil,
       command: () => startTagRename(tag),
     },
-    {
-      label: 'Filter',
-      icon: Search,
-      command: () => filterByTag(tag),
-    },
   ]
-  if (library.tagGroups.length) {
-    items.push({
-      label: 'Move',
-      icon: Folder,
-      items: library.tagGroups.map((group) => ({
+  items.push({
+    label: 'Move',
+    icon: Folder,
+    items: [
+      ...library.tagGroups.map((group) => ({
         label: group.name,
         icon: Bookmark,
         color: group.color ? `#${group.color}` : undefined,
@@ -380,8 +271,14 @@ const tagMenuItems = computed<MenuItem[]>(() => {
           if (tag.group_id !== group.id) assignGroup(tag, group.id)
         },
       })),
-    })
-  }
+      ...(library.tagGroups.length ? [{ separator: true }] : []),
+      {
+        label: 'New group…',
+        icon: Plus,
+        command: () => startGroupDraft(tag),
+      },
+    ],
+  })
   if (tag.group_id) {
     items.push({
       label: 'Ungroup',
@@ -422,19 +319,7 @@ const groupMenuItems = computed<GroupMenuItem[]>(() => {
         command: () => setGroupColor(option.value),
       })),
     },
-    {
-      label: 'Filter',
-      menuIcon: Search,
-      command: () => filterByGroup(group),
-    },
     { separator: true },
-    {
-      label: 'Create',
-      menuIcon: Plus,
-      command: () => {
-        pendingAction.value = 'create-group'
-      },
-    },
     confirmDeleteMenuItem('Delete', () => performDeleteGroup(group.id)),
   ]
 })
@@ -443,17 +328,14 @@ watch(
   () => tagsDialog.visible,
   (open) => {
     if (open) {
-      window.addEventListener('keydown', onWindowKeydown)
       search.value = ''
-      activeView.value = 'all'
-      focusArea.value = 'tags'
-      navIndex.value = 0
-      tagIndex.value = 0
       selectedTagIds.value = []
       editingTagId.value = null
       editingGroupId.value = null
       draftTagId.value = null
-      draftGroupId.value = null
+      creatingGroup.value = false
+      groupDraftName.value = ''
+      groupDraftTagId.value = null
       selectionLoaded.value = false
       dirty.value = false
       if (tagsDialog.upload) {
@@ -464,9 +346,10 @@ watch(
       } else if (isBulkContext.value) {
         selectionLoaded.value = true
       }
+      void pruneEmptyGroups()
     } else {
-      window.removeEventListener('keydown', onWindowKeydown)
-      void saveAssetSelection()
+      if (!skipSaveOnClose) void saveAssetSelection()
+      skipSaveOnClose = false
       if (dirty.value) {
         dirty.value = false
         notifyLibraryChanged()
@@ -474,18 +357,6 @@ watch(
     }
   },
 )
-
-watch(flatTags, () => {
-  if (tagIndex.value >= flatTags.value.length) {
-    tagIndex.value = Math.max(0, flatTags.value.length - 1)
-  }
-})
-
-watch(navItems, () => {
-  if (navIndex.value >= navItems.value.length) {
-    navIndex.value = Math.max(0, navItems.value.length - 1)
-  }
-})
 
 function toMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
@@ -541,10 +412,61 @@ function focusSearch(): void {
   nextTick(() => searchRef.value?.focus())
 }
 
+function toggleDisplayOptions(event: Event): void {
+  displayPopover.value?.toggle(event)
+}
+
+const GROUP_OPTIONS: { label: string; value: GroupMode }[] = [
+  { label: 'None', value: 'none' },
+  { label: 'Alphabet', value: 'alphabet' },
+  { label: 'Groups', value: 'groups' },
+]
+
+const SORT_OPTIONS: {
+  label: string
+  value: SortMode
+}[] = [
+  { label: 'Name A–Z', value: 'name-asc' },
+  { label: 'Name Z–A', value: 'name-desc' },
+  { label: 'Count high–low', value: 'count-desc' },
+  { label: 'Count low–high', value: 'count-asc' },
+]
+
+function setGroup(value: GroupMode): void {
+  groupBy.value = value
+  displayPopover.value?.hide()
+}
+
+function setSort(
+  value: SortMode,
+): void {
+  sort.value = value
+  displayPopover.value?.hide()
+}
+
 const selectedTags = computed(() => {
   const ids = new Set(selectedTagIds.value)
   return library.tags.filter((tag) => ids.has(tag.id))
 })
+
+const searchTerm = computed(() => search.value.trim())
+const searchNames = computed(() => splitNames(searchTerm.value))
+const existingNames = computed(() =>
+  searchNames.value.filter((name) =>
+    library.tags.some(
+      (tag) => tag.name.trim().toLowerCase() === name.toLowerCase(),
+    ),
+  ),
+)
+const newNames = computed(() =>
+  searchNames.value.filter(
+    (name) =>
+      !library.tags.some(
+        (tag) => tag.name.trim().toLowerCase() === name.toLowerCase(),
+      ),
+  ),
+)
+const showCreate = computed(() => newNames.value.length > 0)
 
 function tagColor(tag: Tag): string | undefined {
   if (!tag.group_id) return undefined
@@ -616,22 +538,6 @@ async function saveBulkSelection(): Promise<void> {
   }
 }
 
-function applyNavIndex(): void {
-  const item = navItems.value[navIndex.value]
-  if (!item) return
-  activeView.value = item.key
-  tagIndex.value = 0
-}
-
-function selectNav(key?: string, index?: number): void {
-  if (!key) return
-  activeView.value = key
-  tagIndex.value = 0
-  focusArea.value = 'nav'
-  if (typeof index === 'number') navIndex.value = index
-  focusSearch()
-}
-
 function toggleTagSelection(tag: Tag): void {
   if (!isAssetEditing.value) return
   if (selectedTagIds.value.includes(tag.id)) {
@@ -642,92 +548,8 @@ function toggleTagSelection(tag: Tag): void {
 }
 
 function onTagClick(tag: Tag): void {
-  focusArea.value = 'tags'
-  tagIndex.value = tagIndexMap.value.get(tag.id) ?? 0
   toggleTagSelection(tag)
   focusSearch()
-}
-
-function scrollFocusedTag(): void {
-  const tag = flatTags.value[tagIndex.value]
-  if (!tag) return
-  void nextTick(() => {
-    rootRef.value
-      ?.querySelector<HTMLElement>(`[data-tag-id="${tag.id}"]`)
-      ?.scrollIntoView({ block: 'nearest' })
-  })
-}
-
-function onKeydown(event: KeyboardEvent): void {
-  if (event.ctrlKey && event.key.toLowerCase() === 'm') {
-    event.preventDefault()
-    openMenuForFocused()
-    return
-  }
-  switch (event.key) {
-    case 'ArrowDown':
-      event.preventDefault()
-      if (focusArea.value === 'nav') {
-        navIndex.value = Math.min(navItems.value.length - 1, navIndex.value + 1)
-        applyNavIndex()
-      } else {
-        tagIndex.value = Math.min(flatTags.value.length - 1, tagIndex.value + 1)
-        scrollFocusedTag()
-      }
-      break
-    case 'ArrowUp':
-      event.preventDefault()
-      if (focusArea.value === 'nav') {
-        navIndex.value = Math.max(0, navIndex.value - 1)
-        applyNavIndex()
-      } else {
-        tagIndex.value = Math.max(0, tagIndex.value - 1)
-        scrollFocusedTag()
-      }
-      break
-    case 'ArrowRight':
-      if (focusArea.value === 'nav') {
-        event.preventDefault()
-        focusArea.value = 'tags'
-        tagIndex.value = 0
-      }
-      break
-    case 'ArrowLeft':
-      if (focusArea.value === 'tags' && !collapsed.value) {
-        event.preventDefault()
-        const index = navItems.value.findIndex(
-          (item) => item.key === activeView.value,
-        )
-        navIndex.value = index >= 0 ? index : 0
-        focusArea.value = 'nav'
-      }
-      break
-    case 'Tab':
-      if (collapsed.value) break
-      event.preventDefault()
-      focusArea.value = focusArea.value === 'nav' ? 'tags' : 'nav'
-      break
-    case 'Enter':
-      event.preventDefault()
-      if (focusArea.value === 'nav' && !collapsed.value) {
-        selectNav(navItems.value[navIndex.value]?.key)
-      } else {
-        const tag = flatTags.value[tagIndex.value]
-        if (tag) toggleTagSelection(tag)
-      }
-      break
-  }
-}
-
-// onWindowKeydown drives the dialog globally while it is open so navigation
-// keeps working no matter where focus lands. Events originating from overlays
-// (context menus, popovers) or from inputs that stop propagation (inline
-// editors) are excluded.
-function onWindowKeydown(event: KeyboardEvent): void {
-  const target = event.target as HTMLElement | null
-  if (target && target.closest('button, a, select')) return
-  if (target && target.closest('.p-contextmenu, .p-popover, .p-menu')) return
-  onKeydown(event)
 }
 
 function openTagMenu(tag: Tag, event: Event): void {
@@ -740,43 +562,14 @@ function openGroupMenu(group: TagGroup, event: MouseEvent): void {
   groupMenu.value?.show(event)
 }
 
-// menuEventFrom fabricates the page coordinates PrimeVue's ContextMenu needs
-// when it is opened from a keyboard action rather than a pointer event.
-function menuEventFrom(el: HTMLElement): Event {
-  const rect = el.getBoundingClientRect()
-  return {
-    pageX: rect.left + window.scrollX + 24,
-    pageY: rect.bottom + window.scrollY + 2,
-    currentTarget: el,
-    target: el,
-    preventDefault() {},
-    stopPropagation() {},
-  } as unknown as Event
+function openGroupMenuById(event: MouseEvent, id: string): void {
+  const group = library.tagGroups.find((item) => item.id === id)
+  if (group) openGroupMenu(group, event)
 }
 
-// openMenuForFocused opens the context menu for the focused tag/group so the
-// whole dialog is usable from the keyboard.
-function openMenuForFocused(): void {
-  if (focusArea.value === 'tags') {
-    const tag = flatTags.value[tagIndex.value]
-    if (!tag) return
-    const el = rootRef.value?.querySelector<HTMLElement>(
-      `[data-tag-id="${tag.id}"]`,
-    )
-    if (!el) return
-    contextTag.value = tag
-    menu.value?.show(menuEventFrom(el))
-    return
-  }
-
-  const group = library.tagGroups[navIndex.value - syntheticNav.value.length]
-  if (!group) return
-  const el = rootRef.value?.querySelector<HTMLElement>(
-    `[data-group-id="${group.id}"]`,
-  )
-  if (!el) return
-  contextGroup.value = group
-  groupMenu.value?.show(menuEventFrom(el))
+function startGroupRenameById(id: string): void {
+  const group = library.tagGroups.find((item) => item.id === id)
+  if (group) startGroupRename(group)
 }
 
 // onMenuHide runs after a context menu has fully closed. Deferred create
@@ -788,11 +581,7 @@ function onMenuHide(): void {
     void addTag()
     return
   }
-  if (action === 'create-group') {
-    void addGroup()
-    return
-  }
-  if (editingGroupId.value || editingTagId.value) return
+  if (editingGroupId.value || editingTagId.value || creatingGroup.value) return
   focusSearch()
 }
 
@@ -821,16 +610,8 @@ function filterByTag(tag: Tag): void {
   void router.push({ name: 'all', query: { tag: tag.id } })
 }
 
-function filterByGroup(group: TagGroup): void {
-  const ids = library.tags
-    .filter((tag) => tag.group_id === group.id)
-    .map((tag) => tag.id)
-  if (!ids.length) return
-  tagsDialog.visible = false
-  void router.push({ name: 'all', query: { tag: ids.join(',') } })
-}
-
 async function assignGroup(tag: Tag, groupId: string | null): Promise<void> {
+  const previousGroup = tag.group_id
   try {
     const updated = await api.updateTag(
       tag.id,
@@ -840,10 +621,77 @@ async function assignGroup(tag: Tag, groupId: string | null): Promise<void> {
       tag.description,
     )
     upsertTag(updated)
+    if (previousGroup && previousGroup !== groupId) {
+      await pruneEmptyGroup(previousGroup)
+    }
   } catch (e) {
     toast.add({
       severity: 'error',
       summary: 'Update failed',
+      detail: toMessage(e),
+      life: 4000,
+    })
+  }
+}
+
+async function pruneEmptyGroups(): Promise<void> {
+  const empty = library.tagGroups.filter(
+    (group) => !library.tags.some((tag) => tag.group_id === group.id),
+  )
+  for (const group of empty) {
+    await pruneEmptyGroup(group.id)
+  }
+}
+
+async function pruneEmptyGroup(groupId: string): Promise<void> {
+  if (library.tags.some((tag) => tag.group_id === groupId)) return
+  try {
+    await api.deleteTagGroup(groupId)
+    removeGroupLocal(groupId)
+  } catch {
+    // Keep the group if deletion fails; it is still recoverable.
+  }
+}
+
+function startGroupDraft(tag: Tag): void {
+  creatingGroup.value = true
+  groupDraftTagId.value = tag.id
+  groupDraftName.value = ''
+  menu.value?.hide()
+  nextTick(() => groupDraftRef.value?.focus())
+}
+
+function cancelGroupDraft(): void {
+  creatingGroup.value = false
+  groupDraftName.value = ''
+  groupDraftTagId.value = null
+}
+
+async function commitGroupDraft(): Promise<void> {
+  if (!creatingGroup.value) return
+  const name = groupDraftName.value.trim()
+  const tagId = groupDraftTagId.value
+  creatingGroup.value = false
+  groupDraftName.value = ''
+  groupDraftTagId.value = null
+  if (!name || !tagId) return
+  const tag = library.tags.find((item) => item.id === tagId)
+  if (!tag) return
+  let group =
+    library.tagGroups.find(
+      (item) => item.name.trim().toLowerCase() === name.toLowerCase(),
+    ) ?? null
+  try {
+    if (!group) {
+      group = await api.createTagGroup(name, '', DEFAULT_COLOR)
+      upsertGroup(group)
+    }
+    await assignGroup(tag, group.id)
+    groupBy.value = 'groups'
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: 'Could not create group',
       detail: toMessage(e),
       life: 4000,
     })
@@ -879,9 +727,11 @@ function onGroupDrop(groupId: string | null): void {
 }
 
 async function performDeleteTag(id: string): Promise<void> {
+  const groupId = library.tags.find((tag) => tag.id === id)?.group_id
   try {
     await api.deleteTag(id)
     removeTagLocal(id)
+    if (groupId) await pruneEmptyGroup(groupId)
     toast.add({ severity: 'success', summary: 'Tag deleted', life: 2000 })
   } catch (e) {
     toast.add({
@@ -896,7 +746,6 @@ async function performDeleteTag(id: string): Promise<void> {
 async function performDeleteGroup(id: string): Promise<void> {
   try {
     await api.deleteTagGroup(id)
-    if (activeView.value === `group:${id}`) activeView.value = 'all'
     removeGroupLocal(id)
     toast.add({ severity: 'success', summary: 'Group deleted', life: 2000 })
   } catch (e) {
@@ -917,21 +766,57 @@ function uniqueUntitledTagName(): string {
   return `untitled ${index}`
 }
 
+async function createFromSearch(): Promise<void> {
+  const names = searchNames.value
+  if (!names.length) return
+  const existing = library.tags.filter((tag) =>
+    names.some(
+      (name) => tag.name.trim().toLowerCase() === name.toLowerCase(),
+    ),
+  )
+  if (isAssetEditing.value && existing.length) {
+    selectedTagIds.value = [
+      ...new Set([...selectedTagIds.value, ...existing.map((tag) => tag.id)]),
+    ]
+  }
+  if (existingNames.value.length) {
+    toast.add({
+      severity: 'info',
+      summary: 'Skipped existing tags',
+      detail: existingNames.value.join(', '),
+      life: 3000,
+    })
+  }
+  for (const name of newNames.value) {
+    try {
+      const tag = await api.createTag(name)
+      upsertTag(tag)
+      if (isAssetEditing.value) {
+        selectedTagIds.value = [...selectedTagIds.value, tag.id]
+      }
+    } catch (e) {
+      toast.add({
+        severity: 'error',
+        summary: 'Could not create tag',
+        detail: toMessage(e),
+        life: 4000,
+      })
+    }
+  }
+  search.value = ''
+  nextTick(focusSearch)
+}
+
+function cancelDialog(): void {
+  skipSaveOnClose = true
+  tagsDialog.visible = false
+}
+
 // addTag creates a draft tag then opens its inline editor. If the name is left
 // unchanged the draft is rolled back, so nothing is persisted.
 async function addTag(): Promise<void> {
   try {
-    let tag = await api.createTag(uniqueUntitledTagName())
-    const view = activeView.value
-    if (view.startsWith('group:')) {
-      tag = await api.updateTag(
-        tag.id,
-        tag.name,
-        view.slice('group:'.length),
-        false,
-        tag.description,
-      )
-    }
+    const tag = await api.createTag(uniqueUntitledTagName())
     upsertTag(tag)
     draftTagId.value = tag.id
     startTagRename(tag)
@@ -1042,34 +927,6 @@ async function commitTagRename(): Promise<void> {
   }
 }
 
-function uniqueUntitledName(): string {
-  const names = new Set(library.tagGroups.map((group) => group.name))
-  if (!names.has('Untitled')) return 'Untitled'
-  let index = 2
-  while (names.has(`Untitled ${index}`)) index++
-  return `Untitled ${index}`
-}
-
-async function addGroup(): Promise<void> {
-  try {
-    const group = await api.createTagGroup(
-      uniqueUntitledName(),
-      '',
-      DEFAULT_COLOR,
-    )
-    upsertGroup(group)
-    draftGroupId.value = group.id
-    startGroupRename(group)
-  } catch (e) {
-    toast.add({
-      severity: 'error',
-      summary: 'Could not create group',
-      detail: toMessage(e),
-      life: 4000,
-    })
-  }
-}
-
 function startGroupRename(group: TagGroup): void {
   groupMenu.value?.hide()
   editingGroupId.value = group.id
@@ -1084,12 +941,7 @@ function startGroupRename(group: TagGroup): void {
 }
 
 function cancelGroupRename(): void {
-  const id = editingGroupId.value
   editingGroupId.value = null
-  if (id && id === draftGroupId.value) {
-    draftGroupId.value = null
-    void api.deleteTagGroup(id).then(() => removeGroupLocal(id))
-  }
 }
 
 async function commitGroupRename(): Promise<void> {
@@ -1098,25 +950,7 @@ async function commitGroupRename(): Promise<void> {
   editingGroupId.value = null
   const group = library.tagGroups.find((item) => item.id === id)
   const name = editingName.value.trim()
-  if (!group) return
-  if (id === draftGroupId.value) {
-    draftGroupId.value = null
-    if (!name || name === group.name) {
-      try {
-        await api.deleteTagGroup(id)
-        removeGroupLocal(id)
-      } catch (e) {
-        toast.add({
-          severity: 'error',
-          summary: 'Delete failed',
-          detail: toMessage(e),
-          life: 4000,
-        })
-      }
-      return
-    }
-  }
-  if (!name || name === group.name) return
+  if (!group || !name || name === group.name) return
   try {
     const updated = await api.updateTagGroup(
       id,
@@ -1156,10 +990,6 @@ async function setGroupColor(color: string): Promise<void> {
     })
   }
 }
-
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onWindowKeydown)
-})
 </script>
 
 <template>
@@ -1168,11 +998,12 @@ onBeforeUnmount(() => {
     modal
     dismissable-mask
     :show-header="false"
-    :style="{ width: '48rem', maxWidth: '95vw' }"
+    :style="{ width: '32rem', maxWidth: '95vw' }"
     :pt="{ content: { class: '!p-0' } }"
     @show="focusSearch"
   >
-    <div ref="rootRef" class="flex h-[36rem] max-h-[80vh] flex-col">
+    <div :ref="setHeightWrapper" class="overflow-hidden" :style="heightStyle">
+      <div ref="rootRef" class="flex max-h-[80vh] flex-col">
       <div class="flex items-center gap-3 border-b border-slate-200 dark:border-slate-800 px-4 py-3">
         <Search :size="16" class="shrink-0 text-slate-400" />
         <input
@@ -1181,13 +1012,21 @@ onBeforeUnmount(() => {
           type="text"
           placeholder="Search tags…"
           class="min-w-0 flex-1 border-0 bg-transparent text-sm outline-none"
+          @keydown.enter.prevent.stop="createFromSearch"
         />
         <button
           class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-violet-600 dark:hover:text-violet-400"
-          title="Display options"
-          @click="displayMenu?.show($event)"
+          title="New tag"
+          @click="addTag"
         >
-          <SlidersH :size="16" />
+          <Plus :size="16" />
+        </button>
+        <button
+          class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-violet-600 dark:hover:bg-slate-800 dark:hover:text-violet-400"
+          title="Group and sort tags"
+          @click="toggleDisplayOptions"
+        >
+          <Cog :size="16" />
         </button>
         <button
           class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200"
@@ -1199,227 +1038,143 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="flex min-h-0 flex-1">
-        <nav
-          v-if="!collapsed"
-          class="w-1/3 shrink-0 overflow-y-auto border-r border-slate-200 dark:border-slate-800 p-2"
-        >
-          <button
-            v-for="(item, index) in syntheticNav"
-            :key="item.key"
-            class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
-            :class="[
-              item.key === 'uncategorized' && dragOverTarget === 'uncategorized'
-                ? 'ring-2 ring-violet-400 ring-inset'
-                : focusArea === 'nav' && navIndex === index
-                  ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
-                  : item.key === activeView
-                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
-                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white',
-            ]"
-            @click="selectNav(item.key, index)"
-            @dragover.prevent="item.key === 'uncategorized' && onGroupDragOver('uncategorized')"
-            @dragleave="dragOverTarget = null"
-            @drop.prevent="item.key === 'uncategorized' && onGroupDrop(null)"
-          >
-            <component :is="item.icon" :size="14" class="shrink-0" />
-            <span class="truncate text-left">{{ item.label }}</span>
-            <span
-              v-if="item.count > 0"
-              class="ml-auto shrink-0 text-xs text-slate-400"
-            >
-              {{ item.count }}
-            </span>
-          </button>
-
-          <div class="mt-2 flex items-center justify-between px-2 py-1">
-            <span
-              class="text-xs font-semibold tracking-wide text-slate-400 uppercase"
-            >
-              Groups
-              <template v-if="library.tagGroups.length">
-                ({{ library.tagGroups.length }})
-              </template>
-            </span>
-            <button
-              class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
-              title="New group"
-              @click="addGroup"
-            >
-              <Plus :size="14" />
-            </button>
-          </div>
-
-          <p
-            v-if="!library.tagGroups.length"
-            class="px-2 py-1 text-xs text-slate-400"
-          >
-            No groups
-          </p>
-
-          <div
-            v-for="(group, index) in library.tagGroups"
-            :key="group.id"
-            :data-group-id="group.id"
-            class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm select-none"
-            :class="[
-              dragOverTarget === group.id
-                ? 'ring-2 ring-violet-400 ring-inset'
-                : focusArea === 'nav' && navIndex === syntheticNav.length + index
-                  ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
-                  : activeView === `group:${group.id}`
-                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
-                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white',
-            ]"
-            @click="selectNav(`group:${group.id}`, syntheticNav.length + index)"
-            @dblclick="startGroupRename(group)"
-            @contextmenu.prevent="openGroupMenu(group, $event)"
-            @dragover.prevent="onGroupDragOver(group.id)"
-            @dragleave="dragOverTarget = null"
-            @drop.prevent="onGroupDrop(group.id)"
-          >
-            <Bookmark
-              :size="14"
-              class="shrink-0"
-              :style="{ color: colorFor(group) }"
-            />
-            <input
-              v-if="editingGroupId === group.id"
-              v-model="editingName"
-              :data-group-rename="group.id"
-              type="text"
-              class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none"
-              @click.stop
-              @dblclick.stop
-              @keydown.stop
-              @keydown.enter="commitGroupRename"
-              @keydown.esc="cancelGroupRename"
-              @blur="commitGroupRename"
-            />
-            <span
-              v-else
-              class="min-w-0 flex-1 truncate border-b border-transparent text-left leading-5"
-            >
-              {{ group.name }}
-            </span>
-            <span
-              v-if="group.tag_count > 0"
-              class="shrink-0 text-xs text-slate-400"
-            >
-              {{ group.tag_count }}
-            </span>
-          </div>
-        </nav>
-
         <div class="flex min-w-0 flex-1 flex-col">
-          <div
-            class="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 px-3 py-2"
-          >
-            <span class="truncate text-sm font-semibold text-slate-700 dark:text-slate-200">
-              {{ activeNavLabel }}
-            </span>
-            <span
-              v-if="viewTags.length > 0"
-              class="shrink-0 text-xs text-slate-400"
+          <div class="min-h-0 flex-1 overflow-y-auto px-3 pt-3 pb-1.5">
+            <div
+              v-if="creatingGroup"
+              class="mb-1 flex items-center gap-2 rounded border border-violet-300 bg-violet-50/40 px-2 py-1.5 dark:border-violet-800 dark:bg-violet-950/20"
             >
-              {{ viewTags.length }}
-            </span>
+              <Folder :size="16" class="shrink-0 text-violet-500" />
+              <input
+                ref="groupDraftRef"
+                v-model="groupDraftName"
+                type="text"
+                placeholder="New group name…"
+                class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 outline-none dark:text-slate-100"
+                @keydown.enter.prevent="commitGroupDraft"
+                @keydown.esc.prevent="cancelGroupDraft"
+                @blur="commitGroupDraft"
+              />
+            </div>
             <button
-              class="ml-auto inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
-              title="New tag"
-              @click="addTag"
+              v-if="showCreate"
+              type="button"
+              class="mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-950/40"
+              @click="createFromSearch"
             >
-              <Plus :size="14" />
+              <Plus :size="15" class="shrink-0" />
+              <span class="min-w-0 flex-1 truncate">
+                <template v-if="newNames.length === 1">
+                  Create “{{ newNames[0] }}”
+                </template>
+                <template v-else>
+                  Create {{ newNames.length }} tags
+                </template>
+              </span>
             </button>
-          </div>
-
-          <div class="min-h-0 flex-1 overflow-y-auto p-2">
             <p
               v-if="!flatTags.length"
               class="px-2 py-6 text-center text-sm text-slate-400"
             >
               No tags
             </p>
-            <template v-for="section in sections" :key="section.key">
-              <p
-                v-if="section.label"
-                class="sticky top-0 z-10 bg-white dark:bg-slate-900 px-2 pt-2 pb-1 text-xs font-semibold tracking-wide text-slate-400 uppercase"
-              >
-                {{ section.label }}
-              </p>
-              <div
-                :class="
-                  tagLayout === 'grid' ? 'grid grid-cols-2 gap-1' : 'space-y-0.5'
+            <div class="flex flex-wrap items-start gap-1.5">
+              <fieldset
+                v-for="section in sections"
+                :key="section.key"
+                class="max-w-full min-w-0 shrink-0 rounded-md pb-1.5"
+                :class="[
+                  section.label
+                    ? 'border border-slate-200 bg-slate-50 px-1.5 dark:border-slate-800 dark:bg-slate-950'
+                    : 'w-full',
+                  section.dropId !== undefined &&
+                  dragOverTarget === (section.dropId ?? 'uncategorized')
+                    ? 'ring-2 ring-violet-400 ring-inset'
+                    : '',
+                ]"
+                @dragover.prevent="
+                  section.dropId !== undefined &&
+                  onGroupDragOver(section.dropId ?? 'uncategorized')
+                "
+                @dragleave="dragOverTarget = null"
+                @drop.prevent="
+                  section.dropId !== undefined &&
+                  onGroupDrop(section.dropId ?? null)
                 "
               >
-                <div
-                  v-for="tag in section.tags"
-                  :key="tag.id"
-                  :data-tag-id="tag.id"
-                  draggable="true"
-                  class="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm select-none"
-                  :class="
-                    focusArea === 'tags' &&
-                    tagIndexMap.get(tag.id) === tagIndex
-                      ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
-                      : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                <legend
+                  v-if="section.label"
+                  class="px-1 text-[0.625rem] font-normal text-slate-400"
+                  @contextmenu.prevent="
+                    section.groupId && openGroupMenuById($event, section.groupId)
                   "
-                  @click="onTagClick(tag)"
-                  @dblclick="startTagRename(tag)"
-                  @contextmenu.prevent="openTagMenu(tag, $event)"
-                  @dragstart="onTagDragStart(tag, $event)"
-                  @dragend="onTagDragEnd"
                 >
-                  <CheckCircle
-                    v-if="selectedTagIds.includes(tag.id)"
-                    :size="14"
-                    class="shrink-0 text-green-500"
-                  />
-                  <StarFill
-                    v-else-if="tag.starred"
-                    :size="14"
-                    class="shrink-0"
-                    :style="{ color: tagColor(tag) ?? '#f59e0b' }"
-                  />
-                  <span
-                    v-else
-                    class="flex h-3.5 w-3.5 shrink-0 items-center justify-center"
-                  >
-                    <span
-                      class="h-2 w-2 rounded-full"
-                      :style="{
-                        backgroundColor: tagColor(tag) ?? '#cbd5e1',
-                      }"
-                    />
-                  </span>
                   <input
-                    v-if="editingTagId === tag.id"
-                    v-model="editingTagName"
-                    :data-tag-rename="tag.id"
+                    v-if="section.groupId && editingGroupId === section.groupId"
+                    v-model="editingName"
+                    :data-group-rename="section.groupId"
                     type="text"
-                    placeholder="Tag name (use , or ; to batch)"
-                    class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none"
+                    class="w-24 border-b border-violet-400 bg-transparent p-0 text-[0.625rem] text-slate-800 outline-none dark:text-slate-100"
                     @click.stop
                     @dblclick.stop
                     @keydown.stop
-                    @keydown.enter="commitTagRename"
-                    @keydown.esc="cancelTagRename"
-                    @blur="commitTagRename"
+                    @keydown.enter="commitGroupRename"
+                    @keydown.esc="cancelGroupRename"
+                    @blur="commitGroupRename"
                   />
                   <span
                     v-else
-                    class="min-w-0 flex-1 truncate border-b border-transparent text-left leading-5"
+                    :class="section.groupId ? 'cursor-text' : ''"
+                    @dblclick.stop="
+                      section.groupId && startGroupRenameById(section.groupId)
+                    "
                   >
-                    {{ tag.name }}
+                    {{ section.label }}
                   </span>
-                  <span
-                    v-if="tag.asset_count > 0"
-                    class="shrink-0 text-xs text-slate-400"
+                </legend>
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <TagBadge
+                    v-for="tag in section.tags"
+                    :key="tag.id"
+                    :name="tag.name"
+                    :color="tagColor(tag)"
+                    :starred="tag.starred"
+                    :selected="selectedTagIds.includes(tag.id)"
+                    draggable="true"
+                    :title="tag.name"
+                    @click="onTagClick(tag)"
+                    @dblclick="startTagRename(tag)"
+                    @contextmenu.prevent="openTagMenu(tag, $event)"
+                    @dragstart="onTagDragStart(tag, $event)"
+                    @dragend="onTagDragEnd"
                   >
-                    {{ tag.asset_count }}
-                  </span>
+                    <template #label>
+                      <input
+                        v-if="editingTagId === tag.id"
+                        v-model="editingTagName"
+                        :data-tag-rename="tag.id"
+                        type="text"
+                        placeholder="Tag name (use , or ; to batch)"
+                        class="w-28 min-w-0 border-b border-violet-400 bg-transparent p-0 text-xs leading-5 text-slate-800 outline-none dark:text-slate-100"
+                        @click.stop
+                        @dblclick.stop
+                        @keydown.stop
+                        @keydown.enter="commitTagRename"
+                        @keydown.esc="cancelTagRename"
+                        @blur="commitTagRename"
+                      />
+                      <span v-else class="max-w-56 truncate">{{ tag.name }}</span>
+                    </template>
+                    <span
+                      v-if="tag.asset_count > 0"
+                      class="shrink-0 text-[10px] opacity-60"
+                    >
+                      {{ tag.asset_count }}
+                    </span>
+                  </TagBadge>
                 </div>
-              </div>
-            </template>
+              </fieldset>
+            </div>
           </div>
 
           <div
@@ -1448,28 +1203,23 @@ onBeforeUnmount(() => {
       </div>
 
       <div
-        class="flex items-center gap-4 border-t border-slate-200 dark:border-slate-800 px-4 py-2 text-xs text-slate-400"
+        class="flex items-center justify-between border-t border-slate-200 px-3 py-2 dark:border-slate-800"
       >
-        <span class="flex items-center gap-1.5">
-          <Kbd>↑</Kbd>
-          <Kbd>↓</Kbd>
-          <Kbd>←</Kbd>
-          <Kbd>→</Kbd>
-          <span class="ml-1">Move</span>
+        <span class="text-xs text-slate-400">
+          <template v-if="isAssetEditing">{{ selectedTags.length }} selected</template>
+          <template v-else>
+            {{ library.tags.length }} tag{{ library.tags.length === 1 ? '' : 's' }}
+          </template>
         </span>
-        <span v-if="isAssetEditing" class="flex items-center gap-1.5">
-          <Kbd>↵</Kbd>
-          <span class="ml-1">Select</span>
-        </span>
-        <span class="flex items-center gap-1.5">
-          <Kbd>Ctrl</Kbd>
-          <Kbd>M</Kbd>
-          <span class="ml-1">Menu</span>
-        </span>
-        <span class="ml-auto flex items-center gap-1.5">
-          <Kbd>Esc</Kbd>
-          <span class="ml-1">Close</span>
-        </span>
+        <div class="flex items-center gap-2">
+          <Button label="Cancel" text size="small" @click="cancelDialog" />
+          <Button
+            label="Done"
+            size="small"
+            @click="tagsDialog.visible = false"
+          />
+        </div>
+      </div>
       </div>
     </div>
 
@@ -1563,32 +1313,48 @@ onBeforeUnmount(() => {
       </template>
     </ContextMenu>
 
-    <ContextMenu ref="displayMenu" :model="displayMenuItems">
-      <template #item="slotProps">
-        <a
-          data-pc-section="itemlink"
-          class="flex cursor-pointer items-center gap-2 px-3 py-1 text-sm text-slate-700 dark:text-slate-200"
-          @click.prevent
+    <Popover ref="displayPopover">
+      <div class="w-56">
+        <p class="px-2 pt-1 pb-1 text-xs font-semibold tracking-wide text-slate-400 uppercase">
+          Group by
+        </p>
+        <button
+          v-for="option in GROUP_OPTIONS"
+          :key="option.value"
+          type="button"
+          class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
+          :class="
+            groupBy === option.value
+              ? 'bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300'
+              : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+          "
+          @click="setGroup(option.value)"
         >
-          <component
-            :is="slotProps.item.menuIcon || slotProps.icon"
-            v-if="slotProps.item.menuIcon || slotProps.icon"
-            :size="14"
-            class="shrink-0"
-          />
-          <span class="flex-1">{{ slotProps.label }}</span>
-          <Check
-            v-if="slotProps.item.active"
-            :size="12"
-            class="shrink-0 text-violet-600 dark:text-violet-400"
-          />
-          <AngleRight
-            v-else-if="slotProps.hasSubmenu"
-            :size="12"
-            class="shrink-0"
-          />
-        </a>
-      </template>
-    </ContextMenu>
+          <span class="flex-1 text-left">{{ option.label }}</span>
+          <Check v-if="groupBy === option.value" :size="12" class="shrink-0" />
+        </button>
+
+        <div class="my-1 border-t border-slate-100 dark:border-slate-800" />
+
+        <p class="px-2 pt-1 pb-1 text-xs font-semibold tracking-wide text-slate-400 uppercase">
+          Sort by
+        </p>
+        <button
+          v-for="option in SORT_OPTIONS"
+          :key="option.value"
+          type="button"
+          class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
+          :class="
+            sort === option.value
+              ? 'bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300'
+              : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+          "
+          @click="setSort(option.value)"
+        >
+          <span class="flex-1 text-left">{{ option.label }}</span>
+          <Check v-if="sort === option.value" :size="12" class="shrink-0" />
+        </button>
+      </div>
+    </Popover>
   </Dialog>
 </template>
