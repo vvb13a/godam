@@ -21,6 +21,10 @@ func classifyContainerMime(mimeType string, data []byte) string {
 		if !oggHasVideo(data) && oggHasAudio(data) {
 			return "audio/ogg"
 		}
+	case "audio/x-wav":
+		return "audio/wav"
+	case "audio/x-m4a":
+		return "audio/mp4"
 	case "application/ogg":
 		switch {
 		case oggHasVideo(data):

@@ -61,7 +61,6 @@ import {
 import { editorDirty, leaveEditor, setEditorCloser } from '../lib/editorState'
 import { searchAssetWithGoogleLens } from '../lib/googleLens'
 import { library, loadLibraries, notifyLibraryChanged } from '../lib/library'
-import { isTextMime } from '../lib/mimeTypes'
 import {
   panels,
   toggleBottomPanel,
@@ -847,11 +846,10 @@ const editingAsset = computed(() => {
   if (selectedDetail.value?.id === id) return selectedDetail.value
   return assets.value.find((item) => item.id === id) ?? null
 })
-// Types the editor can save: raster images and editable text/code.
+// Types the editor can save: raster images.
 const editingCanSave = computed(() => {
   const mime = editingAsset.value?.mime_type
-  if (!mime) return false
-  return mime.startsWith('image/') || isTextMime(mime)
+  return Boolean(mime?.startsWith('image/'))
 })
 const assetEditorRef = ref<InstanceType<typeof AssetEditor> | null>(null)
 

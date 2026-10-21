@@ -6,7 +6,6 @@ import { useToast } from 'primevue/usetoast'
 import * as api from '../api/client'
 import { editorDirty } from '../lib/editorState'
 import { currentLibrary } from '../lib/library'
-import { isCsvMime, isFontMime, isTextMime } from '../lib/mimeTypes'
 import type { Asset } from '../types'
 import AudioPlayer from './AudioPlayer.vue'
 import PdfViewer from './PdfViewer.vue'
@@ -26,15 +25,7 @@ let loadWatermarkImage:
   | ((url: string, revokeObjectUrl?: boolean) => void)
   | null = null
 
-// Text / CSV editor state.
-const textContent = ref('')
-const originalText = ref('')
-const textLoading = ref(false)
-// Font specimen state.
-const fontFamily = ref('')
-let fontFace: FontFace | null = null
-
-type Mode = 'image' | 'pdf' | 'video' | 'audio' | 'font' | 'text' | 'csv' | 'other'
+type Mode = 'image' | 'pdf' | 'video' | 'audio' | 'other'
 
 const mode = computed<Mode>(() => {
   const mime = props.asset.mime_type
@@ -42,54 +33,8 @@ const mode = computed<Mode>(() => {
   if (mime === 'application/pdf') return 'pdf'
   if (mime.startsWith('video/')) return 'video'
   if (mime.startsWith('audio/')) return 'audio'
-  if (isFontMime(mime)) return 'font'
-  if (isCsvMime(mime)) return 'csv'
-  if (isTextMime(mime)) return 'text'
   return 'other'
 })
-
-const csvRows = computed<string[][]>(() =>
-  textContent.value ? parseCsv(textContent.value) : [],
-)
-
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = []
-  let row: string[] = []
-  let field = ''
-  let inQuotes = false
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i]
-    if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          field += '"'
-          i += 1
-        } else {
-          inQuotes = false
-        }
-      } else {
-        field += ch
-      }
-    } else if (ch === '"') {
-      inQuotes = true
-    } else if (ch === ',') {
-      row.push(field)
-      field = ''
-    } else if (ch === '\n') {
-      row.push(field)
-      rows.push(row)
-      row = []
-      field = ''
-    } else if (ch !== '\r') {
-      field += ch
-    }
-  }
-  if (field !== '' || row.length) {
-    row.push(field)
-    rows.push(row)
-  }
-  return rows
-}
 
 interface FilerobotInstance {
   render: (config?: Record<string, unknown>) => void
@@ -263,49 +208,6 @@ async function mountImage(): Promise<void> {
   imageEditor = editor
 }
 
-async function loadText(): Promise<void> {
-  textLoading.value = true
-  try {
-    const response = await fetch(api.assetContentUrl(props.asset.id), {
-      credentials: 'same-origin',
-    })
-    if (!response.ok) throw new Error(`Failed to load (${response.status})`)
-    textContent.value = await response.text()
-    originalText.value = textContent.value
-    editorDirty.value = false
-  } catch (e) {
-    textContent.value = ''
-    originalText.value = ''
-    toast.add({
-      severity: 'error',
-      summary: 'Could not load file',
-      detail: toMessage(e),
-      life: 4000,
-    })
-  } finally {
-    textLoading.value = false
-  }
-}
-
-async function loadFont(): Promise<void> {
-  try {
-    const family = `godam-font-${props.asset.id}`
-    const face = new FontFace(family, `url(${api.assetContentUrl(props.asset.id)})`)
-    await face.load()
-    document.fonts.add(face)
-    fontFace = face
-    fontFamily.value = family
-  } catch {
-    fontFamily.value = ''
-  }
-}
-
-watch(textContent, () => {
-  if (mode.value === 'text') {
-    editorDirty.value = textContent.value !== originalText.value
-  }
-})
-
 async function performImageSave(): Promise<void> {
   const editor = imageEditor
   if (!editor || saving.value) return
@@ -343,39 +245,9 @@ async function performImageSave(): Promise<void> {
   }
 }
 
-async function performTextSave(): Promise<void> {
-  if (saving.value) return
-  saving.value = true
-  try {
-    const blob = new Blob([textContent.value], { type: props.asset.mime_type })
-    const updated = await api.replaceAssetContent(
-      props.asset.id,
-      blob,
-      props.asset.filename,
-    )
-    originalText.value = textContent.value
-    editorDirty.value = false
-    emit('saved', updated)
-    toast.add({ severity: 'success', summary: 'File saved', life: 2500 })
-    emit('close')
-  } catch (e) {
-    toast.add({
-      severity: 'error',
-      summary: 'Save failed',
-      detail: toMessage(e),
-      life: 4000,
-    })
-  } finally {
-    saving.value = false
-  }
-}
-
 // Called by the floating control's Save button: a simple confirm, then save.
 function save(event?: MouseEvent): void {
-  const target = mode.value
-  if (saving.value) return
-  if (target === 'image' && !imageEditor) return
-  if (target !== 'image' && target !== 'text') return
+  if (saving.value || mode.value !== 'image' || !imageEditor) return
   confirm.require({
     group: 'editor',
     target: event?.currentTarget as HTMLElement,
@@ -384,10 +256,7 @@ function save(event?: MouseEvent): void {
     acceptLabel: 'Save',
     rejectLabel: 'Cancel',
     rejectProps: { text: true },
-    accept: () => {
-      if (target === 'image') void performImageSave()
-      else void performTextSave()
-    },
+    accept: () => void performImageSave(),
   })
 }
 
@@ -397,11 +266,6 @@ function dispose(): void {
   disposed = true
   imageEditor?.terminate()
   imageEditor = null
-  if (fontFace) {
-    document.fonts.delete(fontFace)
-    fontFace = null
-  }
-  fontFamily.value = ''
   editorDirty.value = false
 }
 
@@ -409,8 +273,6 @@ function init(): void {
   disposed = false
   editorDirty.value = false
   if (mode.value === 'image') void mountImage()
-  else if (mode.value === 'text' || mode.value === 'csv') void loadText()
-  else if (mode.value === 'font') void loadFont()
 }
 
 onMounted(init)
@@ -429,51 +291,6 @@ onBeforeUnmount(dispose)
     <div v-if="mode === 'image'" ref="imageHost" class="h-full w-full" />
     <PdfViewer v-else-if="mode === 'pdf'" :key="asset.id" :asset="asset" />
 
-    <div
-      v-else-if="mode === 'font'"
-      class="h-full w-full overflow-y-auto bg-slate-100 dark:bg-slate-800 p-6"
-    >
-      <div class="mx-auto max-w-3xl rounded-lg bg-white dark:bg-slate-900 p-6 shadow-sm">
-        <p
-          class="mb-5 text-5xl leading-tight break-words text-slate-800 dark:text-slate-100"
-          :style="{ fontFamily: fontFamily || 'inherit' }"
-        >
-          The quick brown fox jumps over the lazy dog
-        </p>
-        <p
-          class="mb-3 text-3xl break-words text-slate-700 dark:text-slate-200"
-          :style="{ fontFamily: fontFamily || 'inherit' }"
-        >
-          ABCDEFGHIJKLMNOPQRSTUVWXYZ
-        </p>
-        <p
-          class="mb-3 text-3xl break-words text-slate-700 dark:text-slate-200"
-          :style="{ fontFamily: fontFamily || 'inherit' }"
-        >
-          abcdefghijklmnopqrstuvwxyz
-        </p>
-        <p
-          class="text-lg text-slate-500 dark:text-slate-400"
-          :style="{ fontFamily: fontFamily || 'inherit' }"
-        >
-          Aa Bb Cc — 0123456789 !@#$%^&*()
-        </p>
-        <p v-if="!fontFamily" class="mt-4 text-sm text-slate-400">
-          This font could not be loaded for preview.
-        </p>
-      </div>
-      <div class="mx-auto mt-4 max-w-3xl">
-        <a
-          :href="api.assetContentUrl(asset.id)"
-          target="_blank"
-          rel="noreferrer"
-          class="text-sm text-violet-600 dark:text-violet-400 hover:underline"
-        >
-          Download font
-        </a>
-      </div>
-    </div>
-
     <AudioPlayer v-else-if="mode === 'audio'" :asset="asset" />
 
     <VideoPlayer
@@ -481,40 +298,6 @@ onBeforeUnmount(dispose)
       :key="asset.id"
       :asset="asset"
     />
-
-    <div v-else-if="mode === 'text'" class="h-full w-full bg-slate-100 dark:bg-slate-800 p-4">
-      <p v-if="textLoading" class="text-sm text-slate-400">Loading…</p>
-      <textarea
-        v-else
-        v-model="textContent"
-        spellcheck="false"
-        class="h-full w-full resize-none rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 font-mono text-sm leading-relaxed text-slate-800 dark:text-slate-100 outline-none focus:border-violet-400"
-      />
-    </div>
-
-    <div
-      v-else-if="mode === 'csv'"
-      class="h-full w-full overflow-auto bg-slate-100 dark:bg-slate-800 p-4"
-    >
-      <p v-if="textLoading" class="text-sm text-slate-400">Loading…</p>
-      <table v-else class="min-w-full border-collapse bg-white dark:bg-slate-900 text-sm">
-        <tbody>
-          <tr
-            v-for="(row, rowIndex) in csvRows"
-            :key="rowIndex"
-            :class="rowIndex === 0 ? 'font-medium text-slate-800 dark:text-slate-100' : 'text-slate-600 dark:text-slate-300'"
-          >
-            <td
-              v-for="(cell, cellIndex) in row"
-              :key="cellIndex"
-              class="border border-slate-200 dark:border-slate-800 px-2 py-1 whitespace-nowrap"
-            >
-              {{ cell }}
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
 
     <div
       v-else

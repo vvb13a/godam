@@ -1,18 +1,13 @@
 <script setup lang="ts">
 import {
-  AlignLeft,
-  Code,
   File as FileIcon,
   FilePdf,
   Image as ImageIcon,
-  PenLine,
-  Table,
   Video,
   VolumeUp,
 } from '@primeicons/vue'
 import type { Component } from 'vue'
 import { computed } from 'vue'
-import { isCsvMime, isFontMime, isTextMime } from '../lib/mimeTypes'
 
 interface PreviewKind {
   icon: Component
@@ -23,22 +18,6 @@ const KINDS: Record<string, PreviewKind> = {
   pdf: {
     icon: FilePdf,
     gradient: 'from-red-600 via-rose-600 to-red-900',
-  },
-  font: {
-    icon: PenLine,
-    gradient: 'from-fuchsia-500 via-purple-500 to-indigo-600',
-  },
-  data: {
-    icon: Table,
-    gradient: 'from-cyan-500 via-sky-600 to-blue-700',
-  },
-  text: {
-    icon: AlignLeft,
-    gradient: 'from-violet-500 via-indigo-500 to-blue-600',
-  },
-  code: {
-    icon: Code,
-    gradient: 'from-slate-600 via-slate-700 to-slate-900',
   },
   audio: {
     icon: VolumeUp,
@@ -87,37 +66,12 @@ const kind = computed<PreviewKind>(() => {
   const ext = extension.value.toLowerCase()
 
   if (mime === 'application/pdf' || ext === 'pdf') return KINDS.pdf
-  if (isFontMime(mime) || ['ttf', 'otf', 'woff', 'woff2'].includes(ext)) {
-    return KINDS.font
-  }
-  if (
-    isCsvMime(mime) ||
-    ['csv', 'json', 'xml'].includes(ext) ||
-    ['application/json', 'application/xml', 'text/xml'].includes(mime)
-  ) {
-    return KINDS.data
-  }
-  if (mime === 'application/ogg' || mime.startsWith('audio/')) {
-    return KINDS.audio
-  }
+  if (mime.startsWith('audio/')) return KINDS.audio
   if (mime.startsWith('video/')) return KINDS.video
   if (mime.startsWith('image/')) return KINDS.image
-  if (
-    ['application/javascript', 'text/css', 'text/html', 'text/javascript'].includes(
-      mime,
-    ) ||
-    ['css', 'html', 'js'].includes(ext)
-  ) {
-    return KINDS.code
-  }
-  if (isTextMime(mime) || ['txt', 'md', 'markdown'].includes(ext)) {
-    return KINDS.text
-  }
-  if (['mp3', 'wav', 'ogg', 'flac', 'm4a'].includes(ext)) return KINDS.audio
+  if (['mp3', 'wav', 'm4a', 'aac'].includes(ext)) return KINDS.audio
   if (['mp4', 'webm', 'mov'].includes(ext)) return KINDS.video
-  if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'tif', 'tiff', 'bmp', 'svg'].includes(ext)) {
-    return KINDS.image
-  }
+  if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext)) return KINDS.image
   return KINDS.generic
 })
 </script>

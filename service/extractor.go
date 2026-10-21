@@ -1,9 +1,7 @@
 package service
 
 import (
-	"bytes"
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"image"
 	_ "image/gif"
@@ -16,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/vvb13a/godam/domain"
-	"golang.org/x/image/font/sfnt"
 	_ "golang.org/x/image/webp" // WebP decoder support
 )
 
@@ -37,9 +34,6 @@ func NewCompositeExtractor() *CompositeExtractor {
 		extractors: []FormatExtractor{
 			&ImageExtractor{},
 			&PDFExtractor{},
-			&FontExtractor{},
-			&CSVExtractor{},
-			&TextExtractor{},
 			&MediaExtractor{},
 		},
 	}
@@ -114,136 +108,8 @@ func (e *PDFExtractor) Extract(_ context.Context, r io.ReaderAt, size int64) (do
 	return meta, nil
 }
 
-// maxTextScan caps how much of a text/CSV file is read for metadata so a huge
-// file cannot exhaust memory.
-const maxTextScan = 4 << 20
-
-func readAtMost(r io.ReaderAt, size int64, limit int64) []byte {
-	n := size
-	if n > limit {
-		n = limit
-	}
-	if n <= 0 {
-		return nil
-	}
-	buf := make([]byte, n)
-	read, _ := r.ReadAt(buf, 0)
-	return buf[:read]
-}
-
 // -------------------------------------------------------------
-// 3. Font Extractor (TTF/OTF/WOFF metadata)
-// -------------------------------------------------------------
-type FontExtractor struct{}
-
-func isFontMime(mimeType string) bool {
-	return strings.HasPrefix(mimeType, "font/") ||
-		strings.HasPrefix(mimeType, "application/font") ||
-		strings.HasPrefix(mimeType, "application/x-font") ||
-		mimeType == "application/vnd.ms-fontobject"
-}
-
-func (e *FontExtractor) Supports(mimeType string) bool {
-	return isFontMime(mimeType)
-}
-
-func (e *FontExtractor) Extract(_ context.Context, r io.ReaderAt, size int64) (domain.Metadata, error) {
-	meta := domain.Metadata{}
-	font, err := sfnt.ParseReaderAt(r)
-	if err != nil {
-		return meta, nil
-	}
-	info := map[string]any{"glyphs": font.NumGlyphs()}
-	if family, err := font.Name(nil, sfnt.NameIDFamily); err == nil && family != "" {
-		info["family"] = family
-	}
-	if style, err := font.Name(nil, sfnt.NameIDSubfamily); err == nil && style != "" {
-		info["style"] = style
-	}
-	name, err := font.Name(nil, sfnt.NameIDFull)
-	if err != nil || name == "" {
-		name, _ = font.Name(nil, sfnt.NameIDPostScript)
-	}
-	if name != "" {
-		info["name"] = name
-	}
-	if encoded, err := json.Marshal(info); err == nil {
-		meta.RawJSON = string(encoded)
-	}
-	return meta, nil
-}
-
-// -------------------------------------------------------------
-// 4. CSV Extractor (row/column counts)
-// -------------------------------------------------------------
-type CSVExtractor struct{}
-
-func (e *CSVExtractor) Supports(mimeType string) bool {
-	return mimeType == "text/csv" || mimeType == "application/csv"
-}
-
-func (e *CSVExtractor) Extract(_ context.Context, r io.ReaderAt, size int64) (domain.Metadata, error) {
-	meta := domain.Metadata{}
-	data := readAtMost(r, size, maxTextScan)
-	if len(data) == 0 {
-		return meta, nil
-	}
-	reader := csv.NewReader(bytes.NewReader(data))
-	reader.FieldsPerRecord = -1
-	reader.LazyQuotes = true
-	rows, columns := 0, 0
-	for {
-		record, err := reader.Read()
-		if err != nil {
-			break
-		}
-		rows++
-		if len(record) > columns {
-			columns = len(record)
-		}
-	}
-	info := map[string]any{"rows": rows, "columns": columns}
-	if encoded, err := json.Marshal(info); err == nil {
-		meta.RawJSON = string(encoded)
-	}
-	return meta, nil
-}
-
-// -------------------------------------------------------------
-// 5. Text/Code Extractor (line and character counts)
-// -------------------------------------------------------------
-type TextExtractor struct{}
-
-func (e *TextExtractor) Supports(mimeType string) bool {
-	return strings.HasPrefix(mimeType, "text/") ||
-		mimeType == "application/json" ||
-		mimeType == "application/xml" ||
-		mimeType == "application/javascript"
-}
-
-func (e *TextExtractor) Extract(_ context.Context, r io.ReaderAt, size int64) (domain.Metadata, error) {
-	meta := domain.Metadata{}
-	data := readAtMost(r, size, maxTextScan)
-	if len(data) == 0 {
-		return meta, nil
-	}
-	lines := bytes.Count(data, []byte{'\n'})
-	if data[len(data)-1] != '\n' {
-		lines++
-	}
-	info := map[string]any{
-		"lines":      lines,
-		"characters": int(size),
-		"truncated":  size > int64(len(data)),
-	}
-	if encoded, err := json.Marshal(info); err == nil {
-		meta.RawJSON = string(encoded)
-	}
-	return meta, nil
-}
-
-// -------------------------------------------------------------
-// 6. Media Extractor (audio/video duration + video dimensions via ffprobe)
+// 3. Media Extractor (audio/video duration + video dimensions via ffprobe)
 // -------------------------------------------------------------
 type MediaExtractor struct{}
 

@@ -128,8 +128,8 @@ func TestBackupSFTPFlow(t *testing.T) {
 		t.Fatalf("test connection: %v", err)
 	}
 
-	content := []byte("hello from the backup test")
-	asset, err := assets.Upload(context.Background(), "", "", "hello.txt", "text/plain", int64(len(content)), bytes.NewReader(content))
+	content := testPNG(t)
+	asset, err := assets.Upload(context.Background(), "", "", "hello.png", "image/png", int64(len(content)), bytes.NewReader(content))
 	if err != nil {
 		t.Fatal(err)
 	}

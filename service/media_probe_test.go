@@ -29,6 +29,8 @@ func TestClassifyContainerMime(t *testing.T) {
 		{"ogg generic audio", "application/ogg", oggAudio, "audio/ogg"},
 		{"ogg generic video", "application/ogg", oggVideo, "video/ogg"},
 		{"ogg video stays video", "video/ogg", oggVideo, "video/ogg"},
+		{"wav alias", "audio/x-wav", []byte("x"), "audio/wav"},
+		{"m4a alias", "audio/x-m4a", []byte("x"), "audio/mp4"},
 		{"plain mime untouched", "image/png", []byte("x"), "image/png"},
 	}
 	for _, c := range cases {

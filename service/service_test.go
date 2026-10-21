@@ -1,7 +1,10 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"image"
+	"image/png"
 	"path/filepath"
 	"testing"
 	"time"
@@ -18,6 +21,17 @@ func newTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open db: %v", err)
 	}
 	return db
+}
+
+// testPNG returns a valid 1x1 PNG used by upload tests, since uploads are
+// restricted to image/audio/pdf/video types.
+func testPNG(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 1, 1))); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+	return buf.Bytes()
 }
 
 func TestInstance(t *testing.T) {

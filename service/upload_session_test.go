@@ -38,9 +38,9 @@ func newUploadTestService(t *testing.T) *AssetService {
 func TestChunkedUploadAssemblesAsset(t *testing.T) {
 	ctx := context.Background()
 	assets := newUploadTestService(t)
-	content := bytes.Repeat([]byte("chunked upload data\n"), 200)
+	content := bytes.Repeat(testPNG(t), 100)
 
-	session, err := assets.StartUpload(ctx, "user-1", "", "notes.txt", "text/plain", int64(len(content)))
+	session, err := assets.StartUpload(ctx, "user-1", "", "notes.png", "image/png", int64(len(content)))
 	if err != nil {
 		t.Fatalf("start upload: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestChunkedUploadAssemblesAsset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("complete upload: %v", err)
 	}
-	if asset.ByteSize != int64(len(content)) || asset.Filename != "notes.txt" {
+	if asset.ByteSize != int64(len(content)) || asset.Filename != "notes.png" {
 		t.Fatalf("unexpected asset: %+v", asset)
 	}
 
@@ -89,9 +89,9 @@ func TestChunkedUploadAssemblesAsset(t *testing.T) {
 func TestChunkedUploadRejectsWrongOwnerAndIncomplete(t *testing.T) {
 	ctx := context.Background()
 	assets := newUploadTestService(t)
-	content := []byte("hello world")
+	content := testPNG(t)
 
-	session, err := assets.StartUpload(ctx, "user-1", "", "hello.txt", "text/plain", int64(len(content)))
+	session, err := assets.StartUpload(ctx, "user-1", "", "hello.png", "image/png", int64(len(content)))
 	if err != nil {
 		t.Fatalf("start upload: %v", err)
 	}

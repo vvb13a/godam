@@ -20,9 +20,6 @@ export const MIME_CATEGORIES: MimeCategory[] = [
       { value: 'image/png', label: 'PNG' },
       { value: 'image/webp', label: 'WebP' },
       { value: 'image/gif', label: 'GIF' },
-      { value: 'image/tiff', label: 'TIFF' },
-      { value: 'image/bmp', label: 'BMP' },
-      { value: 'image/svg+xml', label: 'SVG' },
     ],
   },
   {
@@ -30,34 +27,21 @@ export const MIME_CATEGORIES: MimeCategory[] = [
     options: [{ value: 'application/pdf', label: 'PDF' }],
   },
   {
-    label: 'Fonts',
-    options: [
-      { value: 'font/sfnt', label: 'TrueType / OpenType' },
-      { value: 'font/woff', label: 'WOFF' },
-      { value: 'font/woff2', label: 'WOFF2' },
-    ],
-  },
-  {
-    label: 'Text & code',
-    options: [
-      { value: 'text/plain', label: 'Plain text' },
-      { value: 'text/csv', label: 'CSV' },
-      { value: 'text/css', label: 'CSS' },
-      { value: 'text/html', label: 'HTML' },
-      { value: 'text/javascript', label: 'JavaScript' },
-      { value: 'application/json', label: 'JSON' },
-      { value: 'application/xml', label: 'XML (application/xml)' },
-      { value: 'text/xml', label: 'XML (text/xml)' },
-      { value: 'text/markdown', label: 'Markdown' },
-    ],
-  },
-  {
     label: 'Audio',
-    options: [{ value: 'audio/*', label: 'All audio' }],
+    options: [
+      { value: 'audio/mpeg', label: 'MP3' },
+      { value: 'audio/wav', label: 'WAV' },
+      { value: 'audio/mp4', label: 'M4A / AAC' },
+      { value: 'audio/webm', label: 'WebM audio' },
+    ],
   },
   {
     label: 'Video',
-    options: [{ value: 'video/*', label: 'All video' }],
+    options: [
+      { value: 'video/mp4', label: 'MP4' },
+      { value: 'video/webm', label: 'WebM' },
+      { value: 'video/quicktime', label: 'QuickTime (MOV)' },
+    ],
   },
 ]
 
@@ -66,52 +50,19 @@ export const DEFAULT_ALLOWED: string[] = [
   'image/png',
   'image/webp',
   'image/gif',
-  'image/tiff',
-  'image/bmp',
-  'image/svg+xml',
   'application/pdf',
-  'font/sfnt',
-  'font/woff',
-  'font/woff2',
-  'text/plain',
-  'text/csv',
-  'text/css',
-  'text/html',
-  'text/javascript',
-  'application/json',
-  'application/xml',
-  'text/xml',
-  'text/markdown',
-  'audio/*',
-  'video/*',
-  'application/ogg',
+  'audio/mpeg',
+  'audio/wav',
+  'audio/mp4',
+  'audio/webm',
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
 ]
 
 // accept attribute for <input type="file">: extensions plus mime wildcards.
 export const ACCEPT_STRING =
-  '.jpg,.jpeg,.png,.webp,.gif,.tif,.tiff,.bmp,.svg,.pdf,.ttf,.otf,.woff,.woff2,.txt,.csv,.css,.js,.json,.xml,.md,.mp3,.wav,.ogg,.flac,.m4a,.mp4,.webm,.mov,image/*,audio/*,video/*'
-
-export function isFontMime(mime: string): boolean {
-  return (
-    mime.startsWith('font/') ||
-    mime.startsWith('application/font') ||
-    mime.startsWith('application/x-font') ||
-    mime === 'application/vnd.ms-fontobject'
-  )
-}
-
-export function isCsvMime(mime: string): boolean {
-  return mime === 'text/csv' || mime === 'application/csv'
-}
-
-export function isTextMime(mime: string): boolean {
-  return (
-    (mime.startsWith('text/') && !isCsvMime(mime)) ||
-    mime === 'application/json' ||
-    mime === 'application/xml' ||
-    mime === 'application/javascript'
-  )
-}
+  '.jpg,.jpeg,.png,.webp,.gif,.pdf,.mp3,.wav,.m4a,.aac,.mp4,.webm,.mov'
 
 // Asset types for which the backend produces a real visual preview (image,
 // audio waveform, video frame, or PDF first page). Everything else uses the

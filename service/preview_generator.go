@@ -15,10 +15,6 @@ import (
 	"strings"
 
 	"golang.org/x/image/draw"
-	gofont "golang.org/x/image/font"
-	"golang.org/x/image/font/opentype"
-	"golang.org/x/image/font/sfnt"
-	"golang.org/x/image/math/fixed"
 	_ "golang.org/x/image/webp"
 )
 
@@ -92,69 +88,8 @@ func (g *DefaultPreviewGenerator) Generate(ctx context.Context, mimeType string,
 		return g.pngFallback(), nil
 	}
 
-	// 5. Font Specimen (draw sample text with the font)
-	if isFontMime(mimeType) {
-		if reader, err := g.generateFontPreview(r); err == nil {
-			return reader, nil
-		}
-		return g.GetFallback(mimeType), nil
-	}
-
-	// 6. Non-visual assets (Zip, Text) -> Fallback
+	// 5. Non-visual assets -> Fallback
 	return g.GetFallback(mimeType), nil
-}
-
-// generateFontPreview renders a simple specimen (sample text plus the family
-// name) into the standard JPEG preview canvas.
-func (g *DefaultPreviewGenerator) generateFontPreview(r io.Reader) (io.Reader, error) {
-	data, err := io.ReadAll(io.LimitReader(r, 16<<20))
-	if err != nil {
-		return nil, err
-	}
-	font, err := sfnt.Parse(data)
-	if err != nil {
-		return nil, err
-	}
-	size := float64(g.maxDimension) / 6
-	face, err := opentype.NewFace(font, &opentype.FaceOptions{
-		Size:    size,
-		DPI:     72,
-		Hinting: gofont.HintingFull,
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer face.Close()
-
-	width, height := g.maxDimension, g.maxDimension
-	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	draw.Draw(img, img.Bounds(), &image.Uniform{C: color.White}, image.Point{}, draw.Src)
-
-	drawer := &gofont.Drawer{Dst: img, Src: image.Black, Face: face}
-	drawer.Dot = fixed.P(width/12, height/2)
-	drawer.DrawString("Aa Bb Cc")
-	if family, err := font.Name(nil, sfnt.NameIDFamily); err == nil && family != "" {
-		small, err := opentype.NewFace(font, &opentype.FaceOptions{Size: size / 2, DPI: 72, Hinting: gofont.HintingFull})
-		if err == nil {
-			defer small.Close()
-			sub := &gofont.Drawer{Dst: img, Src: image.Black, Face: small}
-			sub.Dot = fixed.P(width/12, height/2+int(size))
-			sub.DrawString(truncate(family, 24))
-		}
-	}
-
-	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: g.quality}); err != nil {
-		return nil, err
-	}
-	return &buf, nil
-}
-
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max-1] + "…"
 }
 
 // processAndEncodeJPEG downscales and flattens alpha onto a white background
