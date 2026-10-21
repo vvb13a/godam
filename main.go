@@ -74,6 +74,10 @@ func runServer(addr string, deps api.Deps) {
 	apiServer := api.NewServer(deps)
 	mux := http.NewServeMux()
 	mux.Handle("/api/", apiServer)
+	// Public delivery routes. /img and /src must be mounted explicitly;
+	// otherwise the SPA fallback would swallow them.
+	mux.Handle("/img/", apiServer)
+	mux.Handle("/src/", apiServer)
 	// Conversion routes are unauthenticated for now. Caddy calls /convert on a
 	// cache miss from the assets subdomain, and imgproxy calls /internal.
 	mux.Handle("/convert/", apiServer)
@@ -156,7 +160,7 @@ func initDependencies() {
 		registry,
 		localStore,
 		service.NewCompositeExtractor(),
-		service.NewPreviewGenerator(600, 85),
+		service.NewPreviewGenerator(1920, 85),
 		tagService,
 		backupService,
 	)

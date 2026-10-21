@@ -375,6 +375,10 @@ func (s *Server) handleDownloadAssetsZip(w http.ResponseWriter, r *http.Request)
 		if !ok {
 			return
 		}
+		if asset.Role != domain.AssetRoleOriginal {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "visual assets cannot be downloaded"})
+			return
+		}
 		names = append(names, asset.Filename)
 	}
 
@@ -418,22 +422,28 @@ func uniqueArchiveName(name string, used map[string]int) string {
 	return fmt.Sprintf("%s (%d)%s", base, count+1, ext)
 }
 
-// handleAssetPreview streams the generated JPEG preview.
+// handleAssetPreview is the authenticated preview alias. It resolves the same
+// source as /img and renders the default 400px preview through imgproxy.
 func (s *Server) handleAssetPreview(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if _, ok := s.ownedAsset(w, r, id); !ok {
 		return
 	}
-	rc, contentType, err := s.deps.Assets.OpenPreview(r.Context(), id)
+	source, err := s.deps.Assets.ResolveDeliveryImage(r.Context(), id)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	defer rc.Close()
+	result, err := s.deps.Conversions.PreviewDefault(r.Context(), source.ID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	defer result.Reader.Close()
 
-	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Type", result.ContentType)
 	w.Header().Set("Cache-Control", "private, max-age=3600")
-	_, _ = io.Copy(w, rc)
+	_, _ = io.Copy(w, result.Reader)
 }
 
 // handleRegeneratePreview re-renders and stores the preview for an asset.

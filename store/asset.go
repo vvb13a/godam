@@ -19,6 +19,8 @@ type Asset struct {
 	StorageKey    string    `gorm:"column:storage_key;type:text;not null"`
 	MimeType      string    `gorm:"column:mime_type;type:text;not null"`
 	ByteSize      int64     `gorm:"column:byte_size;not null"`
+	Role          string    `gorm:"column:role;type:text;not null;default:'original';index"`
+	ImageOf       *string   `gorm:"column:image_of;type:text;index"`
 	Width         *int      `gorm:"column:width"`
 	Height        *int      `gorm:"column:height"`
 	DurationSec   *float64  `gorm:"column:duration_sec"`
@@ -60,6 +62,15 @@ func AssetModel(a *domain.Asset) *Asset {
 	if a.UploadedBy != "" {
 		uploadedBy = &a.UploadedBy
 	}
+	var imageOf *string
+	if a.ImageOf != "" {
+		value := a.ImageOf
+		imageOf = &value
+	}
+	role := a.Role
+	if role == "" {
+		role = domain.AssetRoleOriginal
+	}
 	return &Asset{
 		ID:            a.ID,
 		UploadedBy:    uploadedBy,
@@ -70,6 +81,8 @@ func AssetModel(a *domain.Asset) *Asset {
 		StorageKey:    a.StorageKey,
 		MimeType:      a.MimeType,
 		ByteSize:      a.ByteSize,
+		Role:          role,
+		ImageOf:       imageOf,
 		Width:         a.Metadata.Width,
 		Height:        a.Metadata.Height,
 		DurationSec:   a.Metadata.DurationSec,
@@ -97,6 +110,14 @@ func (m *Asset) ToDomain() *domain.Asset {
 	if m.UploadedBy != nil {
 		uploadedBy = *m.UploadedBy
 	}
+	var imageOf string
+	if m.ImageOf != nil {
+		imageOf = *m.ImageOf
+	}
+	role := m.Role
+	if role == "" {
+		role = domain.AssetRoleOriginal
+	}
 	return &domain.Asset{
 		ID:            m.ID,
 		UploadedBy:    uploadedBy,
@@ -107,6 +128,8 @@ func (m *Asset) ToDomain() *domain.Asset {
 		StorageKey:    m.StorageKey,
 		MimeType:      m.MimeType,
 		ByteSize:      m.ByteSize,
+		Role:          role,
+		ImageOf:       imageOf,
 		Metadata: domain.Metadata{
 			Width:       m.Width,
 			Height:      m.Height,

@@ -57,6 +57,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) routes() {
+	// Delivery routes live outside /api so they can be used directly by
+	// consuming sites. /img requires an explicit preset or signed spec and
+	// resolves to the visual source asset (image or derived preview); /src
+	// streams originals for audio/video/pdf only. The library's own 400px
+	// preview stays on the authenticated /api/assets/{id}/preview alias.
+	s.mux.HandleFunc("GET /img/{id}/{spec}", s.handleImageDelivery)
+	s.mux.HandleFunc("GET /src/{id}", s.handleSourceDelivery)
+
 	// Conversion routes live outside /api so Caddy can fall back to them from
 	// the assets subdomain cache. The internal source route is fetched by
 	// imgproxy and is never proxied to the public site.

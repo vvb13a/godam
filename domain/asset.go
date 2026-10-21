@@ -2,6 +2,11 @@ package domain
 
 import "time"
 
+const (
+	AssetRoleOriginal = "original"
+	AssetRoleVisual   = "visual"
+)
+
 type Asset struct {
 	ID             string       `json:"id"`
 	UploadedBy     string       `json:"uploaded_by,omitempty"`
@@ -13,6 +18,8 @@ type Asset struct {
 	StorageKey     string       `json:"storage_key"`
 	MimeType       string       `json:"mime_type"`
 	ByteSize       int64        `json:"byte_size"`
+	Role           string       `json:"role,omitempty"`
+	ImageOf        string       `json:"image_of,omitempty"`
 	Metadata       Metadata     `json:"metadata"`
 	Colors         []AssetColor `json:"colors,omitempty"`
 	Tags           []Tag        `json:"tags,omitempty"`

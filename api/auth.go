@@ -25,6 +25,8 @@ var publicPaths = map[string]bool{
 // not-yet-authorized conversion handoff.
 var publicPrefixes = []string{
 	"/convert/",
+	"/img/",
+	"/src/",
 	"/internal/source/",
 }
 

@@ -69,14 +69,9 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 	presets := NewPresetService(db)
 	svc := NewConversionService(assets, presets, proxy, conversions)
 
-	spec, err := ParseConversionSpec("100x50.webp")
+	first, err := svc.PreviewDefault(ctx, asset.ID)
 	if err != nil {
-		t.Fatalf("parse spec: %v", err)
-	}
-
-	first, err := svc.Convert(ctx, asset.ID, spec)
-	if err != nil {
-		t.Fatalf("convert: %v", err)
+		t.Fatalf("preview: %v", err)
 	}
 	data, err := io.ReadAll(first.Reader)
 	_ = first.Reader.Close()
@@ -87,9 +82,9 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 		t.Fatal("first conversion should be a miss")
 	}
 
-	second, err := svc.Convert(ctx, asset.ID, spec)
+	second, err := svc.PreviewDefault(ctx, asset.ID)
 	if err != nil {
-		t.Fatalf("second convert: %v", err)
+		t.Fatalf("second preview: %v", err)
 	}
 	data, err = io.ReadAll(second.Reader)
 	_ = second.Reader.Close()
@@ -102,18 +97,21 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatalf("imgproxy calls = %d, want 1", calls.Load())
 	}
-	if got := conversions.URL(spec.Key(asset.ID)); got != "https://assets.example.com/"+spec.Key(asset.ID) {
+	previewKey := asset.ID + "/_library-preview.webp"
+	if got := conversions.URL(previewKey); got != "https://assets.example.com/"+previewKey {
 		t.Fatalf("url = %q", got)
 	}
 
+	// Legacy size entries are still describable in the cache listing, but no
+	// new size conversions are generated or served.
 	if err := conversions.Save(ctx, asset.ID+"/10x10.png", strings.NewReader("x")); err != nil {
-		t.Fatalf("save second conversion: %v", err)
+		t.Fatalf("save legacy conversion: %v", err)
 	}
 	list, err := svc.List(ctx, asset.ID)
 	if err != nil {
 		t.Fatalf("list conversions: %v", err)
 	}
-	if len(list) != 2 {
+	if len(list) != 1 {
 		t.Fatalf("conversions = %+v", list)
 	}
 	if list[0].Width != 10 || list[0].Height != 10 || list[0].Format != "png" || list[0].ByteSize != 1 {
@@ -121,9 +119,6 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 	}
 	if list[0].URL != "https://assets.example.com/"+list[0].Key {
 		t.Fatalf("smallest URL = %q", list[0].URL)
-	}
-	if list[1].Key != spec.Key(asset.ID) {
-		t.Fatalf("second conversion = %+v", list[1])
 	}
 
 	preset, err := presets.Create(ctx, "user", "Thumb", "thumb", domain.PresetParameters{

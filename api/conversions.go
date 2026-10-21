@@ -13,29 +13,31 @@ import (
 // layered on before it is exposed as a public API.
 func (s *Server) handleConversion(w http.ResponseWriter, r *http.Request) {
 	assetID := r.PathValue("id")
-	segment := r.PathValue("spec")
+	s.serveConversion(w, r, assetID, assetID, r.PathValue("spec"))
+}
 
+// serveConversion renders segment for sourceAssetID. scopeAssetID is the asset
+// the caller references: it verifies signed segments and scopes presets, while
+// the actual pixels may come from a derived visual asset.
+func (s *Server) serveConversion(w http.ResponseWriter, r *http.Request, scopeAssetID, sourceAssetID, segment string) {
 	var (
 		result *service.ConversionResult
 		err    error
 	)
 	switch {
 	case strings.HasPrefix(segment, "~"):
-		result, err = s.deps.Conversions.ConvertSigned(r.Context(), assetID, segment)
-	case service.IsSizeConversion(segment):
-		spec, parseErr := service.ParseConversionSpec(segment)
-		if parseErr != nil {
-			writeError(w, parseErr)
-			return
-		}
-		result, err = s.deps.Conversions.Convert(r.Context(), assetID, spec)
+		result, err = s.deps.Conversions.ConvertSignedSource(r.Context(), scopeAssetID, sourceAssetID, segment)
 	default:
-		result, err = s.deps.Conversions.ConvertPreset(r.Context(), assetID, segment)
+		result, err = s.deps.Conversions.ConvertPresetSource(r.Context(), scopeAssetID, sourceAssetID, segment)
 	}
 	if err != nil {
 		writeError(w, err)
 		return
 	}
+	writeConversionResult(w, result)
+}
+
+func writeConversionResult(w http.ResponseWriter, result *service.ConversionResult) {
 	defer result.Reader.Close()
 
 	w.Header().Set("Content-Type", result.ContentType)

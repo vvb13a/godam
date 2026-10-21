@@ -57,8 +57,12 @@ func (s *StatsService) conversionStats(ctx context.Context) (storage.ConversionS
 func (s *StatsService) Get(ctx context.Context) (*domain.Stats, error) {
 	db := s.db.WithContext(ctx)
 
+	originals := func() *gorm.DB {
+		return db.Model(&store.Asset{}).Where("role = ?", domain.AssetRoleOriginal)
+	}
+
 	var assets, collections, tags int64
-	if err := db.Model(&store.Asset{}).Count(&assets).Error; err != nil {
+	if err := originals().Count(&assets).Error; err != nil {
 		return nil, fmt.Errorf("count assets: %w", err)
 	}
 	if err := db.Model(&store.Collection{}).Count(&collections).Error; err != nil {
@@ -69,21 +73,21 @@ func (s *StatsService) Get(ctx context.Context) (*domain.Stats, error) {
 	}
 
 	var uncategorized int64
-	if err := db.Model(&store.Asset{}).
+	if err := originals().
 		Where("id NOT IN (SELECT asset_id FROM asset_collections)").
 		Count(&uncategorized).Error; err != nil {
 		return nil, fmt.Errorf("count uncategorized: %w", err)
 	}
 
 	var untagged int64
-	if err := db.Model(&store.Asset{}).
+	if err := originals().
 		Where("id NOT IN (SELECT asset_id FROM asset_tags)").
 		Count(&untagged).Error; err != nil {
 		return nil, fmt.Errorf("count untagged: %w", err)
 	}
 
 	var storageBytes int64
-	row := db.Model(&store.Asset{}).
+	row := originals().
 		Select("COALESCE(SUM(byte_size), 0)").Row()
 	if err := row.Scan(&storageBytes); err != nil {
 		return nil, fmt.Errorf("sum storage: %w", err)
@@ -94,7 +98,7 @@ func (s *StatsService) Get(ctx context.Context) (*domain.Stats, error) {
 		Count    int64
 		Bytes    int64
 	}
-	if err := db.Model(&store.Asset{}).
+	if err := originals().
 		Select("mime_type, COUNT(*) AS count, COALESCE(SUM(byte_size), 0) AS bytes").
 		Group("mime_type").
 		Order("count DESC").

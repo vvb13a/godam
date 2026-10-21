@@ -213,6 +213,7 @@ func (s *BackupService) BackupNow(ctx context.Context) (int, error) {
 	if err := s.db.WithContext(ctx).
 		Table("assets").
 		Select("id, storage_driver, storage_key, byte_size").
+		Where("role = ?", domain.AssetRoleOriginal).
 		Find(&assets).Error; err != nil {
 		return 0, err
 	}
@@ -241,7 +242,9 @@ func (s *BackupService) Status(ctx context.Context) (*domain.BackupStatus, error
 		status.LastRunAt = row.LastRunAt
 		status.LastError = row.LastError
 	}
-	if err := s.db.WithContext(ctx).Model(&store.Asset{}).Count(&status.Total).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&store.Asset{}).
+		Where("role = ?", domain.AssetRoleOriginal).
+		Count(&status.Total).Error; err != nil {
 		return nil, err
 	}
 	type countRow struct {
@@ -493,6 +496,7 @@ func (s *BackupService) reconcile(ctx context.Context) {
 		Table("assets").
 		Select("assets.id, assets.storage_driver, assets.storage_key, assets.byte_size").
 		Joins("LEFT JOIN asset_replicas ON asset_replicas.asset_id = assets.id AND asset_replicas.destination = ?", backupDestination).
+		Where("assets.role = ?", domain.AssetRoleOriginal).
 		Where("asset_replicas.asset_id IS NULL OR asset_replicas.status <> ?", replicaSynced).
 		Scan(&rows).Error; err != nil {
 		log.Printf("backup: reconcile: %v", err)

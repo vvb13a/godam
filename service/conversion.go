@@ -40,8 +40,8 @@ var conversionContentTypes = map[string]string{
 }
 
 // ConversionSpec is the legacy path-encoded size transform, e.g.
-// "800x600.webp". A zero width or height lets imgproxy preserve the source
-// aspect ratio.
+// "800x600.webp". It is only used to describe old cache entries; new
+// conversions use presets.
 type ConversionSpec struct {
 	Width  int
 	Height int
@@ -85,16 +85,6 @@ func ParseConversionSpec(raw string) (ConversionSpec, error) {
 	return ConversionSpec{Width: width, Height: height, Format: ext}, nil
 }
 
-func (s ConversionSpec) ContentType() string {
-	return conversionContentTypes[s.Format]
-}
-
-// Key is both the cache key and the path served by Caddy from the assets
-// subdomain.
-func (s ConversionSpec) Key(assetID string) string {
-	return fmt.Sprintf("%s/%dx%d.%s", assetID, s.Width, s.Height, s.Format)
-}
-
 // ConversionResult is a rendered conversion, either read from the conversion
 // store or produced by imgproxy on this request.
 type ConversionResult struct {
@@ -117,17 +107,15 @@ func NewConversionService(assets *AssetService, presets *PresetService, proxy *I
 	return &ConversionService{assets: assets, presets: presets, proxy: proxy, store: store}
 }
 
-// Convert renders the legacy size syntax (WIDTHxHEIGHT.ext).
-func (s *ConversionService) Convert(ctx context.Context, assetID string, spec ConversionSpec) (*ConversionResult, error) {
-	processing := fmt.Sprintf("format:%s", spec.Format)
-	if spec.Width > 0 || spec.Height > 0 {
-		processing = fmt.Sprintf("rs:fit:%d:%d", spec.Width, spec.Height)
-	}
-	return s.convert(ctx, assetID, processing, spec.Format, fmt.Sprintf("%dx%d", spec.Width, spec.Height))
-}
-
 // ConvertPreset resolves a named preset and renders it.
 func (s *ConversionService) ConvertPreset(ctx context.Context, assetID, segment string) (*ConversionResult, error) {
+	return s.ConvertPresetSource(ctx, assetID, assetID, segment)
+}
+
+// ConvertPresetSource checks preset availability against scopeAssetID but
+// renders sourceAssetID. This keeps non-library-wide presets scoped to the
+// parent asset when the visual source is a derived visual asset.
+func (s *ConversionService) ConvertPresetSource(ctx context.Context, scopeAssetID, sourceAssetID, segment string) (*ConversionResult, error) {
 	name, format, err := splitConversionSegment(segment)
 	if err != nil {
 		return nil, err
@@ -143,7 +131,7 @@ func (s *ConversionService) ConvertPreset(ctx context.Context, assetID, segment 
 		return nil, err
 	}
 	if !preset.LibraryWide {
-		allowed, err := s.presets.AllowsAsset(ctx, preset.ID, assetID)
+		allowed, err := s.presets.AllowsAsset(ctx, preset.ID, scopeAssetID)
 		if err != nil {
 			return nil, err
 		}
@@ -158,16 +146,23 @@ func (s *ConversionService) ConvertPreset(ctx context.Context, assetID, segment 
 	if err != nil {
 		return nil, err
 	}
-	return s.convert(ctx, assetID, processing, format, name)
+	return s.convert(ctx, sourceAssetID, processing, format, name)
 }
 
 // ConvertSigned verifies an ad-hoc signed pipeline and renders it.
 func (s *ConversionService) ConvertSigned(ctx context.Context, assetID, segment string) (*ConversionResult, error) {
+	return s.ConvertSignedSource(ctx, assetID, assetID, segment)
+}
+
+// ConvertSignedSource verifies a segment signed for signAssetID but renders
+// sourceAssetID. This lets /img/{parent}/{signed} resolve to a derived visual
+// asset while keeping the signature tied to the ID the caller knows.
+func (s *ConversionService) ConvertSignedSource(ctx context.Context, signAssetID, sourceAssetID, segment string) (*ConversionResult, error) {
 	cacheName, format, err := splitConversionSegment(segment)
 	if err != nil {
 		return nil, err
 	}
-	_, processing, err := s.proxy.VerifyRequest(assetID, segment)
+	_, processing, err := s.proxy.VerifyRequest(signAssetID, segment)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
@@ -179,7 +174,27 @@ func (s *ConversionService) ConvertSigned(ctx context.Context, assetID, segment 
 	if err != nil {
 		return nil, err
 	}
-	return s.convert(ctx, assetID, processing, format, cacheName)
+	return s.convert(ctx, sourceAssetID, processing, format, cacheName)
+}
+
+var defaultPreviewParameters = domain.PresetParameters{
+	Format: "webp",
+	Options: []domain.PresetOption{
+		{Name: "resize", Args: []string{"fit", "400", "400", "0", "0"}},
+		{Name: "quality", Args: []string{"80"}},
+	},
+}
+
+// PreviewDefault renders the built-in preview used by the delivery and
+// authenticated preview routes. The output is cached like any other conversion.
+func (s *ConversionService) PreviewDefault(ctx context.Context, assetID string) (*ConversionResult, error) {
+	processing, err := BuildProcessing(defaultPreviewParameters)
+	if err != nil {
+		return nil, err
+	}
+	// Underscore-prefixed cache names are not valid preset names, so this
+	// library-only preview cannot be addressed through /convert or /img.
+	return s.convert(ctx, assetID, processing, "webp", "_library-preview")
 }
 
 // Preview renders a preset pipeline for an asset without writing the image to
@@ -386,13 +401,6 @@ func splitConversionSegment(segment string) (string, string, error) {
 		return "", "", err
 	}
 	return segment[:dot], format, nil
-}
-
-// IsSizeConversion reports whether a conversion segment uses the legacy
-// WIDTHxHEIGHT.ext syntax.
-func IsSizeConversion(segment string) bool {
-	stem, _, err := splitConversionSegment(segment)
-	return err == nil && isSizeName(stem)
 }
 
 func isSizeName(name string) bool {

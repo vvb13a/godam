@@ -65,7 +65,8 @@ func (s *SmartCollectionService) List(ctx context.Context) ([]domain.SmartCollec
 // special collection/tag values "uncategorized"/"untagged" and the broad media
 // categories mirror the asset list's filtering.
 func (s *SmartCollectionService) countAssets(ctx context.Context, filter domain.SmartCollectionFilter) (int, error) {
-	query := s.db.WithContext(ctx).Model(&store.Asset{})
+	query := s.db.WithContext(ctx).Model(&store.Asset{}).
+		Where("role = ?", domain.AssetRoleOriginal)
 
 	switch filter.Collection {
 	case "":

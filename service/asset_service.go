@@ -177,6 +177,7 @@ func escapeLike(value string) string {
 }
 
 func (s *AssetService) applyAssetFilters(query *gorm.DB, filter domain.AssetFilter) *gorm.DB {
+	query = query.Where("assets.role = ?", domain.AssetRoleOriginal)
 	if len(filter.CollectionIDs) > 0 || filter.Uncategorized {
 		clauses := make([]string, 0, 2)
 		args := make([]any, 0, 1)
@@ -598,31 +599,9 @@ func (s *AssetService) Open(ctx context.Context, id string) (io.ReadCloser, erro
 	return driver.Open(ctx, asset.StorageKey)
 }
 
-// OpenPreview opens an asset's generated preview, returning its content type.
-func (s *AssetService) OpenPreview(ctx context.Context, id string) (io.ReadCloser, string, error) {
-	if rc, err := s.local.Open(ctx, fmt.Sprintf("previews/%s.png", id)); err == nil {
-		return rc, "image/png", nil
-	}
-	if rc, err := s.local.Open(ctx, fmt.Sprintf("previews/%s.jpg", id)); err == nil {
-		return rc, "image/jpeg", nil
-	}
-	return nil, "", domain.ErrNotFound
-}
-
-// savePreview stores a generated preview under the extension for the MIME type,
-// removing the other extension so no stale preview lingers.
-func (s *AssetService) savePreview(ctx context.Context, id, mimeType string, reader io.Reader) {
-	ext := previewExtension(mimeType)
-	other := ".jpg"
-	if ext == ".jpg" {
-		other = ".png"
-	}
-	_ = s.local.Delete(ctx, fmt.Sprintf("previews/%s%s", id, other))
-	_ = s.local.Save(ctx, fmt.Sprintf("previews/%s%s", id, ext), reader)
-}
-
-// deletePreviews removes both possible preview files for an asset.
-func (s *AssetService) deletePreviews(ctx context.Context, id string) {
+// deleteLegacyPreviews removes preview files written by the old stored-preview
+// pipeline. Derived previews are now assets and are deleted with their parent.
+func (s *AssetService) deleteLegacyPreviews(ctx context.Context, id string) {
 	_ = s.local.Delete(ctx, fmt.Sprintf("previews/%s.jpg", id))
 	_ = s.local.Delete(ctx, fmt.Sprintf("previews/%s.png", id))
 }
@@ -719,8 +698,8 @@ func (s *AssetService) spoolUpload(ctx context.Context, reader io.Reader) (strin
 const uploadSniffBytes int64 = 1 << 20
 
 // storeUploadFile finalises a staged file: it sniffs the content, stores the
-// original through the selected driver, generates a preview, and records the
-// asset plus its metadata and colors.
+// original through the selected driver, creates a derived visual asset for
+// non-image types, and records the asset plus its metadata and colors.
 func (s *AssetService) storeUploadFile(ctx context.Context, userID, driverName, filename, mimeType string, size int64, path string) (*domain.Asset, error) {
 	driver, err := s.registry.Get(driverName)
 	if err != nil {
@@ -750,13 +729,6 @@ func (s *AssetService) storeUploadFile(ctx context.Context, userID, driverName, 
 		return nil, fmt.Errorf("failed to save to %s storage: %w", driverName, err)
 	}
 
-	// 2. Save preview to local storage for zero-latency previews
-	if _, err := file.Seek(0, io.SeekStart); err == nil {
-		if previewReader, err := s.previewGen.Generate(ctx, cleanMime, file); err == nil && previewReader != nil {
-			s.savePreview(ctx, id, cleanMime, previewReader)
-		}
-	}
-
 	now := time.Now().UTC()
 	asset := &domain.Asset{
 		ID:            id,
@@ -766,6 +738,7 @@ func (s *AssetService) storeUploadFile(ctx context.Context, userID, driverName, 
 		StorageKey:    storageKey,
 		MimeType:      cleanMime,
 		ByteSize:      size,
+		Role:          domain.AssetRoleOriginal,
 		Metadata:      meta,
 		CreatedAt:     now,
 		UpdatedAt:     now,
@@ -773,10 +746,15 @@ func (s *AssetService) storeUploadFile(ctx context.Context, userID, driverName, 
 
 	if err := s.db.WithContext(ctx).Create(store.AssetModel(asset)).Error; err != nil {
 		_ = driver.Delete(ctx, storageKey)
-		s.deletePreviews(ctx, id)
 		return nil, err
 	}
 	s.saveColors(ctx, id, colors)
+
+	// 2. Store a derived visual asset for non-image types. Images are their
+	// own visual source and are rendered on demand by imgproxy.
+	if _, err := file.Seek(0, io.SeekStart); err == nil {
+		_ = s.refreshVisualAsset(ctx, asset, file)
+	}
 
 	if s.backup != nil {
 		_ = s.backup.EnqueueAsset(ctx, id, driverName, storageKey, size)
@@ -844,9 +822,9 @@ func (s *AssetService) Update(ctx context.Context, id, title, note string) (*dom
 }
 
 // ReplaceContent overwrites the stored file of an asset with new bytes (for
-// example after an in-browser edit), regenerating the preview and metadata and
-// refreshing the derived columns. The storage key is kept, so the served
-// content type comes from the stored mime type.
+// example after an in-browser edit), regenerating the derived visual asset and
+// metadata and refreshing the derived columns. The storage key is kept, so the
+// served content type comes from the stored mime type.
 func (s *AssetService) ReplaceContent(ctx context.Context, id, mimeType string, reader io.Reader) (*domain.Asset, error) {
 	asset, err := s.GetByID(ctx, id)
 	if err != nil {
@@ -878,12 +856,6 @@ func (s *AssetService) ReplaceContent(ctx context.Context, id, mimeType string, 
 		return nil, fmt.Errorf("failed to save to %s storage: %w", asset.StorageDriver, err)
 	}
 
-	if _, err := file.Seek(0, io.SeekStart); err == nil {
-		if previewReader, err := s.previewGen.Generate(ctx, cleanMime, file); err == nil && previewReader != nil {
-			s.savePreview(ctx, id, cleanMime, previewReader)
-		}
-	}
-
 	if err := s.db.WithContext(ctx).
 		Model(&store.Asset{}).
 		Where("id = ?", id).
@@ -900,15 +872,22 @@ func (s *AssetService) ReplaceContent(ctx context.Context, id, mimeType string, 
 		return nil, err
 	}
 	s.saveColors(ctx, id, colors)
+	updated, err := s.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := file.Seek(0, io.SeekStart); err == nil {
+		_ = s.refreshVisualAsset(ctx, updated, file)
+	}
 	if s.backup != nil {
 		_ = s.backup.EnqueueAsset(ctx, id, asset.StorageDriver, asset.StorageKey, size)
 	}
-	return s.GetByID(ctx, id)
+	return updated, nil
 }
 
-// RegeneratePreview re-renders the stored preview for an asset, e.g. after
-// preview settings change. The original file is untouched; updated_at is bumped
-// so clients re-fetch the (otherwise cached) preview.
+// RegeneratePreview re-renders the derived visual asset for an asset, e.g.
+// after preview settings change. The original file is untouched; updated_at is
+// bumped so clients re-fetch the library preview.
 func (s *AssetService) RegeneratePreview(ctx context.Context, id string) (*domain.Asset, error) {
 	asset, err := s.GetByID(ctx, id)
 	if err != nil {
@@ -932,12 +911,6 @@ func (s *AssetService) RegeneratePreview(ctx context.Context, id string) (*domai
 	// too (this is how existing mis-classified assets get fixed).
 	mimeType := classifyContainerMime(sniffMime(asset.MimeType, data), data)
 
-	reader, err := s.previewGen.Generate(ctx, mimeType, bytes.NewReader(data))
-	if err != nil || reader == nil {
-		reader = s.previewGen.GetFallback(mimeType)
-	}
-	s.savePreview(ctx, id, mimeType, reader)
-
 	// Re-extract metadata too, so existing assets pick up new fields (e.g.
 	// audio/video duration and video dimensions).
 	meta, _ := s.extractor.Extract(ctx, mimeType, bytes.NewReader(data), int64(len(data)))
@@ -957,7 +930,12 @@ func (s *AssetService) RegeneratePreview(ctx context.Context, id string) (*domai
 		return nil, err
 	}
 	s.saveColors(ctx, id, colors)
-	return s.GetByID(ctx, id)
+	updated, err := s.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.refreshVisualAsset(ctx, updated, bytes.NewReader(data))
+	return updated, nil
 }
 
 func (s *AssetService) Download(ctx context.Context, assetID, destPath string, targetWidth int) error {
@@ -1197,7 +1175,8 @@ func (s *AssetService) Delete(ctx context.Context, id string) error {
 	if err == nil {
 		_ = driver.Delete(ctx, asset.StorageKey)
 	}
-	s.deletePreviews(ctx, id)
+	_ = s.deleteVisualAsset(ctx, id)
+	s.deleteLegacyPreviews(ctx, id)
 
 	return nil
 }

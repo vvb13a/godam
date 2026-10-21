@@ -564,12 +564,18 @@ export function assetContentUrl(id: string): string {
   return `/api/assets/${encodeURIComponent(id)}/content`
 }
 
+// Bump when the preview pipeline changes so existing browser-cached previews
+// are not reused. The server ignores this parameter.
+const PREVIEW_REVISION = '2'
+
 // assetPreviewUrl builds the preview URL. Pass the asset's updated_at as the
 // version so an edited file (which regenerates the preview) is fetched fresh
 // instead of being served from the browser cache.
 export function assetPreviewUrl(id: string, version?: string): string {
   const base = `/api/assets/${encodeURIComponent(id)}/preview`
-  return version ? `${base}?v=${encodeURIComponent(version)}` : base
+  const params = new URLSearchParams({ rev: PREVIEW_REVISION })
+  if (version) params.set('v', version)
+  return `${base}?${params.toString()}`
 }
 
 // assetsZipUrl is the streaming download of many assets as a zip archive.
