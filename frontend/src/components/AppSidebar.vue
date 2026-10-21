@@ -134,7 +134,7 @@ watch(
             ref="nameInput"
             v-model="nameDraft"
             type="text"
-            class="w-full border-b border-violet-400 bg-transparent p-0 text-sm leading-5 font-semibold text-slate-700 outline-none dark:text-slate-200"
+            class="w-full border-b border-brand-400 bg-transparent p-0 text-sm leading-5 font-semibold text-slate-700 outline-none dark:text-slate-200"
             :disabled="renaming"
             @keydown.enter.prevent="commitRename"
             @keydown.esc.prevent="cancelRename"
@@ -156,7 +156,7 @@ watch(
             class="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium"
             :class="
               allActive
-                ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+                ? 'bg-brand-50 dark:bg-brand-950/50 text-brand-700 dark:text-brand-300'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
             "
           >
@@ -174,7 +174,7 @@ watch(
             class="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium"
             :class="
               uncategorizedActive
-                ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+                ? 'bg-brand-50 dark:bg-brand-950/50 text-brand-700 dark:text-brand-300'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
             "
           >
@@ -192,7 +192,7 @@ watch(
             class="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium"
             :class="
               untaggedActive
-                ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+                ? 'bg-brand-50 dark:bg-brand-950/50 text-brand-700 dark:text-brand-300'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
             "
           >
@@ -240,7 +240,7 @@ watch(
 
     <button
       type="button"
-      class="absolute top-1/2 left-full z-30 flex h-7 w-5 -translate-y-1/2 cursor-pointer items-center justify-center border border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-900/80 text-slate-400 shadow-sm transition-[translate] duration-200 ease-in-out hover:bg-white dark:hover:bg-slate-800 hover:text-violet-600 dark:hover:text-violet-400"
+      class="absolute top-1/2 left-full z-30 flex h-7 w-5 -translate-y-1/2 cursor-pointer items-center justify-center border border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-900/80 text-slate-400 shadow-sm transition-[translate] duration-200 ease-in-out hover:bg-white dark:hover:bg-slate-800 hover:text-brand-700 dark:hover:text-brand-400"
       :class="
         panels.leftCollapsed
           ? 'translate-x-0 rounded-r-full'

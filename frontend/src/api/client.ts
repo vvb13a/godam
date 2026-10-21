@@ -13,6 +13,7 @@ import type {
   Stats,
   Tag,
   TagGroup,
+  UploadLimits,
   User,
   UserOption,
 } from '../types'
@@ -127,11 +128,11 @@ export function setInstanceWatermark(assetId: string): Promise<Library> {
 
 export function setInstanceUploadSettings(
   allowedMimeTypes: string[],
-  maxUploadBytes: number,
+  uploadLimits: UploadLimits,
 ): Promise<Library> {
   return sendJSON<Library>('/api/instance/upload-settings', 'PUT', {
     allowed_mime_types: allowedMimeTypes,
-    max_upload_bytes: maxUploadBytes,
+    upload_limits: uploadLimits,
   })
 }
 

@@ -155,7 +155,7 @@ function currentFilter(): SmartCollectionFilter {
 async function createCollection(name: string): Promise<void> {
   close()
   try {
-    await api.createCollection(name, '8b5cf6', null)
+    await api.createCollection(name, 'f97316', null)
     notifyLibraryChanged()
   } catch (e) {
     toast.add({
@@ -185,7 +185,7 @@ async function createTag(name: string): Promise<void> {
 async function createSmartCollection(name: string): Promise<void> {
   close()
   try {
-    await api.createSmartCollection(name, '8b5cf6', currentFilter())
+    await api.createSmartCollection(name, 'f97316', currentFilter())
     notifyLibraryChanged()
   } catch (e) {
     toast.add({
@@ -493,7 +493,7 @@ const emptyFilterMessage = computed(() =>
           class="rounded-md px-2 py-1 text-xs font-medium transition-colors"
           :class="
             scope === item.value
-              ? 'bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300'
+              ? 'bg-brand-50 text-brand-700 dark:bg-brand-950/50 dark:text-brand-300'
               : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100'
           "
           @click="setScope(item.value)"

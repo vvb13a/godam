@@ -193,10 +193,12 @@ const sections = computed<TagSection[]>(() => {
     const result: TagSection[] = []
     const starred = tags.filter((tag) => tag.starred)
     if (starred.length) {
-      result.push({ key: 'starred', label: 'Starred', color: '#f59e0b', tags: starred })
+      result.push({ key: 'starred', label: 'Starred', color: '#f97316', tags: starred })
     }
     for (const group of library.tagGroups) {
-      const groupTags = tags.filter((tag) => tag.group_id === group.id)
+      const groupTags = tags.filter(
+        (tag) => tag.group_id === group.id && !tag.starred,
+      )
       if (groupTags.length) {
         result.push({
           key: `group:${group.id}`,
@@ -208,7 +210,7 @@ const sections = computed<TagSection[]>(() => {
         })
       }
     }
-    const uncategorized = tags.filter((tag) => !tag.group_id)
+    const uncategorized = tags.filter((tag) => !tag.group_id && !tag.starred)
     if (uncategorized.length) {
       result.push({
         key: 'uncategorized',
@@ -1002,8 +1004,16 @@ async function setGroupColor(color: string): Promise<void> {
     :pt="{ content: { class: '!p-0' } }"
     @show="focusSearch"
   >
-    <div :ref="setHeightWrapper" class="overflow-hidden" :style="heightStyle">
-      <div ref="rootRef" class="flex max-h-[80vh] flex-col">
+    <div
+      :ref="setHeightWrapper"
+      class="overflow-hidden"
+      :style="heightStyle"
+    >
+      <div
+        ref="rootRef"
+        class="flex max-h-[80vh] flex-col"
+        :style="{ minHeight: 'min(30rem, 80vh)' }"
+      >
       <div class="flex items-center gap-3 border-b border-slate-200 dark:border-slate-800 px-4 py-3">
         <Search :size="16" class="shrink-0 text-slate-400" />
         <input
@@ -1015,14 +1025,14 @@ async function setGroupColor(color: string): Promise<void> {
           @keydown.enter.prevent.stop="createFromSearch"
         />
         <button
-          class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-violet-600 dark:hover:text-violet-400"
+          class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-brand-700 dark:hover:text-brand-400"
           title="New tag"
           @click="addTag"
         >
           <Plus :size="16" />
         </button>
         <button
-          class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-violet-600 dark:hover:bg-slate-800 dark:hover:text-violet-400"
+          class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-brand-700 dark:hover:bg-slate-800 dark:hover:text-brand-400"
           title="Group and sort tags"
           @click="toggleDisplayOptions"
         >
@@ -1042,15 +1052,15 @@ async function setGroupColor(color: string): Promise<void> {
           <div class="min-h-0 flex-1 overflow-y-auto px-3 pt-3 pb-1.5">
             <div
               v-if="creatingGroup"
-              class="mb-1 flex items-center gap-2 rounded border border-violet-300 bg-violet-50/40 px-2 py-1.5 dark:border-violet-800 dark:bg-violet-950/20"
+              class="mb-1 flex items-center gap-2 rounded border border-brand-300 bg-brand-50/40 px-2 py-1.5 dark:border-brand-800 dark:bg-brand-950/20"
             >
-              <Folder :size="16" class="shrink-0 text-violet-500" />
+              <Folder :size="16" class="shrink-0 text-brand-500" />
               <input
                 ref="groupDraftRef"
                 v-model="groupDraftName"
                 type="text"
                 placeholder="New group name…"
-                class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 outline-none dark:text-slate-100"
+                class="min-w-0 flex-1 border-b border-brand-400 bg-transparent p-0 text-sm leading-5 text-slate-800 outline-none dark:text-slate-100"
                 @keydown.enter.prevent="commitGroupDraft"
                 @keydown.esc.prevent="cancelGroupDraft"
                 @blur="commitGroupDraft"
@@ -1059,7 +1069,7 @@ async function setGroupColor(color: string): Promise<void> {
             <button
               v-if="showCreate"
               type="button"
-              class="mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-950/40"
+              class="mb-1 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm text-brand-700 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-950/40"
               @click="createFromSearch"
             >
               <Plus :size="15" class="shrink-0" />
@@ -1089,7 +1099,7 @@ async function setGroupColor(color: string): Promise<void> {
                     : 'w-full',
                   section.dropId !== undefined &&
                   dragOverTarget === (section.dropId ?? 'uncategorized')
-                    ? 'ring-2 ring-violet-400 ring-inset'
+                    ? 'ring-2 ring-brand-400 ring-inset'
                     : '',
                 ]"
                 @dragover.prevent="
@@ -1114,7 +1124,7 @@ async function setGroupColor(color: string): Promise<void> {
                     v-model="editingName"
                     :data-group-rename="section.groupId"
                     type="text"
-                    class="w-24 border-b border-violet-400 bg-transparent p-0 text-[0.625rem] text-slate-800 outline-none dark:text-slate-100"
+                    class="w-24 border-b border-brand-400 bg-transparent p-0 text-[0.625rem] text-slate-800 outline-none dark:text-slate-100"
                     @click.stop
                     @dblclick.stop
                     @keydown.stop
@@ -1155,7 +1165,7 @@ async function setGroupColor(color: string): Promise<void> {
                         :data-tag-rename="tag.id"
                         type="text"
                         placeholder="Tag name (use , or ; to batch)"
-                        class="w-28 min-w-0 border-b border-violet-400 bg-transparent p-0 text-xs leading-5 text-slate-800 outline-none dark:text-slate-100"
+                        class="w-28 min-w-0 border-b border-brand-400 bg-transparent p-0 text-xs leading-5 text-slate-800 outline-none dark:text-slate-100"
                         @click.stop
                         @dblclick.stop
                         @keydown.stop
@@ -1177,28 +1187,6 @@ async function setGroupColor(color: string): Promise<void> {
             </div>
           </div>
 
-          <div
-            v-if="isAssetEditing"
-            class="flex flex-wrap items-center gap-1.5 border-t border-slate-100 dark:border-slate-800 px-3 py-2"
-          >
-            <span v-if="!selectedTags.length" class="text-xs text-slate-400">
-              No tags selected
-            </span>
-            <TagBadge
-              v-for="tag in selectedTags"
-              :key="tag.id"
-              :name="tag.name"
-              :color="tagColor(tag)"
-            >
-              <button
-                class="inline-flex text-slate-400 hover:text-red-500"
-                title="Remove"
-                @click="toggleTagSelection(tag)"
-              >
-                <Times :size="12" />
-              </button>
-            </TagBadge>
-          </div>
         </div>
       </div>
 
@@ -1257,7 +1245,7 @@ async function setGroupColor(color: string): Promise<void> {
               contextGroup?.color === slotProps.item.color.replace('#', '')
             "
             :size="12"
-            class="shrink-0 text-violet-600 dark:text-violet-400"
+            class="shrink-0 text-brand-700 dark:text-brand-400"
           />
           <AngleRight
             v-else-if="slotProps.hasSubmenu"
@@ -1302,7 +1290,7 @@ async function setGroupColor(color: string): Promise<void> {
               contextGroup?.color === slotProps.item.color.replace('#', '')
             "
             :size="12"
-            class="shrink-0 text-violet-600 dark:text-violet-400"
+            class="shrink-0 text-brand-700 dark:text-brand-400"
           />
           <AngleRight
             v-else-if="slotProps.hasSubmenu"
@@ -1325,7 +1313,7 @@ async function setGroupColor(color: string): Promise<void> {
           class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
           :class="
             groupBy === option.value
-              ? 'bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300'
+              ? 'bg-brand-50 text-brand-700 dark:bg-brand-950/50 dark:text-brand-300'
               : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
           "
           @click="setGroup(option.value)"
@@ -1346,7 +1334,7 @@ async function setGroupColor(color: string): Promise<void> {
           class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
           :class="
             sort === option.value
-              ? 'bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300'
+              ? 'bg-brand-50 text-brand-700 dark:bg-brand-950/50 dark:text-brand-300'
               : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
           "
           @click="setSort(option.value)"

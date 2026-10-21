@@ -31,7 +31,7 @@ interface SmartMenuItem extends MenuItem {
 
 type SortMode = 'custom' | 'name-asc' | 'name-desc' | 'count-asc' | 'count-desc'
 
-const DEFAULT_SMART_COLOR = '8b5cf6'
+const DEFAULT_SMART_COLOR = 'f97316'
 const SORT_STORAGE_KEY = 'godam:smart-collections:sort'
 const SORT_MODES: SortMode[] = [
   'custom',
@@ -435,7 +435,7 @@ async function commitDrag(): Promise<void> {
       </span>
       <div class="flex items-center gap-2">
         <button
-          class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
+          class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400"
           title="Sort smart collections"
           @click="toggleSort"
         >
@@ -445,7 +445,7 @@ async function commitDrag(): Promise<void> {
           class="inline-flex"
           :class="
             hasFilters
-              ? 'text-slate-400 hover:text-violet-600 dark:hover:text-violet-400'
+              ? 'text-slate-400 hover:text-brand-700 dark:hover:text-brand-400'
               : 'cursor-not-allowed text-slate-300'
           "
           :disabled="!hasFilters"
@@ -470,7 +470,7 @@ async function commitDrag(): Promise<void> {
           class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
           :class="
             sortMode === option.value
-              ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+              ? 'bg-brand-50 dark:bg-brand-950/50 text-brand-700 dark:text-brand-300'
               : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
           "
           @click="setSort(option.value)"
@@ -489,7 +489,7 @@ async function commitDrag(): Promise<void> {
         class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 select-none"
         :class="[
           isActive(item)
-            ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+            ? 'bg-brand-50 dark:bg-brand-950/50 text-brand-700 dark:text-brand-300'
             : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white',
           dragIndex === index ? 'opacity-40' : '',
         ]"
@@ -507,7 +507,7 @@ async function commitDrag(): Promise<void> {
           v-model="editingName"
           :data-smart-rename="item.id"
           type="text"
-          class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none"
+          class="min-w-0 flex-1 border-b border-brand-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none"
           @click.stop
           @dragstart.stop.prevent
           @keydown.stop
@@ -535,7 +535,7 @@ async function commitDrag(): Promise<void> {
           data-smart-draft
           type="text"
           placeholder="Smart collection name"
-          class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none placeholder:text-slate-300 dark:placeholder:text-slate-500"
+          class="min-w-0 flex-1 border-b border-brand-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none placeholder:text-slate-300 dark:placeholder:text-slate-500"
           @keydown.stop
           @keydown.enter="commitCreate"
           @keydown.esc="cancelCreate"
@@ -570,7 +570,7 @@ async function commitDrag(): Promise<void> {
               contextItem?.color === slotProps.item.color.replace('#', '')
             "
             :size="12"
-            class="shrink-0 text-violet-600 dark:text-violet-400"
+            class="shrink-0 text-brand-700 dark:text-brand-400"
           />
         </a>
       </template>

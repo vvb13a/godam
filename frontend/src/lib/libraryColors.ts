@@ -18,7 +18,7 @@ export const LIBRARY_COLORS: LibraryColor[] = [
   { name: 'Pink', value: 'ec4899' },
 ]
 
-export const DEFAULT_LIBRARY_COLOR = LIBRARY_COLORS[0].value
+export const DEFAULT_LIBRARY_COLOR = 'f97316'
 
 export function libraryColorHex(value: string): string {
   return value ? `#${value}` : '#94a3b8'

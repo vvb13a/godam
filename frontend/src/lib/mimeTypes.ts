@@ -2,6 +2,8 @@
 // the upload dialog. Keep DEFAULT_ALLOWED in sync with the backend
 // service.DefaultConfig allow-list.
 
+import type { UploadLimits } from '../types'
+
 export interface MimeOption {
   value: string
   label: string
@@ -9,12 +11,14 @@ export interface MimeOption {
 
 export interface MimeCategory {
   label: string
+  limitKey: keyof UploadLimits
   options: MimeOption[]
 }
 
 export const MIME_CATEGORIES: MimeCategory[] = [
   {
     label: 'Images',
+    limitKey: 'image_bytes',
     options: [
       { value: 'image/jpeg', label: 'JPEG' },
       { value: 'image/png', label: 'PNG' },
@@ -23,11 +27,8 @@ export const MIME_CATEGORIES: MimeCategory[] = [
     ],
   },
   {
-    label: 'Documents',
-    options: [{ value: 'application/pdf', label: 'PDF' }],
-  },
-  {
     label: 'Audio',
+    limitKey: 'audio_bytes',
     options: [
       { value: 'audio/mpeg', label: 'MP3' },
       { value: 'audio/wav', label: 'WAV' },
@@ -37,11 +38,17 @@ export const MIME_CATEGORIES: MimeCategory[] = [
   },
   {
     label: 'Video',
+    limitKey: 'video_bytes',
     options: [
       { value: 'video/mp4', label: 'MP4' },
       { value: 'video/webm', label: 'WebM' },
       { value: 'video/quicktime', label: 'QuickTime (MOV)' },
     ],
+  },
+  {
+    label: 'PDF',
+    limitKey: 'pdf_bytes',
+    options: [{ value: 'application/pdf', label: 'PDF' }],
   },
 ]
 

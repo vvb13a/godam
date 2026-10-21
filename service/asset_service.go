@@ -640,7 +640,7 @@ func (s *AssetService) StartUpload(ctx context.Context, userID, driverName, file
 	if _, err := s.registry.Get(driverName); err != nil {
 		return nil, err
 	}
-	_, maxBytes := s.uploadPolicy(ctx)
+	maxBytes := s.uploadPolicy(ctx).streamLimit()
 	if maxBytes > 0 && size > maxBytes {
 		return nil, fmt.Errorf("%w: %d bytes (limit: %d)", ErrFileTooLarge, size, maxBytes)
 	}
@@ -693,7 +693,7 @@ func (s *AssetService) spoolUpload(ctx context.Context, reader io.Reader) (strin
 	}
 	path := file.Name()
 
-	_, maxBytes := s.uploadPolicy(ctx)
+	maxBytes := s.uploadPolicy(ctx).streamLimit()
 	var written int64
 	if maxBytes > 0 {
 		written, err = io.Copy(file, io.LimitReader(reader, maxBytes+1))
@@ -794,10 +794,11 @@ func (s *AssetService) inspectUpload(ctx context.Context, file *os.File, provide
 	}
 	cleanMime := classifyContainerMime(sniffMime(providedMime, head), head)
 
-	allowed, maxBytes := s.uploadPolicy(ctx)
-	if !mimeAllowed(cleanMime, allowed) {
+	policy := s.uploadPolicy(ctx)
+	if !mimeAllowed(cleanMime, policy.allowed) {
 		return "", domain.Metadata{}, nil, fmt.Errorf("%w: %s", ErrUnsupportedFormat, cleanMime)
 	}
+	maxBytes := policy.limitFor(cleanMime)
 	if maxBytes > 0 && size > maxBytes {
 		return "", domain.Metadata{}, nil, fmt.Errorf("%w: %d bytes (limit: %d)", ErrFileTooLarge, size, maxBytes)
 	}

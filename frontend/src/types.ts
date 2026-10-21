@@ -11,6 +11,13 @@ export interface User {
   updated_at: string
 }
 
+export interface UploadLimits {
+  image_bytes?: number
+  audio_bytes?: number
+  video_bytes?: number
+  pdf_bytes?: number
+}
+
 export interface Instance {
   id: string
   name: string
@@ -18,7 +25,7 @@ export interface Instance {
   cover_asset_id?: string
   watermark_asset_id?: string
   allowed_mime_types?: string[]
-  max_upload_bytes?: number
+  upload_limits?: UploadLimits
   created_at: string
   updated_at: string
 }

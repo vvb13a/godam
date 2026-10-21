@@ -6,9 +6,8 @@ import "strings"
 // limits, allowed MIME types, where assets are written, and how conversions are
 // produced and served.
 type Config struct {
-	MaxUploadSizeBytes int64
-	AllowedMimeTypes   map[string]bool
-	StoragePath        string
+	AllowedMimeTypes map[string]bool
+	StoragePath      string
 
 	// Domain is the public application domain (for example example.com).
 	// AssetsDomain is the conversion subdomain (assets.example.com).
@@ -51,7 +50,6 @@ func (c *Config) AssetsBaseURL() string {
 
 func DefaultConfig() *Config {
 	return &Config{
-		MaxUploadSizeBytes: 100 * 1024 * 1024,
 		AllowedMimeTypes: map[string]bool{
 			// Images
 			"image/jpeg": true,

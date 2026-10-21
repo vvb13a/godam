@@ -160,7 +160,7 @@ const menuItems = computed<QuicklinkMenuItem[]>(() => {
         class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm select-none"
         :class="
           isActive(item)
-            ? 'bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300'
+            ? 'bg-brand-50 text-brand-700 dark:bg-brand-950/50 dark:text-brand-300'
             : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
         "
         title="Right-click for options"

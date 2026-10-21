@@ -230,13 +230,13 @@ onBeforeUnmount(() => {
 
         <div
           v-if="dragging"
-          class="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-violet-600/10 backdrop-blur-sm"
+          class="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-brand-600/10 backdrop-blur-sm"
         >
           <div
-            class="rounded-lg border-2 border-dashed border-violet-400 bg-white dark:bg-slate-900 px-12 py-10 text-center shadow-lg"
+            class="rounded-lg border-2 border-dashed border-brand-400 bg-white dark:bg-slate-900 px-12 py-10 text-center shadow-lg"
           >
-            <CloudUpload :size="40" class="mx-auto text-violet-500" />
-            <p class="mt-3 text-lg font-semibold text-violet-700 dark:text-violet-300">
+            <CloudUpload :size="40" class="mx-auto text-brand-500" />
+            <p class="mt-3 text-lg font-semibold text-brand-700 dark:text-brand-300">
               Drop files to upload
             </p>
             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">

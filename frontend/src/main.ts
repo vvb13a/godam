@@ -10,21 +10,22 @@ import App from './App.vue'
 import { router } from './router'
 import { initTheme } from './lib/theme'
 
-// Violet primary, matching the accent the former TUI used.
+// Indigo primary in light mode, orange in dark. Scale entries are mode-aware;
+// the light 500/600/700 steps are shifted darker for contrast on white.
 const GodamPreset = definePreset(Aura, {
   semantic: {
     primary: {
-      50: '{violet.50}',
-      100: '{violet.100}',
-      200: '{violet.200}',
-      300: '{violet.300}',
-      400: '{violet.400}',
-      500: '{violet.500}',
-      600: '{violet.600}',
-      700: '{violet.700}',
-      800: '{violet.800}',
-      900: '{violet.900}',
-      950: '{violet.950}',
+      50: 'light-dark({indigo.50}, {orange.50})',
+      100: 'light-dark({indigo.100}, {orange.100})',
+      200: 'light-dark({indigo.200}, {orange.200})',
+      300: 'light-dark({indigo.300}, {orange.300})',
+      400: 'light-dark({indigo.400}, {orange.400})',
+      500: 'light-dark({indigo.600}, {orange.500})',
+      600: 'light-dark({indigo.700}, {orange.600})',
+      700: 'light-dark({indigo.800}, {orange.700})',
+      800: 'light-dark({indigo.900}, {orange.800})',
+      900: 'light-dark({indigo.950}, {orange.900})',
+      950: 'light-dark({indigo.950}, {orange.950})',
     },
   },
 })

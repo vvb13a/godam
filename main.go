@@ -60,7 +60,6 @@ func main() {
 		Backups:          backupService,
 		System:           systemService,
 		ManagementToken:  os.Getenv("GODAM_MANAGEMENT_TOKEN"),
-		MaxUploadBytes:   appConfig.MaxUploadSizeBytes,
 	})
 }
 

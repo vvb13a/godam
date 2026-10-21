@@ -5,7 +5,12 @@ import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 import * as api from '../api/client'
 import { editorDirty } from '../lib/editorState'
+import {
+  darkImageEditorTheme,
+  lightImageEditorTheme,
+} from '../lib/imageEditorTheme'
 import { currentLibrary } from '../lib/library'
+import { theme as appTheme } from '../lib/theme'
 import type { Asset } from '../types'
 import AudioPlayer from './AudioPlayer.vue'
 import PdfViewer from './PdfViewer.vue'
@@ -148,6 +153,10 @@ async function mountImage(): Promise<void> {
   ) => FilerobotInstance
   const editor = new Ctor(imageHost.value, {
     source: contentUrl(),
+    theme:
+      appTheme.resolved === 'dark'
+        ? darkImageEditorTheme
+        : lightImageEditorTheme,
     defaultSavedImageType: savedImageType(props.asset.mime_type),
     // Open on Filters (sorted first) with its own tool selected, so the crop
     // tool does not mount and apply an implicit crop on load. Filerobot's
@@ -283,6 +292,17 @@ watch(
     init()
   },
 )
+// Re-render with the other palette without remounting, so the current edits
+// survive a theme change while the editor is open.
+watch(
+  () => appTheme.resolved,
+  (resolved) => {
+    if (mode.value !== 'image' || !imageEditor) return
+    imageEditor.render({
+      theme: resolved === 'dark' ? darkImageEditorTheme : lightImageEditorTheme,
+    })
+  },
+)
 onBeforeUnmount(dispose)
 </script>
 
@@ -308,7 +328,7 @@ onBeforeUnmount(dispose)
         :href="api.assetContentUrl(asset.id)"
         target="_blank"
         rel="noreferrer"
-        class="text-violet-600 dark:text-violet-400 hover:underline"
+        class="text-brand-700 dark:text-brand-400 hover:underline"
       >
         Open original
       </a>
@@ -328,7 +348,7 @@ onBeforeUnmount(dispose)
         <button
           v-for="image in watermarkAssets"
           :key="image.id"
-          class="overflow-hidden rounded border border-slate-200 dark:border-slate-800 text-left hover:border-violet-400"
+          class="overflow-hidden rounded border border-slate-200 dark:border-slate-800 text-left hover:border-brand-400"
           @click="chooseWatermark(image)"
         >
           <img

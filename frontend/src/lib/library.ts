@@ -8,6 +8,7 @@ import type {
   Stats,
   Tag,
   TagGroup,
+  UploadLimits,
 } from '../types'
 
 // library is the single instance this godam process serves. The name is kept
@@ -19,7 +20,7 @@ export const library = reactive({
   cover_asset_id: '',
   watermark_asset_id: '',
   allowed_mime_types: [] as string[],
-  max_upload_bytes: 0,
+  upload_limits: {} as UploadLimits,
   loaded: false,
   collections: [] as Collection[],
   smartCollections: [] as SmartCollection[],
@@ -88,7 +89,7 @@ export function resetLibrary(): void {
   library.cover_asset_id = ''
   library.watermark_asset_id = ''
   library.allowed_mime_types = []
-  library.max_upload_bytes = 0
+  library.upload_limits = {}
   library.loaded = false
   clearScopedData()
 }

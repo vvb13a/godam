@@ -36,12 +36,14 @@ func (s *InstanceService) Ensure(ctx context.Context, name string) (*domain.Inst
 		name = "Library"
 	}
 	now := time.Now().UTC()
+	uploadLimits, _ := json.Marshal(domain.DefaultUploadLimits())
 	model := &store.Instance{
-		ID:        uuid.New().String(),
-		Name:      name,
-		Color:     "8b5cf6",
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:           uuid.New().String(),
+		Name:         name,
+		Color:        "f97316",
+		UploadLimits: string(uploadLimits),
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 	err = s.db.WithContext(ctx).Create(model).Error
 	if err != nil {
@@ -91,7 +93,7 @@ func (s *InstanceService) SetWatermark(ctx context.Context, assetID string) (*do
 	return s.setAssetRef(ctx, assetID, "watermark_asset_id")
 }
 
-func (s *InstanceService) SetUploadSettings(ctx context.Context, allowed []string, maxUploadBytes int64) (*domain.Instance, error) {
+func (s *InstanceService) SetUploadSettings(ctx context.Context, allowed []string, limits domain.UploadLimits) (*domain.Instance, error) {
 	inst, err := s.Get(ctx)
 	if err != nil {
 		return nil, err
@@ -110,20 +112,38 @@ func (s *InstanceService) SetUploadSettings(ctx context.Context, allowed []strin
 		}
 		encoded = string(buf)
 	}
-	if maxUploadBytes < 0 {
-		maxUploadBytes = 0
+	limits = normalizeUploadLimits(limits)
+	encodedLimits, err := json.Marshal(limits)
+	if err != nil {
+		return nil, err
 	}
 	if err := s.db.WithContext(ctx).
 		Model(&store.Instance{}).
 		Where("id = ?", inst.ID).
 		Updates(map[string]any{
 			"allowed_mime_types": encoded,
-			"max_upload_bytes":   maxUploadBytes,
+			"upload_limits":      string(encodedLimits),
 			"updated_at":         time.Now().UTC(),
 		}).Error; err != nil {
 		return nil, err
 	}
 	return s.Get(ctx)
+}
+
+func normalizeUploadLimits(limits domain.UploadLimits) domain.UploadLimits {
+	return domain.UploadLimits{
+		ImageBytes: maxInt64(0, limits.ImageBytes),
+		AudioBytes: maxInt64(0, limits.AudioBytes),
+		VideoBytes: maxInt64(0, limits.VideoBytes),
+		PDFBytes:   maxInt64(0, limits.PDFBytes),
+	}
+}
+
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (s *InstanceService) setAssetRef(ctx context.Context, assetID, column string) (*domain.Instance, error) {

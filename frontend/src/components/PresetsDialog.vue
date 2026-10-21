@@ -528,7 +528,7 @@ watch(
             Presets
           </span>
           <button
-            class="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-violet-600 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-950/40"
+            class="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-950/40"
             @click="newPreset"
           >
             <Plus :size="12" />
@@ -542,7 +542,7 @@ watch(
             class="w-full rounded-md px-2 py-2 text-left transition-colors"
             :class="
               form.id === preset.id
-                ? 'bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300'
+                ? 'bg-brand-50 text-brand-700 dark:bg-brand-950/50 dark:text-brand-300'
                 : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
             "
             @click="selectPreset(preset)"
@@ -640,7 +640,7 @@ watch(
                 </p>
                 <button
                   type="button"
-                  class="mt-1 text-xs text-violet-600 hover:underline disabled:opacity-40 dark:text-violet-400"
+                  class="mt-1 text-xs text-brand-700 hover:underline disabled:opacity-40 dark:text-brand-400"
                   :disabled="previewLoading || !previewAssetId"
                   @click="refreshPreview"
                 >
@@ -710,7 +710,7 @@ watch(
               </div>
               <p
                 v-if="!form.libraryWide && !form.collectionIds.length && !form.tagIds.length"
-                class="text-xs text-amber-600 dark:text-amber-400"
+                class="text-xs text-brand-700 dark:text-brand-400"
               >
                 No asset can use this preset until it is assigned to a collection or tag.
               </p>
@@ -736,7 +736,7 @@ watch(
                   class="rounded-full px-2.5 py-1 text-xs font-medium transition-colors"
                   :class="
                     category === item
-                      ? 'bg-violet-600 text-white'
+                      ? 'bg-indigo-600 text-white dark:bg-orange-500 dark:text-orange-950'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
                   "
                   @click="category = item"
@@ -768,7 +768,7 @@ watch(
                           </span>
                           <span
                             v-if="option.pro"
-                            class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+                            class="rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand-700 dark:bg-brand-950/50 dark:text-brand-300"
                           >
                             Pro
                           </span>
@@ -901,7 +901,7 @@ watch(
               Close
             </button>
             <button
-              class="rounded bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+              class="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 dark:bg-orange-500 dark:text-orange-950 dark:hover:bg-orange-400"
               :disabled="saving || loading"
               @click="save"
             >

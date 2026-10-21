@@ -2,6 +2,8 @@ package api
 
 import (
 	"net/http"
+
+	"github.com/vvb13a/godam/domain"
 )
 
 func (s *Server) handleGetInstance(w http.ResponseWriter, r *http.Request) {
@@ -66,8 +68,8 @@ func (s *Server) handleSetInstanceWatermark(w http.ResponseWriter, r *http.Reque
 }
 
 type instanceUploadSettingsRequest struct {
-	AllowedMimeTypes []string `json:"allowed_mime_types"`
-	MaxUploadBytes   int64    `json:"max_upload_bytes"`
+	AllowedMimeTypes []string            `json:"allowed_mime_types"`
+	UploadLimits     domain.UploadLimits `json:"upload_limits"`
 }
 
 func (s *Server) handleSetInstanceUploadSettings(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +77,7 @@ func (s *Server) handleSetInstanceUploadSettings(w http.ResponseWriter, r *http.
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	instance, err := s.deps.Instance.SetUploadSettings(r.Context(), req.AllowedMimeTypes, req.MaxUploadBytes)
+	instance, err := s.deps.Instance.SetUploadSettings(r.Context(), req.AllowedMimeTypes, req.UploadLimits)
 	if err != nil {
 		writeError(w, err)
 		return

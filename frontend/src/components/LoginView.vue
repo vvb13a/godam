@@ -56,7 +56,7 @@ async function useDeveloper(): Promise<void> {
   <div class="flex h-full w-full items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
     <div class="w-full max-w-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 shadow-sm">
       <div class="mb-6 flex items-center gap-2">
-        <Database :size="24" class="text-violet-600 dark:text-violet-400" />
+        <Database :size="24" class="text-brand-700 dark:text-brand-400" />
         <h1 class="text-xl font-semibold text-slate-800 dark:text-slate-100">GoDam</h1>
       </div>
 

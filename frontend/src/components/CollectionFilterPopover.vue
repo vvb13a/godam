@@ -72,7 +72,7 @@ function clear(): void {
 <template>
   <button
     type="button"
-    class="flex h-9 w-56 items-center gap-2 rounded-md border border-slate-300 bg-white px-2 text-left text-sm text-slate-700 shadow-sm transition hover:border-violet-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+    class="flex h-9 w-56 items-center gap-2 rounded-md border border-slate-300 bg-white px-2 text-left text-sm text-slate-700 shadow-sm transition hover:border-brand-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
     :disabled="disabled"
     :title="disabled ? lockedTitle : 'Filter by collection'"
     @click="toggle"

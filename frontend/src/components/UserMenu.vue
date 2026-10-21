@@ -138,7 +138,7 @@ async function doLogout(): Promise<void> {
         @click="toggle"
       >
         <span
-          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-100 dark:bg-violet-900/50 text-xs font-semibold text-violet-700 dark:text-violet-300"
+          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-100 dark:bg-brand-900/50 text-xs font-semibold text-brand-700 dark:text-brand-300"
         >
           {{ initial }}
         </span>

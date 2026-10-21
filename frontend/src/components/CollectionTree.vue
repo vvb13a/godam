@@ -53,7 +53,7 @@ interface TreeMenuItem extends MenuItem {
 
 type SortMode = 'custom' | 'name-asc' | 'name-desc' | 'count-asc' | 'count-desc'
 
-const DEFAULT_COLLECTION_COLOR = '8b5cf6'
+const DEFAULT_COLLECTION_COLOR = 'f97316'
 const DRAFT_KEY = '__draft__'
 const EXPANDED_STORAGE_KEY = 'godam:collections:expanded'
 const SORT_STORAGE_KEY = 'godam:collections:sort'
@@ -895,14 +895,14 @@ defineExpose({
       </span>
       <div class="flex items-center gap-1">
         <button
-          class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
+          class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400"
           title="Manage collections"
           @click="openCollectionsDialog"
         >
           <FolderOpen :size="14" />
         </button>
         <button
-          class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
+          class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400"
           :title="allExpanded ? 'Collapse all' : 'Expand all'"
           @click="toggleExpandAll"
         >
@@ -910,14 +910,14 @@ defineExpose({
           <AngleDoubleDown v-else :size="14" />
         </button>
         <button
-          class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
+          class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400"
           title="Sort collections"
           @click="toggleSort"
         >
           <SortAlt :size="14" />
         </button>
         <button
-          class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
+          class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400"
           title="New collection"
           @click="addCollection(null)"
         >
@@ -935,7 +935,7 @@ defineExpose({
           class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
           :class="
             sortMode === option.value
-              ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+              ? 'bg-brand-50 dark:bg-brand-950/50 text-brand-700 dark:text-brand-300'
               : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
           "
           @click="setSort(option.value)"
@@ -972,7 +972,7 @@ defineExpose({
             dragOverId === node.data?.id
               ? 'bg-slate-100 dark:bg-slate-800'
               : selectable && node.data && selectedSet.has(node.data.id)
-                ? 'bg-violet-50/60 dark:bg-violet-950/25'
+                ? 'bg-brand-50/60 dark:bg-brand-950/25'
                 : 'hover:bg-slate-100 dark:hover:bg-slate-800',
           ]"
           @click="onRowClick(node)"
@@ -992,7 +992,7 @@ defineExpose({
               data-collection-draft
               type="text"
               placeholder="New folder (use , or ; to batch)"
-              class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none placeholder:text-slate-300 dark:placeholder:text-slate-500"
+              class="min-w-0 flex-1 border-b border-brand-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none placeholder:text-slate-300 dark:placeholder:text-slate-500"
               @click.stop
               @keydown.stop
               @keydown.enter="commitDraft"
@@ -1014,7 +1014,7 @@ defineExpose({
               v-model="editingName"
               :data-collection-rename="node.data.id"
               type="text"
-              class="min-w-0 flex-1 border-b border-violet-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none"
+              class="min-w-0 flex-1 border-b border-brand-400 bg-transparent p-0 text-sm leading-5 text-slate-800 dark:text-slate-100 outline-none"
               @click.stop
               @dblclick.stop
               @dragstart.stop.prevent
@@ -1032,7 +1032,7 @@ defineExpose({
             <CheckCircle
               v-if="selectable && selectedSet.has(node.data.id)"
               :size="14"
-              class="shrink-0 text-violet-600 dark:text-violet-400"
+              class="shrink-0 text-brand-700 dark:text-brand-400"
             />
             <span
               v-if="node.data.asset_count"
@@ -1071,7 +1071,7 @@ defineExpose({
               contextCollection?.color === slotProps.item.color.replace('#', '')
             "
             :size="12"
-            class="shrink-0 text-violet-600 dark:text-violet-400"
+            class="shrink-0 text-brand-700 dark:text-brand-400"
           />
         </a>
       </template>

@@ -144,8 +144,8 @@ func (s *Server) handleGetAsset(w http.ResponseWriter, r *http.Request) {
 // handleUploadAsset accepts a multipart form with a single "file" field and an
 // optional "driver" field, storing the file through the asset service.
 func (s *Server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
-	if s.deps.MaxUploadBytes > 0 {
-		r.Body = http.MaxBytesReader(w, r.Body, s.deps.MaxUploadBytes+(1<<20))
+	if limit := s.deps.Assets.UploadStreamLimit(r.Context()); limit > 0 {
+		r.Body = http.MaxBytesReader(w, r.Body, limit+(1<<20))
 	}
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid upload"})
@@ -298,8 +298,8 @@ func (s *Server) handleReplaceAssetContent(w http.ResponseWriter, r *http.Reques
 	if _, ok := s.ownedAsset(w, r, id); !ok {
 		return
 	}
-	if s.deps.MaxUploadBytes > 0 {
-		r.Body = http.MaxBytesReader(w, r.Body, s.deps.MaxUploadBytes+(1<<20))
+	if limit := s.deps.Assets.UploadStreamLimit(r.Context()); limit > 0 {
+		r.Body = http.MaxBytesReader(w, r.Body, limit+(1<<20))
 	}
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid upload"})

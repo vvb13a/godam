@@ -2363,7 +2363,7 @@ onBeforeUnmount(() => {
 
           <span
             v-if="embedCollectionLocked || embedTagLocked"
-            class="text-xs font-medium text-amber-600 dark:text-amber-400"
+            class="text-xs font-medium text-brand-700 dark:text-brand-400"
             title="The host application restricted this picker"
           >
             Restricted by host
@@ -2381,7 +2381,7 @@ onBeforeUnmount(() => {
           </span>
           <span
             v-if="refreshing"
-            class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-violet-600 dark:border-slate-700 dark:border-t-violet-400"
+            class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-brand-600 dark:border-slate-700 dark:border-t-brand-400"
             title="Refreshing assets"
           ></span>
 
@@ -2526,7 +2526,7 @@ onBeforeUnmount(() => {
                   </p>
                   <button
                     type="button"
-                    class="inline-flex items-center text-slate-400 transition-colors hover:text-violet-600 dark:hover:text-violet-400"
+                    class="inline-flex items-center text-slate-400 transition-colors hover:text-brand-700 dark:hover:text-brand-400"
                     :title="allPreviewOn ? 'Hide all' : 'Show all'"
                     @click="toggleAllPreview"
                   >
@@ -2610,7 +2610,7 @@ onBeforeUnmount(() => {
                   </p>
                   <button
                     type="button"
-                    class="inline-flex items-center text-slate-400 transition-colors hover:text-violet-600 dark:hover:text-violet-400"
+                    class="inline-flex items-center text-slate-400 transition-colors hover:text-brand-700 dark:hover:text-brand-400"
                     :title="allAutoplayOn ? 'Disable all' : 'Enable all'"
                     @click="toggleAllAutoplay"
                   >
@@ -2640,7 +2640,7 @@ onBeforeUnmount(() => {
           </Transition>
           <button
             type="button"
-            class="absolute bottom-1.5 left-1/2 z-20 flex h-5 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 shadow-sm transition-colors hover:text-violet-600 dark:hover:text-violet-400"
+            class="absolute bottom-1.5 left-1/2 z-20 flex h-5 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 shadow-sm transition-colors hover:text-brand-700 dark:hover:text-brand-400"
             :title="panels.topCollapsed ? 'Expand filters' : 'Collapse filters'"
             :aria-label="
               panels.topCollapsed ? 'Expand filters' : 'Collapse filters'
@@ -2684,7 +2684,7 @@ onBeforeUnmount(() => {
                 class="flex items-center justify-center py-16"
               >
                 <span
-                  class="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-violet-600 dark:border-slate-700 dark:border-t-violet-400"
+                  class="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-brand-600 dark:border-slate-700 dark:border-t-brand-400"
                 ></span>
               </div>
               <p v-else-if="!assets.length" class="text-sm text-slate-400">
@@ -2747,7 +2747,7 @@ onBeforeUnmount(() => {
 
           <div v-if="loadingMore" class="flex justify-center py-4">
             <span
-              class="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-violet-600 dark:border-slate-700 dark:border-t-violet-400"
+              class="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-brand-600 dark:border-slate-700 dark:border-t-brand-400"
             ></span>
           </div>
             </div>
@@ -2757,7 +2757,7 @@ onBeforeUnmount(() => {
           <button
             v-if="showBackToTop"
             type="button"
-            class="absolute bottom-4 right-4 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-500 shadow-lg backdrop-blur transition-colors hover:bg-white hover:text-violet-600 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-violet-400"
+            class="absolute bottom-4 right-4 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-500 shadow-lg backdrop-blur transition-colors hover:bg-white hover:text-brand-700 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-brand-400"
             title="Back to top"
             aria-label="Back to top"
             @click="scrollGridToTop"
@@ -2789,7 +2789,7 @@ onBeforeUnmount(() => {
           </Transition>
           <button
             type="button"
-            class="absolute top-1.5 left-1/2 z-20 flex h-5 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 shadow-sm transition-colors hover:text-violet-600 dark:hover:text-violet-400"
+            class="absolute top-1.5 left-1/2 z-20 flex h-5 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 shadow-sm transition-colors hover:text-brand-700 dark:hover:text-brand-400"
             :title="panels.bottomCollapsed ? 'Expand tags' : 'Collapse tags'"
             :aria-label="
               panels.bottomCollapsed ? 'Expand tags' : 'Collapse tags'
@@ -2891,7 +2891,7 @@ onBeforeUnmount(() => {
 
         <button
           type="button"
-          class="absolute top-1/2 right-full z-30 flex h-7 w-5 -translate-y-1/2 cursor-pointer items-center justify-center border border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-900/80 text-slate-400 shadow-sm transition-[translate] duration-200 ease-in-out hover:bg-white dark:hover:bg-slate-800 hover:text-violet-600 dark:hover:text-violet-400"
+          class="absolute top-1/2 right-full z-30 flex h-7 w-5 -translate-y-1/2 cursor-pointer items-center justify-center border border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-900/80 text-slate-400 shadow-sm transition-[translate] duration-200 ease-in-out hover:bg-white dark:hover:bg-slate-800 hover:text-brand-700 dark:hover:text-brand-400"
           :class="
             panels.rightCollapsed
               ? 'translate-x-0 rounded-l-full'
@@ -2955,7 +2955,7 @@ onBeforeUnmount(() => {
 
     <div
       v-if="lassoStyle"
-      class="pointer-events-none fixed z-40 rounded-sm border border-violet-500 bg-violet-500/10"
+      class="pointer-events-none fixed z-40 rounded-sm border border-brand-500 bg-brand-500/10"
       :style="lassoStyle"
     />
   </div>

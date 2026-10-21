@@ -203,7 +203,7 @@ func (g *DefaultPreviewGenerator) extractAudioWaveform(ctx context.Context, r io
 
 	width := g.maxDimension
 	height := width / 2
-	filter := fmt.Sprintf("showwavespic=s=%dx%d:colors=0xf59e0b", width, height)
+	filter := fmt.Sprintf("showwavespic=s=%dx%d:colors=0xf97316", width, height)
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-i", path,
 		"-filter_complex", filter,

@@ -1,16 +1,34 @@
 <script setup lang="ts">
+import { Eye, EyeSlash } from '@primeicons/vue'
+import Button from 'primevue/button'
+import Checkbox from 'primevue/checkbox'
 import Dialog from 'primevue/dialog'
+import InputNumber from 'primevue/inputnumber'
 import { reactive, ref, watch } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import * as api from '../api/client'
 import { library } from '../lib/library'
 import { DEFAULT_ALLOWED, MIME_CATEGORIES } from '../lib/mimeTypes'
 import { uploadSettingsDialog } from '../lib/uploadSettings'
+import type { UploadLimits } from '../types'
 
 const toast = useToast()
 const saving = ref(false)
 const selected = reactive<Record<string, boolean>>({})
-const maxMb = ref(0)
+const limitMb = reactive<Record<keyof UploadLimits, number | null>>({
+  image_bytes: 0,
+  audio_bytes: 0,
+  video_bytes: 0,
+  pdf_bytes: 0,
+})
+
+function mbToBytes(value: number | null | undefined): number {
+  return Math.max(0, Math.round(value ?? 0)) * 1024 * 1024
+}
+
+function bytesToMb(value: number | undefined): number {
+  return value ? Math.round(value / (1024 * 1024)) : 0
+}
 
 watch(
   () => uploadSettingsDialog.visible,
@@ -22,25 +40,38 @@ watch(
         : DEFAULT_ALLOWED
     for (const key of Object.keys(selected)) delete selected[key]
     for (const mime of allowed) selected[mime] = true
-    maxMb.value = library.max_upload_bytes
-      ? Math.round(library.max_upload_bytes / (1024 * 1024))
-      : 0
+    const limits = library.upload_limits ?? {}
+    for (const category of MIME_CATEGORIES) {
+      limitMb[category.limitKey] = bytesToMb(limits[category.limitKey])
+    }
   },
 )
 
-function toggleAll(categoryOptions: { value: string }[], on: boolean): void {
-  for (const option of categoryOptions) selected[option.value] = on
+function allSelected(categoryOptions: { value: string }[]): boolean {
+  return categoryOptions.every((option) => selected[option.value])
+}
+
+function toggleAll(categoryOptions: { value: string }[]): void {
+  const next = !allSelected(categoryOptions)
+  for (const option of categoryOptions) selected[option.value] = next
+}
+
+function close(): void {
+  uploadSettingsDialog.visible = false
 }
 
 async function save(): Promise<void> {
   const allowed = Object.keys(selected).filter((mime) => selected[mime])
-  const maxBytes = Math.max(0, Math.round(maxMb.value)) * 1024 * 1024
+  const limits = {} as UploadLimits
+  for (const category of MIME_CATEGORIES) {
+    limits[category.limitKey] = mbToBytes(limitMb[category.limitKey])
+  }
   saving.value = true
   try {
-    const updated = await api.setInstanceUploadSettings(allowed, maxBytes)
+    const updated = await api.setInstanceUploadSettings(allowed, limits)
     Object.assign(library, updated)
     toast.add({ severity: 'success', summary: 'Upload settings saved', life: 2500 })
-    uploadSettingsDialog.visible = false
+    close()
   } catch (e) {
     toast.add({
       severity: 'error',
@@ -60,78 +91,84 @@ async function save(): Promise<void> {
     header="Upload settings"
     modal
     :draggable="false"
-    :style="{ width: '36rem' }"
+    :style="{ width: '48rem', maxWidth: '95vw' }"
   >
-    <div class="space-y-5">
-      <div>
-        <p class="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">Allowed file types</p>
-        <p class="mb-3 text-xs text-slate-400">
-          Leave this library without an explicit list to inherit the app default.
-        </p>
-        <div class="max-h-72 space-y-3 overflow-y-auto pr-1">
-          <div v-for="category in MIME_CATEGORIES" :key="category.label">
-            <div class="mb-1 flex items-center justify-between">
-              <span class="text-xs font-semibold tracking-wide text-slate-400 uppercase">
-                {{ category.label }}
-              </span>
-              <div class="flex gap-2 text-xs">
-                <button
-                  class="text-violet-600 dark:text-violet-400 hover:underline"
-                  @click="toggleAll(category.options, true)"
-                >
-                  All
-                </button>
-                <button
-                  class="text-slate-400 hover:underline"
-                  @click="toggleAll(category.options, false)"
-                >
-                  None
-                </button>
-              </div>
-            </div>
+    <div class="space-y-3">
+      <p class="text-sm text-slate-500 dark:text-slate-400">
+        Choose the allowed formats and max size per type. 0 MB means unlimited.
+      </p>
+
+      <div
+        class="hidden grid-cols-[6rem_1fr_8rem] gap-3 px-3 text-xs font-semibold tracking-wide text-slate-400 uppercase md:grid"
+      >
+        <span>Format</span>
+        <span>Allowed</span>
+        <span class="text-right">Max size</span>
+      </div>
+
+      <div
+        v-for="category in MIME_CATEGORIES"
+        :key="category.label"
+        class="flex flex-col gap-2 rounded-lg border border-slate-200 p-3 md:grid md:grid-cols-[6rem_1fr_8rem] md:items-center md:gap-3 dark:border-slate-700"
+      >
+        <div class="flex items-center gap-1">
+          <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
+            {{ category.label }}
+          </span>
+          <Button
+            text
+            rounded
+            size="small"
+            severity="secondary"
+            class="!h-6 !w-6 !p-0"
+            :aria-label="allSelected(category.options) ? 'Deselect all' : 'Select all'"
+            @click="toggleAll(category.options)"
+          >
+            <template #icon>
+              <Eye v-if="allSelected(category.options)" :size="14" />
+              <EyeSlash v-else :size="14" />
+            </template>
+          </Button>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <div
+            v-for="option in category.options"
+            :key="option.value"
+            class="flex items-center gap-1.5"
+          >
+            <Checkbox
+              :input-id="option.value"
+              v-model="selected[option.value]"
+              binary
+            />
             <label
-              v-for="option in category.options"
-              :key="option.value"
-              class="flex cursor-pointer items-center gap-2 py-0.5 text-sm text-slate-600 dark:text-slate-300"
+              :for="option.value"
+              class="cursor-pointer text-sm text-slate-700 dark:text-slate-200"
             >
-              <input v-model="selected[option.value]" type="checkbox" />
               {{ option.label }}
-              <span class="text-xs text-slate-400">{{ option.value }}</span>
             </label>
           </div>
         </div>
-      </div>
 
-      <div>
-        <label class="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200" for="max-upload">
-          Max upload size (MB)
-        </label>
-        <input
-          id="max-upload"
-          v-model.number="maxMb"
-          type="number"
-          min="0"
-          step="1"
-          class="w-32 rounded border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm"
-        />
-        <p class="mt-1 text-xs text-slate-400">0 keeps the app default.</p>
+        <div class="flex items-center justify-between gap-2 md:justify-end">
+          <span class="text-xs text-slate-400 md:hidden">Max size</span>
+          <div class="w-28 shrink-0">
+            <InputNumber
+              v-model="limitMb[category.limitKey]"
+              :min="0"
+              :max-fraction-digits="0"
+              suffix=" MB"
+              fluid
+            />
+          </div>
+        </div>
       </div>
     </div>
 
     <template #footer>
-      <button
-        class="rounded px-3 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-        @click="uploadSettingsDialog.visible = false"
-      >
-        Cancel
-      </button>
-      <button
-        class="rounded bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
-        :disabled="saving"
-        @click="save"
-      >
-        Save
-      </button>
+      <Button label="Cancel" text severity="secondary" @click="close" />
+      <Button label="Save" :loading="saving" @click="save" />
     </template>
   </Dialog>
 </template>

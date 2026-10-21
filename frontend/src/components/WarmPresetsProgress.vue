@@ -51,7 +51,7 @@ onBeforeUnmount(() => {
         <p class="mt-0.5 text-xs text-slate-400">
           {{ warmProgress.done }} / {{ warmProgress.totalConversions }} conversions
           · {{ warmProgress.totalAssets }} assets
-          <span v-if="warmProgress.failed" class="text-amber-600 dark:text-amber-400">
+          <span v-if="warmProgress.failed" class="text-brand-700 dark:text-brand-400">
             · {{ warmProgress.failed }} failed
           </span>
           <span v-if="warmProgress.skipped" class="text-slate-400">
@@ -71,7 +71,7 @@ onBeforeUnmount(() => {
 
     <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
       <div
-        class="h-full rounded-full bg-violet-600 transition-[width] duration-200"
+        class="h-full rounded-full bg-brand-600 transition-[width] duration-200"
         :style="{ width: `${percent}%` }"
       />
     </div>
@@ -85,7 +85,7 @@ onBeforeUnmount(() => {
 
     <ul
       v-if="warmProgress.errors.length"
-      class="mt-2 max-h-20 space-y-0.5 overflow-y-auto text-[11px] text-amber-600 dark:text-amber-400"
+      class="mt-2 max-h-20 space-y-0.5 overflow-y-auto text-[11px] text-brand-700 dark:text-brand-400"
     >
       <li v-for="(message, index) in warmProgress.errors" :key="index" class="truncate">
         {{ message }}

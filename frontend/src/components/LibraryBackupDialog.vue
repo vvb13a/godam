@@ -306,7 +306,7 @@ onBeforeUnmount(stopPolling)
             <p class="text-xs text-slate-400">Synced</p>
           </div>
           <div>
-            <p class="text-lg font-semibold text-amber-600 dark:text-amber-400">
+            <p class="text-lg font-semibold text-brand-700 dark:text-brand-400">
               {{ status.pending }}
             </p>
             <p class="text-xs text-slate-400">Pending</p>
@@ -381,8 +381,8 @@ onBeforeUnmount(stopPolling)
 }
 
 .field-input:focus {
-  border-color: #a78bfa;
-  outline: 2px solid #ddd6fe;
+  border-color: var(--brand-500);
+  outline: 2px solid var(--brand-200);
   outline-offset: 0;
 }
 
@@ -393,7 +393,7 @@ onBeforeUnmount(stopPolling)
 }
 
 :global(.dark) .field-input:focus {
-  border-color: #7c3aed;
-  outline-color: #4c1d95;
+  border-color: var(--brand-400);
+  outline-color: var(--brand-900);
 }
 </style>

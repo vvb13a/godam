@@ -18,6 +18,7 @@ import {
 } from '@primeicons/vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as api from '../api/client'
+import { theme } from '../lib/theme'
 import type { Asset } from '../types'
 
 const props = defineProps<{ asset: Asset }>()
@@ -47,6 +48,10 @@ const failed = ref(false)
 const autoplay = ref(loadAutoplay())
 
 let wavesurfer: WaveSurfer | null = null
+
+function accentColor(): string {
+  return theme.resolved === 'dark' ? '#fb923c' : '#6366f1'
+}
 let playOnReady = false
 
 const source = computed(() => api.assetContentUrl(props.asset.id))
@@ -104,8 +109,8 @@ onMounted(() => {
     url: source.value,
     height: 128,
     waveColor: '#cbd5e1',
-    progressColor: '#f59e0b',
-    cursorColor: '#f59e0b',
+    progressColor: accentColor(),
+    cursorColor: accentColor(),
     barWidth: 2,
     barGap: 1,
     barRadius: 2,
@@ -127,7 +132,7 @@ onMounted(() => {
         container: minimapEl.value,
         height: 40,
         waveColor: '#cbd5e1',
-        progressColor: '#f59e0b',
+        progressColor: accentColor(),
         overlayColor: '#0f172a1a',
       }),
     )
@@ -201,7 +206,7 @@ onBeforeUnmount(() => {
         <StepBackward :size="18" />
       </button>
       <button
-        class="inline-flex h-11 w-11 items-center justify-center rounded-full bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-40"
+        class="inline-flex h-11 w-11 items-center justify-center rounded-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 dark:bg-orange-500 dark:text-orange-950 dark:hover:bg-orange-400"
         :disabled="failed"
         :title="playing ? 'Pause' : 'Play'"
         @click="toggle"
@@ -251,7 +256,7 @@ onBeforeUnmount(() => {
           min="0"
           max="1"
           step="0.05"
-          class="h-1 w-24 cursor-pointer accent-violet-600"
+          class="h-1 w-24 cursor-pointer accent-brand-600"
           title="Volume"
           @input="applyVolume"
         />

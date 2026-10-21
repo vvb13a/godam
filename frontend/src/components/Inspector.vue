@@ -339,14 +339,14 @@ function removeCollection(collectionId: string): void {
               {{ conversions.length }}
             </span>
             <button
-              class="text-xs text-violet-600 hover:underline dark:text-violet-400"
+              class="text-xs text-brand-700 hover:underline dark:text-brand-400"
               title="Manage presets"
               @click="openPresetsDialog(null, asset.id)"
             >
               Manage
             </button>
             <button
-              class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 disabled:opacity-40"
+              class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400 disabled:opacity-40"
               title="Warm all presets for this asset"
               :disabled="warmProgress.active"
               @click="warmAsset"
@@ -354,7 +354,7 @@ function removeCollection(collectionId: string): void {
               <Bolt :size="14" />
             </button>
             <button
-              class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
+              class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400"
               title="Refresh conversions"
               :disabled="conversionsLoading"
               @click="loadConversions(asset.id)"
@@ -387,7 +387,7 @@ function removeCollection(collectionId: string): void {
               target="_blank"
               rel="noopener"
               :title="conversion.url"
-              class="min-w-0 truncate text-violet-600 hover:underline dark:text-violet-400"
+              class="min-w-0 truncate text-brand-700 hover:underline dark:text-brand-400"
             >
               {{ conversionLabel(conversion) }}
             </a>
@@ -405,7 +405,7 @@ function removeCollection(collectionId: string): void {
         <div class="mb-2 flex items-center justify-between">
           <h3 class="text-sm font-semibold">Tags</h3>
           <button
-            class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
+            class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400"
             title="Edit tags"
             @click="editTags"
           >
@@ -438,7 +438,7 @@ function removeCollection(collectionId: string): void {
         <div class="mb-2 flex items-center justify-between">
           <h3 class="text-sm font-semibold">Collections</h3>
           <button
-            class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
+            class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400"
             title="Edit collections"
             @click="editCollections"
           >

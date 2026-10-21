@@ -2,7 +2,7 @@ import { reactive } from 'vue'
 import * as api from '../api/client'
 import { formatSize } from './format'
 import { library } from './library'
-import type { Asset } from '../types'
+import type { Asset, UploadLimits } from '../types'
 
 // Files above this size use the chunked transport. The server streams direct
 // uploads to disk too, but chunking keeps each request small and gives large
@@ -74,10 +74,10 @@ export function createUploadItem(file: File): UploadItem {
     retryable: true,
   }
 
-  const limit = library.max_upload_bytes
+  const limit = uploadLimitFor(file.type)
   if (limit > 0 && file.size > limit) {
     item.status = 'error'
-    item.error = `Exceeds the ${formatSize(limit)} limit for this library.`
+    item.error = `Exceeds the ${formatSize(limit)} limit for this file type.`
     item.retryable = false
     return item
   }
@@ -109,6 +109,29 @@ export function clearUploadItems(): void {
     disposeUploadItem(item)
   }
   upload.items = []
+}
+
+// uploadLimitFor returns the byte limit for a file's category. Zero means the
+// category has no size limit.
+export function uploadLimitFor(mime: string): number {
+  const clean = mime.split(';')[0].trim().toLowerCase()
+  let key: keyof UploadLimits | null = null
+  if (clean.startsWith('image/')) key = 'image_bytes'
+  else if (clean.startsWith('audio/')) key = 'audio_bytes'
+  else if (clean.startsWith('video/')) key = 'video_bytes'
+  else if (clean === 'application/pdf') key = 'pdf_bytes'
+  return key ? (library.upload_limits?.[key] ?? 0) : 0
+}
+
+export function hasCategoryUploadLimits(): boolean {
+  const limits = library.upload_limits
+  if (!limits) return false
+  return (
+    (limits.image_bytes ?? 0) > 0 ||
+    (limits.audio_bytes ?? 0) > 0 ||
+    (limits.video_bytes ?? 0) > 0 ||
+    (limits.pdf_bytes ?? 0) > 0
+  )
 }
 
 function newItemId(): string {

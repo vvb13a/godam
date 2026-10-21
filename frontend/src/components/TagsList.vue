@@ -566,21 +566,21 @@ const menuItems = computed<TagMenuItem[]>(() => {
       </span>
       <div class="flex items-center gap-2">
         <button
-          class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
+          class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400"
           title="Manage tags"
           @click="openTagsDialog"
         >
           <Tags :size="14" />
         </button>
         <button
-          class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
+          class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400"
           title="Group and sort tags"
           @click="toggleOptions"
         >
           <Cog :size="14" />
         </button>
         <button
-          class="inline-flex text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
+          class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400"
           title="New tag"
           @click="createTag"
         >
@@ -603,7 +603,7 @@ const menuItems = computed<TagMenuItem[]>(() => {
           class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
           :class="
             groupBy === option.value
-              ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+              ? 'bg-brand-50 dark:bg-brand-950/50 text-brand-700 dark:text-brand-300'
               : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
           "
           @click="setGroup(option.value)"
@@ -626,7 +626,7 @@ const menuItems = computed<TagMenuItem[]>(() => {
           class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
           :class="
             sort === option.value
-              ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300'
+              ? 'bg-brand-50 dark:bg-brand-950/50 text-brand-700 dark:text-brand-300'
               : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
           "
           @click="setSort(option.value)"
@@ -667,7 +667,7 @@ const menuItems = computed<TagMenuItem[]>(() => {
               v-model="editingTagName"
               :data-tag-rename="tag.id"
               type="text"
-              class="w-24 rounded-full border border-violet-400 bg-white dark:bg-slate-900 px-2 py-0.5 text-xs text-slate-800 dark:text-slate-100 outline-none"
+              class="w-24 rounded-full border border-brand-400 bg-white dark:bg-slate-900 px-2 py-0.5 text-xs text-slate-800 dark:text-slate-100 outline-none"
               @click.stop
               @keydown.stop
               @keydown.enter="commitRename"
@@ -679,16 +679,14 @@ const menuItems = computed<TagMenuItem[]>(() => {
             :name="tag.name"
             :color="tagColor(tag)"
             :starred="tag.starred"
+            :selected="isActive(tag)"
             :data-tag-id="tag.id"
             class="cursor-pointer select-none"
-            :class="[
-              isActive(tag) ? 'ring-1 ring-violet-400' : '',
-              dragOverTagId === tag.id ? 'ring-2 ring-violet-500' : '',
-            ]"
+            :class="dragOverTagId === tag.id ? 'ring-2 ring-brand-500' : ''"
             @click="filterByTag(tag)"
             @contextmenu.prevent="openMenu($event, tag)"
           >
-              <span v-if="tag.asset_count > 0" class="shrink-0 text-slate-400">
+              <span v-if="tag.asset_count > 0" class="shrink-0 opacity-60">
                 {{ tag.asset_count }}
               </span>
             </TagBadge>

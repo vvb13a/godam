@@ -11,11 +11,11 @@ import (
 type Instance struct {
 	ID               string    `gorm:"column:id;primaryKey;type:text"`
 	Name             string    `gorm:"column:name;type:text;not null"`
-	Color            string    `gorm:"column:color;type:text;not null;default:'8b5cf6'"`
+	Color            string    `gorm:"column:color;type:text;not null;default:'f97316'"`
 	CoverAssetID     *string   `gorm:"column:cover_asset_id;type:text"`
 	WatermarkAssetID *string   `gorm:"column:watermark_asset_id;type:text"`
 	AllowedMimeTypes string    `gorm:"column:allowed_mime_types;type:text;not null;default:''"`
-	MaxUploadBytes   int64     `gorm:"column:max_upload_bytes;not null;default:0"`
+	UploadLimits     string    `gorm:"column:upload_limits;type:text;not null;default:''"`
 	CreatedAt        time.Time `gorm:"column:created_at"`
 	UpdatedAt        time.Time `gorm:"column:updated_at"`
 }
@@ -37,6 +37,10 @@ func InstanceModel(i *domain.Instance) *Instance {
 			allowed = string(encoded)
 		}
 	}
+	uploadLimits := ""
+	if encoded, err := json.Marshal(i.UploadLimits); err == nil {
+		uploadLimits = string(encoded)
+	}
 	return &Instance{
 		ID:               i.ID,
 		Name:             i.Name,
@@ -44,7 +48,7 @@ func InstanceModel(i *domain.Instance) *Instance {
 		CoverAssetID:     cover,
 		WatermarkAssetID: watermark,
 		AllowedMimeTypes: allowed,
-		MaxUploadBytes:   i.MaxUploadBytes,
+		UploadLimits:     uploadLimits,
 		CreatedAt:        i.CreatedAt,
 		UpdatedAt:        i.UpdatedAt,
 	}
@@ -63,6 +67,10 @@ func (m *Instance) ToDomain() *domain.Instance {
 	if m.AllowedMimeTypes != "" {
 		_ = json.Unmarshal([]byte(m.AllowedMimeTypes), &allowed)
 	}
+	var uploadLimits domain.UploadLimits
+	if m.UploadLimits != "" {
+		_ = json.Unmarshal([]byte(m.UploadLimits), &uploadLimits)
+	}
 	return &domain.Instance{
 		ID:               m.ID,
 		Name:             m.Name,
@@ -70,7 +78,7 @@ func (m *Instance) ToDomain() *domain.Instance {
 		CoverAssetID:     cover,
 		WatermarkAssetID: watermark,
 		AllowedMimeTypes: allowed,
-		MaxUploadBytes:   m.MaxUploadBytes,
+		UploadLimits:     uploadLimits,
 		CreatedAt:        m.CreatedAt,
 		UpdatedAt:        m.UpdatedAt,
 	}

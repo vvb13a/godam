@@ -28,11 +28,13 @@ import { libraryColorHex } from '../lib/libraryColors'
 import { ACCEPT_STRING } from '../lib/mimeTypes'
 import { openUploadCollections } from '../lib/collectionsDialog'
 import { openUploadTags } from '../lib/tagsDialog'
+import { theme } from '../lib/theme'
 import {
   clearUploadItems,
   createUploadItem,
   disposeUploadItem,
   fileForUpload,
+  hasCategoryUploadLimits,
   isAbortError,
   upload,
   uploadFile,
@@ -76,7 +78,7 @@ const renameInput = ref<HTMLInputElement | null>(null)
 const dragActive = ref(false)
 let dragDepth = 0
 
-const maxUploadBytes = computed(() => library.max_upload_bytes)
+const categoryLimits = computed(() => hasCategoryUploadLimits())
 
 const totalBytes = computed(() =>
   upload.items.reduce((sum, item) => sum + item.file.size, 0),
@@ -196,12 +198,14 @@ const etaSeconds = computed(() => {
   return Math.ceil(pendingBytes.value / uploadSpeed.value)
 })
 
+const brandColor = computed(() => (theme.resolved === 'dark' ? '#fb923c' : '#6366f1'))
+
 const stateRing = computed(() => {
   const total = upload.items.length
   if (!total) return 'conic-gradient(#e2e8f0 0deg 360deg)'
   const segments: Array<[number, string]> = [
     [doneCount.value, '#22c55e'],
-    [activeCount.value, '#8b5cf6'],
+    [activeCount.value, brandColor.value],
     [errorCount.value, '#ef4444'],
     [queuedCount.value, '#cbd5e1'],
     [canceledCount.value, '#94a3b8'],
@@ -219,7 +223,7 @@ const stateRing = computed(() => {
 
 const stateLegend = computed(() => [
   { key: 'done', label: 'Uploaded', count: doneCount.value, color: '#22c55e' },
-  { key: 'active', label: 'Uploading', count: activeCount.value, color: '#8b5cf6' },
+  { key: 'active', label: 'Uploading', count: activeCount.value, color: brandColor.value },
   { key: 'error', label: 'Failed', count: errorCount.value, color: '#ef4444' },
   { key: 'queued', label: 'Waiting', count: queuedCount.value, color: '#cbd5e1' },
   { key: 'canceled', label: 'Canceled', count: canceledCount.value, color: '#94a3b8' },
@@ -899,20 +903,20 @@ function onPrimary(): void {
           >
             <button
               type="button"
-              class="flex w-full max-w-xl flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 px-8 py-14 text-center transition hover:border-violet-400 hover:bg-violet-50/50 dark:border-slate-700 dark:hover:bg-violet-950/20"
+              class="flex w-full max-w-xl flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 px-8 py-14 text-center transition hover:border-brand-400 hover:bg-brand-50/50 dark:border-slate-700 dark:hover:bg-brand-950/20"
               @click="openPicker"
             >
               <CloudUpload :size="32" class="text-slate-400" />
               <span
-                class="mt-3 text-base font-medium text-violet-600 dark:text-violet-400"
+                class="mt-3 text-base font-medium text-brand-700 dark:text-brand-400"
               >
                 Choose files
               </span>
               <span class="mt-1 text-sm text-slate-400">
                 or drop them here
               </span>
-              <span v-if="maxUploadBytes" class="mt-3 text-xs text-slate-400">
-                Max {{ formatSize(maxUploadBytes) }} per file in this library.
+              <span v-if="categoryLimits" class="mt-3 text-xs text-slate-400">
+                Size limits vary by file type in this library.
               </span>
             </button>
           </div>
@@ -932,7 +936,6 @@ function onPrimary(): void {
               :key="item.id"
               class="group relative rounded-lg border bg-white dark:bg-slate-900"
               :class="[itemBorder(item), fillGrid ? 'h-full' : '']"
-              :title="item.status === 'error' ? item.error ?? 'Upload failed' : undefined"
             >
               <div
                 class="relative overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800"
@@ -965,7 +968,7 @@ function onPrimary(): void {
                       item.retryable &&
                       (item.status === 'error' || item.status === 'canceled')
                     "
-                    class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/20 bg-black/60 text-white shadow-sm backdrop-blur transition hover:bg-violet-600"
+                    class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/20 bg-black/60 text-white shadow-sm backdrop-blur transition hover:bg-indigo-500 hover:text-white dark:hover:bg-orange-500 dark:hover:text-orange-950"
                     title="Retry"
                     aria-label="Retry upload"
                     @click="retryItem(item)"
@@ -1043,7 +1046,15 @@ function onPrimary(): void {
                   >
                     {{ item.name }}
                   </p>
+                  <p
+                    v-if="item.status === 'error'"
+                    class="mt-1 line-clamp-2 rounded bg-red-600/95 px-1.5 py-1 text-[10px] font-medium leading-snug text-white"
+                    :title="item.error ?? 'Upload failed'"
+                  >
+                    {{ item.error ?? 'Upload failed' }}
+                  </p>
                   <div
+                    v-else
                     class="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-white/75"
                   >
                     <span>{{ formatSize(item.file.size) }}</span>
@@ -1056,7 +1067,7 @@ function onPrimary(): void {
                   class="absolute inset-x-0 bottom-0 h-1 bg-black/25"
                 >
                   <div
-                    class="h-full bg-violet-400 transition-all"
+                    class="h-full bg-brand-400 transition-all"
                     :style="{ width: `${Math.round(item.progress * 100)}%` }"
                   />
                 </div>
@@ -1064,7 +1075,7 @@ function onPrimary(): void {
                   v-else-if="item.status === 'processing'"
                   class="absolute inset-x-0 bottom-0 h-1 overflow-hidden bg-black/25"
                 >
-                  <div class="h-full w-1/3 animate-pulse bg-violet-400" />
+                  <div class="h-full w-1/3 animate-pulse bg-brand-400" />
                 </div>
               </div>
             </article>
@@ -1124,7 +1135,7 @@ function onPrimary(): void {
                 class="inline-flex h-full w-10 items-center justify-center transition"
                 :class="
                   sortDirection === 'asc'
-                    ? 'bg-violet-600 text-white'
+                    ? 'bg-indigo-600 text-white dark:bg-orange-500 dark:text-orange-950'
                     : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                 "
                 title="Sort ascending"
@@ -1138,7 +1149,7 @@ function onPrimary(): void {
                 class="inline-flex h-full w-10 items-center justify-center transition"
                 :class="
                   sortDirection === 'desc'
-                    ? 'bg-violet-600 text-white'
+                    ? 'bg-indigo-600 text-white dark:bg-orange-500 dark:text-orange-950'
                     : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                 "
                 title="Sort descending"
@@ -1193,7 +1204,7 @@ function onPrimary(): void {
           <div class="mb-2 flex items-center justify-between">
             <h3 class="text-sm font-semibold">Tags</h3>
             <button
-              class="inline-flex text-slate-400 hover:text-violet-600 disabled:opacity-40 dark:hover:text-violet-400"
+              class="inline-flex text-slate-400 hover:text-brand-700 disabled:opacity-40 dark:hover:text-brand-400"
               title="Select tags"
               :disabled="running"
               @click="openUploadTags"
@@ -1228,7 +1239,7 @@ function onPrimary(): void {
           <div class="mb-2 flex items-center justify-between">
             <h3 class="text-sm font-semibold">Collections</h3>
             <button
-              class="inline-flex text-slate-400 hover:text-violet-600 disabled:opacity-40 dark:hover:text-violet-400"
+              class="inline-flex text-slate-400 hover:text-brand-700 disabled:opacity-40 dark:hover:text-brand-400"
               title="Select collections"
               :disabled="running"
               @click="openUploadCollections"
@@ -1335,13 +1346,13 @@ function onPrimary(): void {
   <Teleport to="body">
     <div
       v-if="dragActive"
-      class="pointer-events-none fixed inset-0 z-[9999] flex items-center justify-center bg-violet-600/10 backdrop-blur-sm"
+      class="pointer-events-none fixed inset-0 z-[9999] flex items-center justify-center bg-brand-600/10 backdrop-blur-sm"
     >
       <div
-        class="rounded-xl border-2 border-dashed border-violet-400 bg-white px-12 py-10 text-center shadow-2xl dark:bg-slate-900"
+        class="rounded-xl border-2 border-dashed border-brand-400 bg-white px-12 py-10 text-center shadow-2xl dark:bg-slate-900"
       >
-        <CloudUpload :size="40" class="mx-auto text-violet-500" />
-        <p class="mt-3 text-lg font-semibold text-violet-700 dark:text-violet-300">
+        <CloudUpload :size="40" class="mx-auto text-brand-500" />
+        <p class="mt-3 text-lg font-semibold text-brand-700 dark:text-brand-300">
           Drop to add files
         </p>
         <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">

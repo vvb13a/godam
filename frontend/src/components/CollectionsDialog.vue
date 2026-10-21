@@ -247,7 +247,10 @@ function removeSelection(id: string): void {
       <div
         ref="contentRef"
         class="flex min-h-0 flex-col"
-        :style="{ maxHeight: 'min(42rem, 86vh)' }"
+        :style="{
+          maxHeight: 'min(42rem, 86vh)',
+          minHeight: 'min(30rem, 80vh)',
+        }"
       >
       <div
         class="flex items-center gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-800"
@@ -262,21 +265,21 @@ function removeSelection(id: string): void {
           @keydown.enter.prevent="createFromSearch"
         />
         <button
-          class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-violet-600 dark:hover:bg-slate-800 dark:hover:text-violet-400"
+          class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-brand-700 dark:hover:bg-slate-800 dark:hover:text-brand-400"
           title="New collection"
           @click="addCollection"
         >
           <Plus :size="16" />
         </button>
         <button
-          class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-violet-600 dark:hover:bg-slate-800 dark:hover:text-violet-400"
+          class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-brand-700 dark:hover:bg-slate-800 dark:hover:text-brand-400"
           title="Sort collections"
           @click="toggleSort"
         >
           <SortAlt :size="16" />
         </button>
         <button
-          class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-violet-600 dark:hover:bg-slate-800 dark:hover:text-violet-400"
+          class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-brand-700 dark:hover:bg-slate-800 dark:hover:text-brand-400"
           :title="allExpanded ? 'Collapse all' : 'Expand all'"
           @click="toggleExpandAll"
         >
@@ -296,7 +299,7 @@ function removeSelection(id: string): void {
         <button
           v-if="showCreate"
           type="button"
-          class="flex w-full items-center gap-2 border-b border-slate-100 px-2 py-2 text-left text-sm text-violet-700 hover:bg-violet-50 dark:border-slate-800 dark:text-violet-300 dark:hover:bg-violet-950/40"
+          class="flex w-full items-center gap-2 border-b border-slate-100 px-2 py-2 text-left text-sm text-brand-700 hover:bg-brand-50 dark:border-slate-800 dark:text-brand-300 dark:hover:bg-brand-950/40"
           @click="createFromSearch"
         >
           <Plus :size="15" class="shrink-0" />

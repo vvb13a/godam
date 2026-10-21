@@ -30,7 +30,6 @@ type Deps struct {
 	Backups          *service.BackupService
 	System           *service.SystemService
 	ManagementToken  string
-	MaxUploadBytes   int64
 }
 
 // Server is the HTTP handler for the JSON API.

@@ -50,7 +50,7 @@ onBeforeUnmount(() => {
       controls
       playsinline
       class="w-full max-w-4xl"
-      style="--plyr-color-main: #f59e0b"
+      style="--plyr-color-main: var(--brand-500)"
     />
   </div>
 </template>
