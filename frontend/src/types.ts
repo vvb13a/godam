@@ -3,12 +3,32 @@ export interface UserOption {
   name: string
 }
 
+export interface EmbedScopeFilters {
+  collection?: string[]
+  tag?: string[]
+  type?: string[]
+  mime?: string[]
+  uncategorized?: boolean
+  untagged?: boolean
+  search?: string
+  sort?: string
+}
+
+export interface EmbedScope {
+  username?: string
+  default_filters: EmbedScopeFilters
+  locked_filters?: string[]
+  allowed_mime_types?: string[]
+  can_upload: boolean
+}
+
 export interface User {
   id: string
   name: string
   email: string
   created_at: string
   updated_at: string
+  scope?: EmbedScope
 }
 
 export interface UploadLimits {

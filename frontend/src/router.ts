@@ -1,8 +1,20 @@
-import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import {
+  createRouter,
+  createWebHistory,
+  type RouteLocationNormalized,
+  type RouteLocationRaw,
+  type RouteRecordRaw,
+} from 'vue-router'
 import * as api from './api/client'
 import { auth, loadMe } from './lib/auth'
 import { leaveEditor } from './lib/editorState'
-import { configureEmbed, embed, embedQuery } from './lib/embed'
+import {
+  applyEmbedScope,
+  configureEmbed,
+  embed,
+  embedQuery,
+} from './lib/embed'
+import type { EmbedScope } from './types'
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/all' },
@@ -75,9 +87,58 @@ router.beforeEach((to) => {
   }
 })
 
+function scopeList(values?: string[], special?: string): string {
+  const list = [...(values ?? [])]
+  if (special) list.push(special)
+  return list.join(',')
+}
+
+// scopedFilterQuery applies the token's default filters when the URL does not
+// already carry them, and forces locked filters even when it does. The server
+// repeats this logic, so a manipulated URL cannot escape the scope.
+function scopedFilterQuery(
+  to: RouteLocationNormalized,
+  scope: EmbedScope,
+): RouteLocationRaw | true {
+  const query = { ...to.query }
+  const locked = new Set(scope.locked_filters ?? [])
+  const defaults = scope.default_filters ?? {}
+  let changed = false
+
+  const apply = (key: string, value: string) => {
+    const current = typeof query[key] === 'string' ? (query[key] as string) : ''
+    if (locked.has(key) || !current) {
+      if (value) {
+        if (current !== value) {
+          query[key] = value
+          changed = true
+        }
+      } else if (locked.has(key) && current) {
+        delete query[key]
+        changed = true
+      }
+    }
+  }
+
+  apply(
+    'collection',
+    scopeList(defaults.collection, defaults.uncategorized ? 'uncategorized' : ''),
+  )
+  apply('tag', scopeList(defaults.tag, defaults.untagged ? 'untagged' : ''))
+  apply('type', scopeList(defaults.type))
+  apply('mime', scopeList(defaults.mime))
+  apply('search', defaults.search ?? '')
+  apply('sort', defaults.sort ?? '')
+
+  return changed
+    ? { name: to.name, query, hash: to.hash, replace: true }
+    : true
+}
+
 // Resolve the session once, then gate every non-public route behind it.
 router.beforeEach(async (to) => {
   if (!auth.ready) await loadMe()
+  if (embed.active && auth.user?.scope) applyEmbedScope(auth.user.scope)
   if (to.meta.public) {
     if (to.name === 'login' && auth.user) {
       return embed.active
@@ -89,6 +150,9 @@ router.beforeEach(async (to) => {
   if (!auth.user) {
     const redirect = to.fullPath && to.fullPath !== '/' ? { redirect: to.fullPath } : {}
     return { name: 'login', query: redirect }
+  }
+  if (embed.active && auth.user.scope && to.name === 'all') {
+    return scopedFilterQuery(to, auth.user.scope)
   }
   return true
 })

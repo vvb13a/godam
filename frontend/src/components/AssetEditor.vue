@@ -87,7 +87,7 @@ function fileBase(name: string): string {
 // The content endpoint is cacheable, so bust the cache each time the editor is
 // (re)opened to always load the current file.
 function contentUrl(): string {
-  return `${api.assetContentUrl(props.asset.id)}?t=${Date.now()}`
+  return api.cacheBust(api.assetContentUrl(props.asset.id))
 }
 
 // The library's default watermark asset, shown in the watermark gallery so it

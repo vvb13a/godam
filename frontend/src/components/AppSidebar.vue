@@ -13,6 +13,7 @@ import { sidebarPrefs } from '../lib/sidebar'
 import CollectionTree from './CollectionTree.vue'
 import Quicklinks from './Quicklinks.vue'
 import SmartCollections from './SmartCollections.vue'
+import TagsList from './TagsList.vue'
 import UserMenu from './UserMenu.vue'
 
 const props = withDefaults(defineProps<{ embed?: boolean }>(), {
@@ -85,6 +86,7 @@ const showSmartCollections = computed(
     !collectionsLocked.value &&
     !tagsLocked.value,
 )
+const showTags = computed(() => sidebarPrefs.tags && !tagsLocked.value)
 const showSections = computed(
   () => showCollections.value || showSmartCollections.value,
 )
@@ -113,14 +115,15 @@ watch(
 
 <template>
   <div
-    class="relative h-full shrink-0 pt-2 pb-2 pl-2 transition-[width] duration-200 ease-in-out"
-    :style="{ width: panels.leftCollapsed ? '0px' : '16.5rem' }"
+    class="relative h-full shrink-0 transition-[width] duration-200 ease-in-out"
+    :class="panels.leftCollapsed ? '' : 'p-4'"
+    :style="{ width: panels.leftCollapsed ? '0px' : '18rem' }"
   >
     <aside
       class="h-full w-full overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg"
     >
       <div
-        class="flex h-full w-64 flex-col"
+        class="flex h-full w-full flex-col"
         :inert="panels.leftCollapsed || undefined"
       >
         <div class="px-4 pt-4 pb-1">
@@ -233,6 +236,13 @@ watch(
             </div>
           </SplitterPanel>
         </Splitter>
+
+        <div
+          v-if="showTags"
+          class="min-h-0 max-h-64 shrink-0 overflow-y-auto border-t border-slate-100 dark:border-slate-800"
+        >
+          <TagsList />
+        </div>
 
         <UserMenu v-if="!props.embed" />
       </div>

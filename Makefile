@@ -13,7 +13,7 @@ THIS_MAKEFILE := $(firstword $(MAKEFILE_LIST))
 # matches the Docker Caddy/imgproxy stack.
 -include .env
 
-DEV_PORT ?= 5173
+DEV_PORT ?= 5174
 DEV_INTERNAL_URL ?= http://host.docker.internal:8080
 DEV_IMGPROXY_URL ?= http://127.0.0.1:8081
 DEV_CONVERSION_DIR ?= $(CURDIR)/.dev/conversions
@@ -58,6 +58,9 @@ dev: ## Run the API + Vite on the host against the Caddy/imgproxy stack
 		GODAM_IMGPROXY_URL="$(DEV_IMGPROXY_URL)" \
 		GODAM_IMGPROXY_KEY="$(IMGPROXY_KEY)" \
 		GODAM_IMGPROXY_SALT="$(IMGPROXY_SALT)" \
+		GODAM_JWT_SECRET="$(GODAM_JWT_SECRET)" \
+		GODAM_JWT_ISSUER="$(GODAM_JWT_ISSUER)" \
+		GODAM_JWT_AUDIENCE="$(GODAM_JWT_AUDIENCE)" \
 		go run . & \
 		$(NPM) run dev -- --port $(DEV_PORT) --host 0.0.0.0 & \
 		wait

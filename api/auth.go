@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/vvb13a/godam/domain"
 )
 
 const sessionCookieName = "godam_session"
@@ -42,22 +44,63 @@ func isPublicPath(path string) bool {
 	return false
 }
 
-// authMiddleware resolves the session cookie into a user and injects it into
-// the request context. Unauthenticated requests to protected routes get 401.
+// authMiddleware resolves a session cookie or a scoped JWT into a user and an
+// actor and injects both into the request context. Unauthenticated requests to
+// protected routes get 401.
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isPublicPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
-		user, err := s.deps.Users.UserForSession(r.Context(), sessionToken(r))
-		if err != nil {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+
+		// A supplied JWT always wins over an existing session cookie so an embed
+		// cannot accidentally inherit a broader godam login from the same browser.
+		if raw := requestToken(r); raw != "" && s.tokens.Enabled() {
+			actor, err := s.tokens.Verify(raw)
+			if err != nil {
+				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+				return
+			}
+			user := &domain.User{ID: actor.ID, Name: actor.Name}
+			ctx := context.WithValue(r.Context(), userContextKey, user)
+			ctx = domain.WithActor(ctx, actor)
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
-		ctx := context.WithValue(r.Context(), userContextKey, user)
-		next.ServeHTTP(w, r.WithContext(ctx))
+
+		if user, err := s.deps.Users.UserForSession(r.Context(), sessionToken(r)); err == nil {
+			ctx := context.WithValue(r.Context(), userContextKey, user)
+			ctx = domain.WithActor(ctx, &domain.Actor{ID: user.ID, Name: user.Name})
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
 	})
+}
+
+// requestToken extracts a JWT from the standard Authorization header, a query
+// parameter (needed for iframe and <img>/<video> URLs), or the explicit
+// X-Godam-Token header used by embed clients.
+func requestToken(r *http.Request) string {
+	if auth := strings.TrimSpace(r.Header.Get("Authorization")); strings.HasPrefix(auth, "Bearer ") {
+		if token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer ")); token != "" {
+			return token
+		}
+	}
+	if token := strings.TrimSpace(r.Header.Get("X-Godam-Token")); token != "" {
+		return token
+	}
+	return strings.TrimSpace(r.URL.Query().Get("token"))
+}
+
+func requestScope(r *http.Request) (domain.Scope, bool) {
+	actor := domain.ActorFromContext(r.Context())
+	if actor == nil || !actor.Token {
+		return domain.Scope{}, false
+	}
+	return actor.Scope, true
 }
 
 func sessionToken(r *http.Request) string {
@@ -103,7 +146,15 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, userID str
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, currentUser(r))
+	scope, scoped := requestScope(r)
+	if !scoped {
+		writeJSON(w, http.StatusOK, currentUser(r))
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		*domain.User
+		Scope *domain.Scope `json:"scope"`
+	}{User: currentUser(r), Scope: &scope})
 }
 
 type userOption struct {

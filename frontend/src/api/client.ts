@@ -22,6 +22,46 @@ import type {
 // 401 means the session expired, which the app handles by returning to login.
 let unauthorizedHandler: (() => void) | null = null
 
+// Embed sessions authenticate with a scoped JWT instead of a cookie. The token
+// is kept in memory and attached to API requests; URL-based asset references
+// append it as a query parameter because <img>/<video> cannot send headers.
+let authToken = ''
+
+export function setAuthToken(token: string): void {
+  authToken = token.trim()
+}
+
+export function getAuthToken(): string {
+  return authToken
+}
+
+export function authHeaders(): Record<string, string> {
+  return authToken ? { Authorization: `Bearer ${authToken}` } : {}
+}
+
+export function withAuthToken(url: string): string {
+  if (!authToken) return url
+  const parsed = new URL(url, window.location.origin)
+  parsed.searchParams.set('token', authToken)
+  return `${parsed.pathname}${parsed.search}${parsed.hash}`
+}
+
+// cacheBust keeps the existing query (including a JWT) and adds a timestamp.
+export function cacheBust(url: string): string {
+  const parsed = new URL(url, window.location.origin)
+  parsed.searchParams.set('t', String(Date.now()))
+  return `${parsed.pathname}${parsed.search}${parsed.hash}`
+}
+
+function withAuth(init?: RequestInit): RequestInit {
+  if (!authToken) return init ?? {}
+  const headers = new Headers(init?.headers)
+  if (!headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${authToken}`)
+  }
+  return { ...init, headers }
+}
+
 export function setUnauthorizedHandler(handler: (() => void) | null): void {
   unauthorizedHandler = handler
 }
@@ -44,13 +84,19 @@ async function ensureOk(res: Response): Promise<void> {
 }
 
 async function requestJSON<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, { credentials: 'same-origin', ...init })
+  const res = await fetch(url, {
+    credentials: 'same-origin',
+    ...withAuth(init),
+  })
   await ensureOk(res)
   return (await res.json()) as T
 }
 
 async function requestVoid(url: string, init?: RequestInit): Promise<void> {
-  const res = await fetch(url, { credentials: 'same-origin', ...init })
+  const res = await fetch(url, {
+    credentials: 'same-origin',
+    ...withAuth(init),
+  })
   await ensureOk(res)
 }
 
@@ -354,7 +400,7 @@ export async function previewPreset(
     {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify(parameters),
       signal,
     },
@@ -456,6 +502,7 @@ export function uploadChunk(
 
     xhr.open('PUT', url)
     xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    if (authToken) xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
     xhr.upload.onprogress = (event) => {
       if (onProgress && event.lengthComputable && event.total > 0) {
         onProgress(event.loaded / event.total)
@@ -526,6 +573,7 @@ export function uploadAsset(
     const cleanup = () => options.signal?.removeEventListener('abort', abort)
 
     xhr.open('POST', '/api/assets/upload')
+    if (authToken) xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
     xhr.upload.onprogress = (event) => {
       if (onProgress && event.lengthComputable && event.total > 0) {
         onProgress(event.loaded / event.total)
@@ -561,7 +609,7 @@ export function uploadAsset(
 }
 
 export function assetContentUrl(id: string): string {
-  return `/api/assets/${encodeURIComponent(id)}/content`
+  return withAuthToken(`/api/assets/${encodeURIComponent(id)}/content`)
 }
 
 // Bump when the preview pipeline changes so existing browser-cached previews
@@ -575,12 +623,14 @@ export function assetPreviewUrl(id: string, version?: string): string {
   const base = `/api/assets/${encodeURIComponent(id)}/preview`
   const params = new URLSearchParams({ rev: PREVIEW_REVISION })
   if (version) params.set('v', version)
-  return `${base}?${params.toString()}`
+  return withAuthToken(`${base}?${params.toString()}`)
 }
 
 // assetsZipUrl is the streaming download of many assets as a zip archive.
 export function assetsZipUrl(ids: string[]): string {
-  return `/api/assets/zip?ids=${ids.map(encodeURIComponent).join(',')}`
+  return withAuthToken(
+    `/api/assets/zip?ids=${ids.map(encodeURIComponent).join(',')}`,
+  )
 }
 
 // regeneratePreview re-renders the stored preview for an asset and returns the

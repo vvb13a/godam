@@ -50,7 +50,7 @@ let findTimer: number | null = null
 let disposed = false
 
 function contentUrl(): string {
-  return `${api.assetContentUrl(props.asset.id)}?t=${Date.now()}`
+  return api.cacheBust(api.assetContentUrl(props.asset.id))
 }
 
 async function mount(): Promise<void> {

@@ -1,4 +1,5 @@
 import { reactive } from 'vue'
+import { authHeaders } from '../api/client'
 import { loadStats } from './library'
 
 interface WarmEvent {
@@ -74,7 +75,7 @@ export async function warmPresets(assetIds: string[]): Promise<void> {
     const res = await fetch('/api/assets/presets/warm', {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ asset_ids: assetIds }),
       signal: controller.signal,
     })

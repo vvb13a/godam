@@ -18,7 +18,6 @@ import type { MenuItem } from 'primevue/menuitem'
 import {
   AngleRight,
   Bolt,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -61,12 +60,7 @@ import {
 import { editorDirty, leaveEditor, setEditorCloser } from '../lib/editorState'
 import { searchAssetWithGoogleLens } from '../lib/googleLens'
 import { library, loadLibraries, notifyLibraryChanged } from '../lib/library'
-import {
-  panels,
-  toggleBottomPanel,
-  toggleRightPanel,
-  toggleTopPanel,
-} from '../lib/panels'
+import { panels, toggleRightPanel } from '../lib/panels'
 import { SIDEBAR_TOGGLES, sidebarPrefs } from '../lib/sidebar'
 import { openAssetCollections, openBulkAssetCollections } from '../lib/collectionsDialog'
 import { clearSmartSelection, smartSelection } from '../lib/smartSelection'
@@ -88,73 +82,10 @@ import Inspector from './Inspector.vue'
 import LibraryInspector from './LibraryInspector.vue'
 import MultiSelectionPanel from './MultiSelectionPanel.vue'
 import TagFilterPopover from './TagFilterPopover.vue'
-import TagsList from './TagsList.vue'
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
-
-const PANEL_TRANSITION_MS = 200
-const panelAnimating = ref(false)
-let panelAnimationTimer: number | null = null
-
-function beginPanelAnimation(): void {
-  panelAnimating.value = true
-  if (panelAnimationTimer !== null) window.clearTimeout(panelAnimationTimer)
-  panelAnimationTimer = window.setTimeout(() => {
-    panelAnimating.value = false
-    panelAnimationTimer = null
-    void nextTick(measureGrid)
-  }, PANEL_TRANSITION_MS + 160)
-}
-
-function animatePanelEnter(el: Element, done: () => void): void {
-  beginPanelAnimation()
-  const node = el as HTMLElement
-  const height = node.scrollHeight
-  node.style.overflow = 'hidden'
-  node.style.height = '0px'
-  node.style.opacity = '0'
-  node.style.willChange = 'height, opacity'
-  void node.offsetHeight
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      node.style.transition = `height ${PANEL_TRANSITION_MS}ms ease, opacity ${PANEL_TRANSITION_MS}ms ease`
-      node.style.height = `${height}px`
-      node.style.opacity = '1'
-    })
-  })
-  window.setTimeout(() => {
-    node.style.removeProperty('transition')
-    node.style.removeProperty('height')
-    node.style.removeProperty('overflow')
-    node.style.removeProperty('opacity')
-    node.style.removeProperty('will-change')
-    done()
-  }, PANEL_TRANSITION_MS + 120)
-}
-
-function animatePanelLeave(el: Element, done: () => void): void {
-  beginPanelAnimation()
-  const node = el as HTMLElement
-  const height = node.scrollHeight
-  node.style.overflow = 'hidden'
-  node.style.height = `${height}px`
-  node.style.opacity = '1'
-  node.style.willChange = 'height, opacity'
-  void node.offsetHeight
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      node.style.transition = `height ${PANEL_TRANSITION_MS}ms ease, opacity ${PANEL_TRANSITION_MS}ms ease`
-      node.style.height = '0px'
-      node.style.opacity = '0'
-    })
-  })
-  window.setTimeout(() => {
-    node.style.removeProperty('will-change')
-    done()
-  }, PANEL_TRANSITION_MS + 120)
-}
 
 const searchQuery = computed({
   get: () => {
@@ -201,26 +132,30 @@ const embedCollectionLocked = computed(
   () => embedPicker.value && embed.collectionLocked,
 )
 const embedTagLocked = computed(() => embedPicker.value && embed.tagLocked)
+const embedTypeLocked = computed(() => embed.active && embed.typeLocked)
+const embedMimeLocked = computed(() => embed.active && embed.mimeLocked)
+const embedSearchLocked = computed(() => embed.active && embed.searchLocked)
+const embedSortLocked = computed(() => embed.active && embed.sortLocked)
+const embedCanUpload = computed(
+  () => !embed.active || (embed.scope?.can_upload !== false && embed.canUpload),
+)
 
 const DISPLAY_STORAGE_KEY = 'godam:display'
 
-type SpacingLevel = 'dense' | 'normal' | 'relaxed'
+type SpacingLevel = 'dense' | 'normal' | 'relaxed' | 'spacious'
 
-const SPACING_LEVELS: SpacingLevel[] = ['dense', 'normal', 'relaxed']
+const SPACING_LEVELS: SpacingLevel[] = ['dense', 'normal', 'relaxed', 'spacious']
 const SPACING_OPTIONS = [
   { label: 'Dense', value: 'dense' },
   { label: 'Normal', value: 'normal' },
   { label: 'Relaxed', value: 'relaxed' },
+  { label: 'Spacious', value: 'spacious' },
 ]
 const GRID_GAP_PX: Record<SpacingLevel, number> = {
   dense: 8,
   normal: 12,
   relaxed: 16,
-}
-const AROUND_GAP_PX: Record<SpacingLevel, number> = {
-  dense: 8,
-  normal: 16,
-  relaxed: 24,
+  spacious: 24,
 }
 
 function normalizeSpacing(value: unknown): SpacingLevel {
@@ -233,7 +168,6 @@ interface DisplayPrefs {
   size: number
   shape: CardShape
   gridGap: SpacingLevel
-  aroundGap: SpacingLevel
   showExtension: boolean
   showName: boolean
   showSize: boolean
@@ -269,9 +203,7 @@ const shape = ref<CardShape>(
     : 'square',
 )
 const gridGap = ref<SpacingLevel>(normalizeSpacing(savedPrefs.gridGap))
-const aroundGap = ref<SpacingLevel>(normalizeSpacing(savedPrefs.aroundGap))
 const gridGapPx = computed(() => GRID_GAP_PX[gridGap.value])
-const aroundGapPx = computed(() => AROUND_GAP_PX[aroundGap.value])
 const showExtension = ref(savedPrefs.showExtension ?? false)
 const showName = ref(savedPrefs.showName ?? false)
 const showSize = ref(savedPrefs.showSize ?? false)
@@ -287,18 +219,6 @@ const showSidebar = computed({
     panels.leftCollapsed = !value
   },
 })
-const showToolbar = computed({
-  get: () => !panels.topCollapsed,
-  set: (value: boolean) => {
-    panels.topCollapsed = !value
-  },
-})
-const showBottombar = computed({
-  get: () => !panels.bottomCollapsed,
-  set: (value: boolean) => {
-    panels.bottomCollapsed = !value
-  },
-})
 const showInspector = computed({
   get: () => !panels.rightCollapsed,
   set: (value: boolean) => {
@@ -311,7 +231,6 @@ watch(
     size,
     shape,
     gridGap,
-    aroundGap,
     showExtension,
     showName,
     showSize,
@@ -325,7 +244,6 @@ watch(
       size: clampSize(size.value),
       shape: shape.value,
       gridGap: gridGap.value,
-      aroundGap: aroundGap.value,
       showExtension: showExtension.value,
       showName: showName.value,
       showSize: showSize.value,
@@ -913,7 +831,6 @@ const cardWidth = computed(() =>
 const containerWidth = ref(0)
 
 function measureGrid(): void {
-  if (panelAnimating.value) return
   const el = gridContainer.value
   if (!el) return
   const style = getComputedStyle(el)
@@ -922,7 +839,7 @@ function measureGrid(): void {
   containerWidth.value = Math.max(0, el.clientWidth - padding)
 }
 
-watch([gridGap, aroundGap], () => {
+watch(gridGap, () => {
   void nextTick(measureGrid)
 })
 
@@ -1889,24 +1806,11 @@ onBeforeUnmount(() => {
     <Message v-if="error" severity="error" class="mx-6 mt-4">{{ error }}</Message>
 
     <div class="flex min-h-0 flex-1">
-      <div class="relative flex min-w-0 flex-1 flex-col">
-        <div
+      <div class="relative flex min-w-0 flex-1 flex-col py-4">
+        <header
           v-if="!editingAsset"
-          class="relative pt-2"
-          :style="{
-            paddingLeft: `${aroundGapPx}px`,
-            paddingRight: `${aroundGapPx}px`,
-            paddingBottom: `${aroundGapPx}px`,
-          }"
+          class="flex flex-wrap items-center gap-3 pb-3"
         >
-          <Transition
-            @enter="animatePanelEnter"
-            @leave="animatePanelLeave"
-          >
-            <header
-              v-if="!panels.topCollapsed"
-              class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 shadow-lg"
-            >
           <CollectionFilterPopover
             v-model="collectionFilter"
             :disabled="embedCollectionLocked || uncategorizedView"
@@ -1937,6 +1841,7 @@ onBeforeUnmount(() => {
             filter
             showClear
             :max-selected-labels="2"
+            :disabled="embedTypeLocked"
             class="w-40"
           >
             <template #option="slotProps">
@@ -2083,6 +1988,7 @@ onBeforeUnmount(() => {
               filter
               showClear
               :max-selected-labels="2"
+              :disabled="embedMimeLocked"
               class="w-64"
             >
               <template #option="slotProps">
@@ -2098,7 +2004,8 @@ onBeforeUnmount(() => {
             </MultiSelect>
             <button
               type="button"
-              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-slate-800"
+              :disabled="embedMimeLocked"
               title="Remove MIME type filter"
               @click="removeFilter('mime')"
             >
@@ -2357,12 +2264,20 @@ onBeforeUnmount(() => {
               v-model="searchInput"
               placeholder="Search assets…"
               title="Search title, note, and filename"
+              :disabled="embedSearchLocked"
               class="w-full"
             />
           </IconField>
 
           <span
-            v-if="embedCollectionLocked || embedTagLocked"
+            v-if="
+              embedCollectionLocked ||
+              embedTagLocked ||
+              embedTypeLocked ||
+              embedMimeLocked ||
+              embedSearchLocked ||
+              embedSortLocked
+            "
             class="text-xs font-medium text-brand-700 dark:text-brand-400"
             title="The host application restricted this picker"
           >
@@ -2370,6 +2285,7 @@ onBeforeUnmount(() => {
           </span>
 
           <Button
+            v-if="embedCanUpload"
             label="Upload"
             @click="openUpload([], uploadCollectionId, uploadTagId)"
           >
@@ -2389,6 +2305,7 @@ onBeforeUnmount(() => {
             severity="secondary"
             title="Sort"
             aria-label="Sort"
+            :disabled="embedSortLocked"
             @click="toggleSort"
           >
             <template #icon><SortAlt :size="16" /></template>
@@ -2479,41 +2396,22 @@ onBeforeUnmount(() => {
                 >
                   Spacing
                 </p>
-                <div class="space-y-3">
-                  <div>
-                    <div class="mb-1 flex items-center justify-between">
-                      <span class="text-xs font-medium">Grid gap</span>
-                      <span class="text-xs text-slate-400">
-                        {{ gridGapPx }}px
-                      </span>
-                    </div>
-                    <SelectButton
-                      v-model="gridGap"
-                      :options="SPACING_OPTIONS"
-                      option-label="label"
-                      option-value="value"
-                      :allow-empty="false"
-                      size="small"
-                      class="w-full"
-                    />
+                <div>
+                  <div class="mb-1 flex items-center justify-between">
+                    <span class="text-xs font-medium">Grid gap</span>
+                    <span class="text-xs text-slate-400">
+                      {{ gridGapPx }}px
+                    </span>
                   </div>
-                  <div>
-                    <div class="mb-1 flex items-center justify-between">
-                      <span class="text-xs font-medium">Around gap</span>
-                      <span class="text-xs text-slate-400">
-                        {{ aroundGapPx }}px
-                      </span>
-                    </div>
-                    <SelectButton
-                      v-model="aroundGap"
-                      :options="SPACING_OPTIONS"
-                      option-label="label"
-                      option-value="value"
-                      :allow-empty="false"
-                      size="small"
-                      class="w-full"
-                    />
-                  </div>
+                  <SelectButton
+                    v-model="gridGap"
+                    :options="SPACING_OPTIONS"
+                    option-label="label"
+                    option-value="value"
+                    :allow-empty="false"
+                    size="small"
+                    class="w-full"
+                  />
                 </div>
               </div>
 
@@ -2567,14 +2465,6 @@ onBeforeUnmount(() => {
                   <div class="flex items-center justify-between">
                     <span class="text-xs font-medium">Sidebar</span>
                     <ToggleSwitch v-model="showSidebar" />
-                  </div>
-                  <div class="flex items-center justify-between">
-                    <span class="text-xs font-medium">Toolbar</span>
-                    <ToggleSwitch v-model="showToolbar" />
-                  </div>
-                  <div class="flex items-center justify-between">
-                    <span class="text-xs font-medium">Bottom bar</span>
-                    <ToggleSwitch v-model="showBottombar" />
                   </div>
                   <div class="flex items-center justify-between">
                     <span class="text-xs font-medium">Inspector</span>
@@ -2636,21 +2526,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </Popover>
-            </header>
-          </Transition>
-          <button
-            type="button"
-            class="absolute bottom-1.5 left-1/2 z-20 flex h-5 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 shadow-sm transition-colors hover:text-brand-700 dark:hover:text-brand-400"
-            :title="panels.topCollapsed ? 'Expand filters' : 'Collapse filters'"
-            :aria-label="
-              panels.topCollapsed ? 'Expand filters' : 'Collapse filters'
-            "
-            @click="toggleTopPanel"
-          >
-            <ChevronDown v-if="panels.topCollapsed" :size="12" />
-            <ChevronUp v-else :size="12" />
-          </button>
-        </div>
+        </header>
 
         <AssetEditor
           v-if="editingAsset"
@@ -2664,20 +2540,13 @@ onBeforeUnmount(() => {
           <div
             ref="gridContainer"
             class="relative h-full overflow-y-auto py-1.5 [overflow-anchor:none] [&_*]:[overflow-anchor:none]"
-            :style="{
-              paddingLeft: `${aroundGapPx}px`,
-              paddingRight: `${aroundGapPx}px`,
-            }"
             @mousedown="onLassoStart"
             @scroll.passive="onGridScroll"
           >
           <Transition name="grid-fade">
             <div
               :key="gridRevision"
-              :style="{
-                '--grid-inline-gap': `${aroundGapPx}px`,
-                '--grid-scroll-top': `${transitionScrollTop}px`,
-              }"
+              :style="{ '--grid-scroll-top': `${transitionScrollTop}px` }"
             >
               <div
                 v-if="loading && !loadedOnce"
@@ -2766,41 +2635,6 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <div
-          v-if="!editingAsset && sidebarPrefs.tags && !embedTagLocked"
-          class="relative pb-2"
-          :style="{
-            paddingLeft: `${aroundGapPx}px`,
-            paddingRight: `${aroundGapPx}px`,
-            paddingTop: `${aroundGapPx}px`,
-          }"
-        >
-          <Transition
-            @enter="animatePanelEnter"
-            @leave="animatePanelLeave"
-          >
-            <div v-if="!panels.bottomCollapsed">
-              <div
-                class="max-h-44 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg"
-              >
-                <TagsList />
-              </div>
-            </div>
-          </Transition>
-          <button
-            type="button"
-            class="absolute top-1.5 left-1/2 z-20 flex h-5 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 shadow-sm transition-colors hover:text-brand-700 dark:hover:text-brand-400"
-            :title="panels.bottomCollapsed ? 'Expand tags' : 'Collapse tags'"
-            :aria-label="
-              panels.bottomCollapsed ? 'Expand tags' : 'Collapse tags'
-            "
-            @click="toggleBottomPanel"
-          >
-            <ChevronUp v-if="panels.bottomCollapsed" :size="12" />
-            <ChevronDown v-else :size="12" />
-          </button>
-        </div>
-
         <!-- Bottom-right control cluster, left to right: Save, Cancel, then
              navigation. The nav pill is last (right-anchored) so it never
              shifts, whether or not a Save button is present. -->
@@ -2853,14 +2687,15 @@ onBeforeUnmount(() => {
       </div>
 
       <div
-        class="relative h-full shrink-0 pt-2 pr-2 pb-2 transition-[width] duration-200 ease-in-out"
-        :style="{ width: panels.rightCollapsed ? '0px' : '20.5rem' }"
+        class="relative h-full shrink-0 transition-[width] duration-200 ease-in-out"
+        :class="panels.rightCollapsed ? '' : 'p-4'"
+        :style="{ width: panels.rightCollapsed ? '0px' : '22rem' }"
       >
         <aside
           class="h-full w-full overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg"
         >
           <div
-            class="flex h-full w-80 flex-col"
+            class="flex h-full w-full flex-col"
             :inert="panels.rightCollapsed || undefined"
           >
             <Inspector

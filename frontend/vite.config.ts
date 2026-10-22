@@ -28,6 +28,17 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
+      // Delivery routes are served by the Go server, not the SPA. Without these
+      // a preset URL on the Vite origin falls back to index.html and Chrome
+      // blocks it as an image with ERR_BLOCKED_BY_ORB.
+      '/img': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/convert': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
     },
   },
 })

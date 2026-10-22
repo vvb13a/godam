@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -65,12 +66,26 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 	filter.Uncategorized = q.Get("uncategorized") == "true"
 	filter.Untagged = q.Get("untagged") == "true"
 
+	if scope, ok := requestScope(r); ok {
+		applyScopeToAssetFilter(&filter, scope, q)
+	}
+
 	page, err := s.deps.Assets.List(r.Context(), filter)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+// allowUpload enforces the token's can_upload flag. Session actors always pass;
+// JWT scopes can disable uploading for a read-only picker.
+func allowUpload(w http.ResponseWriter, r *http.Request) bool {
+	if scope, ok := requestScope(r); ok && !scope.CanUpload {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "uploads are not allowed for this token"})
+		return false
+	}
+	return true
 }
 
 func parseCSV(raw string) []string {
@@ -133,6 +148,55 @@ func parseDatePtr(raw string, endOfDay bool) *time.Time {
 	return &value
 }
 
+// applyScopeToAssetFilter narrows a listing to the JWT scope. Locked filters
+// always win over the request; unlocked defaults only fill in filters the
+// caller did not supply. Allowed MIME types are an additional, independent
+// restriction so a picker cannot reveal file types outside its scope.
+func applyScopeToAssetFilter(filter *domain.AssetFilter, scope domain.Scope, q url.Values) {
+	defaults := scope.DefaultFilters
+
+	collectionProvided := q.Get("collection_ids") != "" ||
+		q.Get("collection_id") != "" ||
+		q.Get("uncategorized") == "true"
+	if scope.Locked("collection") {
+		filter.CollectionIDs = defaults.CollectionIDs
+		filter.Uncategorized = defaults.Uncategorized
+	} else if !collectionProvided {
+		filter.CollectionIDs = defaults.CollectionIDs
+		filter.Uncategorized = defaults.Uncategorized
+	}
+
+	tagProvided := q.Get("tag_ids") != "" ||
+		q.Get("tag_id") != "" ||
+		q.Get("untagged") == "true"
+	if scope.Locked("tag") {
+		filter.TagIDs = defaults.TagIDs
+		filter.Untagged = defaults.Untagged
+	} else if !tagProvided {
+		filter.TagIDs = defaults.TagIDs
+		filter.Untagged = defaults.Untagged
+	}
+
+	typeProvided := q.Get("types") != "" || q.Get("type") != ""
+	if scope.Locked("type") || !typeProvided {
+		filter.Types = defaults.Types
+	}
+
+	mimeProvided := q.Get("mime_types") != "" || q.Get("mime") != ""
+	if scope.Locked("mime") || !mimeProvided {
+		filter.MimeTypes = defaults.MimeTypes
+	}
+
+	if scope.Locked("search") || q.Get("search") == "" {
+		filter.Search = defaults.Search
+	}
+	if scope.Locked("sort") || q.Get("sort") == "" {
+		filter.Sort = defaults.Sort
+	}
+
+	filter.AllowedMimeTypes = scope.AllowedMimeTypes
+}
+
 func (s *Server) handleGetAsset(w http.ResponseWriter, r *http.Request) {
 	asset, ok := s.ownedAsset(w, r, r.PathValue("id"))
 	if !ok {
@@ -144,6 +208,9 @@ func (s *Server) handleGetAsset(w http.ResponseWriter, r *http.Request) {
 // handleUploadAsset accepts a multipart form with a single "file" field and an
 // optional "driver" field, storing the file through the asset service.
 func (s *Server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
+	if !allowUpload(w, r) {
+		return
+	}
 	if limit := s.deps.Assets.UploadStreamLimit(r.Context()); limit > 0 {
 		r.Body = http.MaxBytesReader(w, r.Body, limit+(1<<20))
 	}
@@ -186,6 +253,9 @@ type startUploadRequest struct {
 // client sends sequential chunks to the returned session id and then completes
 // the upload.
 func (s *Server) handleStartUpload(w http.ResponseWriter, r *http.Request) {
+	if !allowUpload(w, r) {
+		return
+	}
 	var req startUploadRequest
 	if !decodeJSON(w, r, &req) {
 		return
@@ -207,6 +277,9 @@ func (s *Server) handleStartUpload(w http.ResponseWriter, r *http.Request) {
 
 // handleUploadChunk appends one raw chunk at the given byte offset.
 func (s *Server) handleUploadChunk(w http.ResponseWriter, r *http.Request) {
+	if !allowUpload(w, r) {
+		return
+	}
 	offset, err := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 64)
 	if err != nil || offset < 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid chunk offset"})
@@ -238,6 +311,9 @@ func (s *Server) handleUploadChunk(w http.ResponseWriter, r *http.Request) {
 
 // handleCompleteUpload validates the assembled file and creates the asset.
 func (s *Server) handleCompleteUpload(w http.ResponseWriter, r *http.Request) {
+	if !allowUpload(w, r) {
+		return
+	}
 	asset, err := s.deps.Assets.CompleteUpload(r.Context(), r.PathValue("id"), currentUser(r).ID)
 	if err != nil {
 		writeError(w, err)

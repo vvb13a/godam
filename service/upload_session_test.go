@@ -86,6 +86,31 @@ func TestChunkedUploadAssemblesAsset(t *testing.T) {
 	}
 }
 
+func TestChunkedUploadPersistsTokenUploaderName(t *testing.T) {
+	assets := newUploadTestService(t)
+	ctx := domain.WithActor(context.Background(), &domain.Actor{
+		ID:    "cms-user-42",
+		Name:  "Ada Lovelace",
+		Token: true,
+	})
+	content := testPNG(t)
+
+	session, err := assets.StartUpload(ctx, "cms-user-42", "", "portrait.png", "image/png", int64(len(content)))
+	if err != nil {
+		t.Fatalf("start upload: %v", err)
+	}
+	if _, err := assets.WriteUploadChunk(ctx, session.ID, "cms-user-42", 0, bytes.NewReader(content)); err != nil {
+		t.Fatalf("write chunk: %v", err)
+	}
+	asset, err := assets.CompleteUpload(ctx, session.ID, "cms-user-42")
+	if err != nil {
+		t.Fatalf("complete upload: %v", err)
+	}
+	if asset.UploadedBy != "cms-user-42" || asset.UploadedByName != "Ada Lovelace" {
+		t.Fatalf("uploader not persisted: %+v", asset)
+	}
+}
+
 func TestChunkedUploadRejectsWrongOwnerAndIncomplete(t *testing.T) {
 	ctx := context.Background()
 	assets := newUploadTestService(t)

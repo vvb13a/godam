@@ -185,7 +185,12 @@ watch(
   () => auth.user,
   (user) => {
     if (user) {
-      void initLibrary()
+      void initLibrary().then(() => {
+        const allowed = user.scope?.allowed_mime_types
+        if (allowed?.length) {
+          library.allowed_mime_types = allowed
+        }
+      })
     } else {
       resetLibrary()
     }

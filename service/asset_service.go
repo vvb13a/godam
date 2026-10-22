@@ -88,7 +88,7 @@ func (s *AssetService) GetByID(ctx context.Context, id string) (*domain.Asset, e
 		return nil, err
 	}
 	asset := m.ToDomain()
-	if asset.UploadedBy != "" {
+	if asset.UploadedBy != "" && asset.UploadedByName == "" {
 		asset.UploadedByName = s.uploaderNames(ctx, []string{asset.UploadedBy})[asset.UploadedBy]
 	}
 	return asset, nil
@@ -256,6 +256,26 @@ func (s *AssetService) applyAssetFilters(query *gorm.DB, filter domain.AssetFilt
 
 	if len(filter.MimeTypes) > 0 {
 		query = query.Where("assets.mime_type IN ?", filter.MimeTypes)
+	}
+	if len(filter.AllowedMimeTypes) > 0 {
+		clauses := make([]string, 0, len(filter.AllowedMimeTypes))
+		args := make([]any, 0, len(filter.AllowedMimeTypes))
+		for _, pattern := range filter.AllowedMimeTypes {
+			pattern = strings.ToLower(strings.TrimSpace(pattern))
+			if pattern == "" {
+				continue
+			}
+			if strings.HasSuffix(pattern, "/*") {
+				clauses = append(clauses, "assets.mime_type LIKE ?")
+				args = append(args, strings.TrimSuffix(pattern, "*")+"%")
+				continue
+			}
+			clauses = append(clauses, "assets.mime_type = ?")
+			args = append(args, pattern)
+		}
+		if len(clauses) > 0 {
+			query = query.Where("("+strings.Join(clauses, " OR ")+")", args...)
+		}
 	}
 	if len(filter.UploadedBy) > 0 {
 		query = query.Where("assets.uploaded_by IN ?", filter.UploadedBy)
@@ -468,7 +488,8 @@ func (s *AssetService) List(ctx context.Context, filter domain.AssetFilter) (*do
 	var models []assetListRow
 	if err := query.
 		Select(
-			`assets.id, assets.uploaded_by, assets.filename, assets.title, assets.note,
+			`assets.id, assets.uploaded_by, assets.uploaded_by_name,
+			 assets.filename, assets.title, assets.note,
 			 assets.mime_type, assets.byte_size, assets.width, assets.height,
 			 assets.duration_sec, assets.page_count, assets.created_at, assets.updated_at,
 			 CAST(assets.created_at AS TEXT) AS created_at_raw,
@@ -487,8 +508,21 @@ func (s *AssetService) List(ctx context.Context, filter domain.AssetFilter) (*do
 	}
 
 	items := make([]domain.Asset, 0, len(models))
+	missingNames := make([]string, 0, len(models))
 	for i := range models {
-		items = append(items, *models[i].ToDomain())
+		item := models[i].ToDomain()
+		if item.UploadedBy != "" && item.UploadedByName == "" {
+			missingNames = append(missingNames, item.UploadedBy)
+		}
+		items = append(items, *item)
+	}
+	if len(missingNames) > 0 {
+		names := s.uploaderNames(ctx, missingNames)
+		for i := range items {
+			if items[i].UploadedByName == "" && items[i].UploadedBy != "" {
+				items[i].UploadedByName = names[items[i].UploadedBy]
+			}
+		}
 	}
 	return &domain.AssetPage{
 		Items:       items,
@@ -729,19 +763,25 @@ func (s *AssetService) storeUploadFile(ctx context.Context, userID, driverName, 
 		return nil, fmt.Errorf("failed to save to %s storage: %w", driverName, err)
 	}
 
+	uploaderName := ""
+	if actor := domain.ActorFromContext(ctx); actor != nil {
+		uploaderName = actor.Name
+	}
+
 	now := time.Now().UTC()
 	asset := &domain.Asset{
-		ID:            id,
-		UploadedBy:    userID,
-		Filename:      filename,
-		StorageDriver: driverName,
-		StorageKey:    storageKey,
-		MimeType:      cleanMime,
-		ByteSize:      size,
-		Role:          domain.AssetRoleOriginal,
-		Metadata:      meta,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ID:             id,
+		UploadedBy:     userID,
+		UploadedByName: uploaderName,
+		Filename:       filename,
+		StorageDriver:  driverName,
+		StorageKey:     storageKey,
+		MimeType:       cleanMime,
+		ByteSize:       size,
+		Role:           domain.AssetRoleOriginal,
+		Metadata:       meta,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 
 	if err := s.db.WithContext(ctx).Create(store.AssetModel(asset)).Error; err != nil {

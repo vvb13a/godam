@@ -12,7 +12,7 @@ services:
       # localhost uses Caddy's local CA automatically; this also makes
       # .test/.internal domains work in development.
       CADDY_GLOBAL_OPTIONS: local_certs
-      GODAM_APP_UPSTREAM: host.docker.internal:5173
+      GODAM_APP_UPSTREAM: host.docker.internal:5174
       GODAM_ASSET_UPSTREAM: host.docker.internal:8080
       GODAM_CONVERSION_ROOT: /srv/dev-conversions
     volumes:

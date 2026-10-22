@@ -43,34 +43,35 @@ type AssetColor struct {
 // opaque keyset position.
 
 type AssetFilter struct {
-	CollectionIDs  []string
-	TagIDs         []string
-	PresetID       string
-	PresetExclude  bool
-	Uncategorized  bool
-	Untagged       bool
-	Search         string
-	Types          []string
-	Colors         []string
-	MimeTypes      []string
-	UploadedBy     []string
-	MinDuration    *float64
-	MaxDuration    *float64
-	MinPages       *int
-	MaxPages       *int
-	MinWidth       *int
-	MaxWidth       *int
-	MinHeight      *int
-	MaxHeight      *int
-	MinSize        *int64
-	MaxSize        *int64
-	AddedAfter     *time.Time
-	AddedBefore    *time.Time
-	ModifiedAfter  *time.Time
-	ModifiedBefore *time.Time
-	Sort           string
-	Cursor         string
-	Limit          int
+	CollectionIDs    []string
+	TagIDs           []string
+	PresetID         string
+	PresetExclude    bool
+	Uncategorized    bool
+	Untagged         bool
+	Search           string
+	Types            []string
+	Colors           []string
+	MimeTypes        []string
+	AllowedMimeTypes []string
+	UploadedBy       []string
+	MinDuration      *float64
+	MaxDuration      *float64
+	MinPages         *int
+	MaxPages         *int
+	MinWidth         *int
+	MaxWidth         *int
+	MinHeight        *int
+	MaxHeight        *int
+	MinSize          *int64
+	MaxSize          *int64
+	AddedAfter       *time.Time
+	AddedBefore      *time.Time
+	ModifiedAfter    *time.Time
+	ModifiedBefore   *time.Time
+	Sort             string
+	Cursor           string
+	Limit            int
 }
 
 // AssetPage is one cursor-paginated slice of assets. Total is capped at 1000

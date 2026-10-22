@@ -6,8 +6,6 @@ import { reactive, watch } from 'vue'
 export interface PanelState {
   leftCollapsed: boolean
   rightCollapsed: boolean
-  topCollapsed: boolean
-  bottomCollapsed: boolean
 }
 
 const PANEL_STORAGE_KEY = 'godam:panels'
@@ -15,8 +13,6 @@ const PANEL_STORAGE_KEY = 'godam:panels'
 const DEFAULT_STATE: PanelState = {
   leftCollapsed: false,
   rightCollapsed: false,
-  topCollapsed: false,
-  bottomCollapsed: false,
 }
 
 function loadState(): PanelState {
@@ -50,12 +46,4 @@ export function toggleLeftPanel(): void {
 
 export function toggleRightPanel(): void {
   panels.rightCollapsed = !panels.rightCollapsed
-}
-
-export function toggleTopPanel(): void {
-  panels.topCollapsed = !panels.topCollapsed
-}
-
-export function toggleBottomPanel(): void {
-  panels.bottomCollapsed = !panels.bottomCollapsed
 }

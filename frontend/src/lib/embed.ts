@@ -1,4 +1,6 @@
 import { reactive } from 'vue'
+import { setAuthToken } from '../api/client'
+import type { EmbedScope } from '../types'
 
 export type EmbedMode = 'library' | 'single' | 'multi'
 
@@ -6,10 +8,17 @@ export const embed = reactive({
   active: false,
   mode: 'library' as EmbedMode,
   hostOrigin: '*',
+  token: '',
+  scope: null as EmbedScope | null,
   collectionId: '',
   tag: '',
   collectionLocked: false,
   tagLocked: false,
+  typeLocked: false,
+  mimeLocked: false,
+  searchLocked: false,
+  sortLocked: false,
+  canUpload: true,
   preselectedIds: [] as string[],
   selectedIds: [] as string[],
   selectionInitialized: false,
@@ -32,6 +41,8 @@ export function configureEmbed(query: Record<string, unknown>): void {
   const mode = param(query.mode)
   embed.mode = mode === 'single' || mode === 'multi' ? mode : 'library'
   embed.hostOrigin = param(query.hostOrigin) || '*'
+  embed.token = param(query.token)
+  if (embed.token) setAuthToken(embed.token)
   embed.collectionId = param(query.collection)
   embed.tag = param(query.tag)
   const lock = embed.mode === 'library' ? '' : param(query.lock)
@@ -43,10 +54,27 @@ export function configureEmbed(query: Record<string, unknown>): void {
     .filter(Boolean)
 }
 
+// applyEmbedScope merges the token's server-enforced scope into the local UI
+// state. The server remains authoritative; this only makes locked controls
+// look locked and hides uploads the token cannot perform.
+export function applyEmbedScope(scope: EmbedScope): void {
+  if (!embed.active) return
+  embed.scope = scope
+  const locked = new Set(scope.locked_filters ?? [])
+  embed.collectionLocked = embed.collectionLocked || locked.has('collection')
+  embed.tagLocked = embed.tagLocked || locked.has('tag')
+  embed.typeLocked = locked.has('type')
+  embed.mimeLocked = locked.has('mime')
+  embed.searchLocked = locked.has('search')
+  embed.sortLocked = locked.has('sort')
+  embed.canUpload = scope.can_upload !== false
+}
+
 export function embedQuery(): Record<string, string> {
   const query: Record<string, string> = { embed: '1' }
   if (embed.mode !== 'library') query.mode = embed.mode
   if (embed.hostOrigin !== '*') query.hostOrigin = embed.hostOrigin
+  if (embed.token) query.token = embed.token
   const lock = [
     embed.collectionLocked ? 'collection' : '',
     embed.tagLocked ? 'tag' : '',

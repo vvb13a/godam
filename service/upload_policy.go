@@ -118,7 +118,48 @@ func (s *AssetService) uploadPolicy(ctx context.Context) uploadPolicy {
 			}
 		}
 	}
+	if actor := domain.ActorFromContext(ctx); actor != nil && actor.Token && len(actor.Scope.AllowedMimeTypes) > 0 {
+		policy.allowed = narrowAllowedMimeTypes(policy.allowed, actor.Scope.AllowedMimeTypes)
+	}
 	return policy
+}
+
+// narrowAllowedMimeTypes intersects the library allow-list with the token's
+// allow-list. Patterns may be exact types or "type/*" wildcards, so a token for
+// "image/*" keeps a library rule for "image/png" and vice versa.
+func narrowAllowedMimeTypes(base map[string]bool, tokenPatterns []string) map[string]bool {
+	allowed := make(map[string]bool, len(base))
+	for basePattern := range base {
+		for _, tokenPattern := range tokenPatterns {
+			if mimePatternsIntersect(basePattern, tokenPattern) {
+				allowed[basePattern] = true
+				break
+			}
+		}
+	}
+	return allowed
+}
+
+func mimePatternsIntersect(a, b string) bool {
+	a = strings.ToLower(strings.TrimSpace(a))
+	b = strings.ToLower(strings.TrimSpace(b))
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	aWild := strings.HasSuffix(a, "/*")
+	bWild := strings.HasSuffix(b, "/*")
+	switch {
+	case aWild && bWild:
+		return strings.TrimSuffix(a, "/*") == strings.TrimSuffix(b, "/*")
+	case aWild:
+		return strings.HasPrefix(b, strings.TrimSuffix(a, "*"))
+	case bWild:
+		return strings.HasPrefix(a, strings.TrimSuffix(b, "*"))
+	}
+	return false
 }
 
 // UploadStreamLimit reports the largest accepted request body for this

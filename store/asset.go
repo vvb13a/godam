@@ -10,24 +10,25 @@ import (
 // metadata extracted at upload time. Tags are joined through the asset_tags
 // table and loaded with a Preload.
 type Asset struct {
-	ID            string    `gorm:"column:id;primaryKey;type:text"`
-	UploadedBy    *string   `gorm:"column:uploaded_by;type:text;index"`
-	Filename      string    `gorm:"column:filename;type:text;not null"`
-	Title         string    `gorm:"column:title;type:text;not null;default:''"`
-	Note          string    `gorm:"column:note;type:text;not null;default:''"`
-	StorageDriver string    `gorm:"column:storage_driver;type:text;not null;default:local"`
-	StorageKey    string    `gorm:"column:storage_key;type:text;not null"`
-	MimeType      string    `gorm:"column:mime_type;type:text;not null"`
-	ByteSize      int64     `gorm:"column:byte_size;not null"`
-	Role          string    `gorm:"column:role;type:text;not null;default:'original';index"`
-	ImageOf       *string   `gorm:"column:image_of;type:text;index"`
-	Width         *int      `gorm:"column:width"`
-	Height        *int      `gorm:"column:height"`
-	DurationSec   *float64  `gorm:"column:duration_sec"`
-	PageCount     *int      `gorm:"column:page_count"`
-	RawMetadata   string    `gorm:"column:raw_metadata;type:text"`
-	CreatedAt     time.Time `gorm:"column:created_at"`
-	UpdatedAt     time.Time `gorm:"column:updated_at"`
+	ID             string    `gorm:"column:id;primaryKey;type:text"`
+	UploadedBy     *string   `gorm:"column:uploaded_by;type:text;index"`
+	UploadedByName string    `gorm:"column:uploaded_by_name;type:text;not null;default:''"`
+	Filename       string    `gorm:"column:filename;type:text;not null"`
+	Title          string    `gorm:"column:title;type:text;not null;default:''"`
+	Note           string    `gorm:"column:note;type:text;not null;default:''"`
+	StorageDriver  string    `gorm:"column:storage_driver;type:text;not null;default:local"`
+	StorageKey     string    `gorm:"column:storage_key;type:text;not null"`
+	MimeType       string    `gorm:"column:mime_type;type:text;not null"`
+	ByteSize       int64     `gorm:"column:byte_size;not null"`
+	Role           string    `gorm:"column:role;type:text;not null;default:'original';index"`
+	ImageOf        *string   `gorm:"column:image_of;type:text;index"`
+	Width          *int      `gorm:"column:width"`
+	Height         *int      `gorm:"column:height"`
+	DurationSec    *float64  `gorm:"column:duration_sec"`
+	PageCount      *int      `gorm:"column:page_count"`
+	RawMetadata    string    `gorm:"column:raw_metadata;type:text"`
+	CreatedAt      time.Time `gorm:"column:created_at"`
+	UpdatedAt      time.Time `gorm:"column:updated_at"`
 
 	Tags []Tag `gorm:"many2many:asset_tags;"`
 
@@ -72,24 +73,25 @@ func AssetModel(a *domain.Asset) *Asset {
 		role = domain.AssetRoleOriginal
 	}
 	return &Asset{
-		ID:            a.ID,
-		UploadedBy:    uploadedBy,
-		Filename:      a.Filename,
-		Title:         a.Title,
-		Note:          a.Note,
-		StorageDriver: a.StorageDriver,
-		StorageKey:    a.StorageKey,
-		MimeType:      a.MimeType,
-		ByteSize:      a.ByteSize,
-		Role:          role,
-		ImageOf:       imageOf,
-		Width:         a.Metadata.Width,
-		Height:        a.Metadata.Height,
-		DurationSec:   a.Metadata.DurationSec,
-		PageCount:     a.Metadata.PageCount,
-		RawMetadata:   a.Metadata.RawJSON,
-		CreatedAt:     a.CreatedAt,
-		UpdatedAt:     a.UpdatedAt,
+		ID:             a.ID,
+		UploadedBy:     uploadedBy,
+		UploadedByName: a.UploadedByName,
+		Filename:       a.Filename,
+		Title:          a.Title,
+		Note:           a.Note,
+		StorageDriver:  a.StorageDriver,
+		StorageKey:     a.StorageKey,
+		MimeType:       a.MimeType,
+		ByteSize:       a.ByteSize,
+		Role:           role,
+		ImageOf:        imageOf,
+		Width:          a.Metadata.Width,
+		Height:         a.Metadata.Height,
+		DurationSec:    a.Metadata.DurationSec,
+		PageCount:      a.Metadata.PageCount,
+		RawMetadata:    a.Metadata.RawJSON,
+		CreatedAt:      a.CreatedAt,
+		UpdatedAt:      a.UpdatedAt,
 	}
 }
 
@@ -119,17 +121,18 @@ func (m *Asset) ToDomain() *domain.Asset {
 		role = domain.AssetRoleOriginal
 	}
 	return &domain.Asset{
-		ID:            m.ID,
-		UploadedBy:    uploadedBy,
-		Filename:      m.Filename,
-		Title:         m.Title,
-		Note:          m.Note,
-		StorageDriver: m.StorageDriver,
-		StorageKey:    m.StorageKey,
-		MimeType:      m.MimeType,
-		ByteSize:      m.ByteSize,
-		Role:          role,
-		ImageOf:       imageOf,
+		ID:             m.ID,
+		UploadedBy:     uploadedBy,
+		UploadedByName: m.UploadedByName,
+		Filename:       m.Filename,
+		Title:          m.Title,
+		Note:           m.Note,
+		StorageDriver:  m.StorageDriver,
+		StorageKey:     m.StorageKey,
+		MimeType:       m.MimeType,
+		ByteSize:       m.ByteSize,
+		Role:           role,
+		ImageOf:        imageOf,
 		Metadata: domain.Metadata{
 			Width:       m.Width,
 			Height:      m.Height,

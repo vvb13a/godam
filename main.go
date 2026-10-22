@@ -60,6 +60,9 @@ func main() {
 		Backups:          backupService,
 		System:           systemService,
 		ManagementToken:  os.Getenv("GODAM_MANAGEMENT_TOKEN"),
+		JWTSecret:        os.Getenv("GODAM_JWT_SECRET"),
+		JWTIssuer:        os.Getenv("GODAM_JWT_ISSUER"),
+		JWTAudience:      os.Getenv("GODAM_JWT_AUDIENCE"),
 	})
 }
 

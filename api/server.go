@@ -30,6 +30,12 @@ type Deps struct {
 	Backups          *service.BackupService
 	System           *service.SystemService
 	ManagementToken  string
+
+	// JWTSecret enables scoped embed tokens. Issuer and Audience are optional
+	// and enforced when set.
+	JWTSecret   string
+	JWTIssuer   string
+	JWTAudience string
 }
 
 // Server is the HTTP handler for the JSON API.
@@ -37,6 +43,7 @@ type Server struct {
 	deps    Deps
 	mux     *http.ServeMux
 	handler http.Handler
+	tokens  *service.JWTVerifier
 }
 
 // NewServer builds the API handler with every route registered. The mux is
@@ -44,8 +51,9 @@ type Server struct {
 // authenticated user except on the public auth routes.
 func NewServer(deps Deps) *Server {
 	s := &Server{
-		deps: deps,
-		mux:  http.NewServeMux(),
+		deps:   deps,
+		mux:    http.NewServeMux(),
+		tokens: service.NewJWTVerifier(deps.JWTSecret, deps.JWTIssuer, deps.JWTAudience),
 	}
 	s.routes()
 	s.handler = s.authMiddleware(s.mux)

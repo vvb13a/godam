@@ -9,6 +9,10 @@ services:
       GODAM_INTERNAL_URL: http://godam:8080
       GODAM_IMGPROXY_KEY: ${IMGPROXY_KEY:?IMGPROXY_KEY is required}
       GODAM_IMGPROXY_SALT: ${IMGPROXY_SALT:?IMGPROXY_SALT is required}
+      GODAM_JWT_SECRET: ${GODAM_JWT_SECRET:-}
+      GODAM_JWT_ISSUER: ${GODAM_JWT_ISSUER:-}
+      GODAM_JWT_AUDIENCE: ${GODAM_JWT_AUDIENCE:-}
+      GODAM_MANAGEMENT_TOKEN: ${GODAM_MANAGEMENT_TOKEN:-}
     volumes:
       - godam-data:/data
       - conversions:/conversions

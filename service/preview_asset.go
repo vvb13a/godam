@@ -74,18 +74,19 @@ func (s *AssetService) upsertVisualAsset(ctx context.Context, parent *domain.Ass
 			return err
 		}
 		visual := &domain.Asset{
-			ID:            id,
-			UploadedBy:    parent.UploadedBy,
-			Filename:      visualFilename(parent.Filename, ext),
-			StorageDriver: "local",
-			StorageKey:    key,
-			MimeType:      contentType,
-			ByteSize:      int64(len(data)),
-			Role:          domain.AssetRoleVisual,
-			ImageOf:       parent.ID,
-			Metadata:      meta,
-			CreatedAt:     now,
-			UpdatedAt:     now,
+			ID:             id,
+			UploadedBy:     parent.UploadedBy,
+			UploadedByName: parent.UploadedByName,
+			Filename:       visualFilename(parent.Filename, ext),
+			StorageDriver:  "local",
+			StorageKey:     key,
+			MimeType:       contentType,
+			ByteSize:       int64(len(data)),
+			Role:           domain.AssetRoleVisual,
+			ImageOf:        parent.ID,
+			Metadata:       meta,
+			CreatedAt:      now,
+			UpdatedAt:      now,
 		}
 		if err := s.db.WithContext(ctx).Create(store.AssetModel(visual)).Error; err != nil {
 			_ = s.local.Delete(ctx, key)
