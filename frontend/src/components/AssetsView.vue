@@ -28,6 +28,7 @@ import {
   Folder,
   GripVertical,
   Images,
+  Lock,
   Pencil,
   Refresh,
   Save,
@@ -39,11 +40,21 @@ import {
   Upload,
 } from '@primeicons/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import * as api from '../api/client'
+import { auth } from '../lib/auth'
 import { assetDrag, endAssetDrag, startAssetDrag } from '../lib/assetDrag'
 import { openBackupSettings } from '../lib/backupSettings'
 import { notifyConversionCacheChanged } from '../lib/conversionCache'
+import {
+  clearAllFilters,
+  clearCollectionFilter,
+  clearTagFilter,
+  filterSettings,
+  filterState,
+  initFilterState,
+  resetSort,
+  type FacetClickMode,
+} from '../lib/filters'
 import { confirmDeleteMenuItem } from '../lib/menu'
 import {
   CARD_SHAPES,
@@ -99,23 +110,17 @@ import LibraryInspector from './LibraryInspector.vue'
 import MultiSelectionPanel from './MultiSelectionPanel.vue'
 import TagFilterPopover from './TagFilterPopover.vue'
 
-const route = useRoute()
-const router = useRouter()
 const toast = useToast()
 
+initFilterState(auth.user?.scope)
+
 const searchQuery = computed({
-  get: () => {
-    const value = route.query.search
-    return typeof value === 'string' ? value : ''
-  },
+  get: () => filterState.search,
   set: (value: string) => {
-    const query = { ...route.query }
-    if (value.trim()) query.search = value
-    else delete query.search
-    void router.replace({ name: 'all', query })
+    filterState.search = value
   },
 })
-const searchInput = ref(searchQuery.value)
+const searchInput = ref(filterState.search)
 const searchInputRef = ref<HTMLInputElement | null>(null)
 const hasSearch = computed(() => searchQuery.value.trim() !== '')
 const assets = ref<Asset[]>([])
@@ -451,67 +456,57 @@ const lassoStyle = computed(() => {
   }
 })
 
-// Collection and tag filters live in the route query so the sidebar and the
-// toolbar stay in sync and the selection is shareable. Special values
-// 'uncategorized' and 'untagged' select assets with no collection/tags.
-function parseList(value: unknown): string[] {
-  if (typeof value !== 'string' || !value) return []
-  return value.split(',').map((item) => item.trim()).filter(Boolean)
-}
-
-function queryValue(key: string): string {
-  const value = route.query[key]
-  return typeof value === 'string' ? value : ''
-}
-
-function updateQuery(values: Record<string, string>): void {
-  clearSmartSelection()
-  const query = { ...route.query }
-  for (const [key, value] of Object.entries(values)) {
-    if (value) query[key] = value
-    else delete query[key]
-  }
-  void router.push({ name: 'all', query })
-}
-
-function setQueryList(key: string, values: string[]): void {
-  updateQuery({ [key]: values.join(',') })
-}
-
-function setQueryValue(key: string, value: string): void {
-  updateQuery({ [key]: value })
-}
-
-function numberFilter(key: string) {
-  return computed<number | null>({
-    get: () => {
-      const raw = queryValue(key)
-      if (!raw) return null
-      const value = Number(raw)
-      return Number.isFinite(value) ? value : null
-    },
-    set: (value) => setQueryValue(key, value == null ? '' : String(value)),
-  })
-}
-
-function dateFilter(key: string) {
-  return computed<Date | null>({
-    get: () => {
-      const raw = queryValue(key)
-      if (!raw) return null
-      const value = new Date(`${raw}T00:00:00`)
-      return Number.isNaN(value.getTime()) ? null : value
-    },
-    set: (value) => setQueryValue(key, value ? formatDateKey(value) : ''),
-  })
-}
-
+// Filters live in a shared in-memory store so the sidebar, toolbar, chips,
+// and grid all read and mutate the same state.
 function formatDateKey(value: Date | null): string {
   if (!value) return ''
   const year = value.getFullYear()
   const month = String(value.getMonth() + 1).padStart(2, '0')
   const day = String(value.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+type NumberFilterKey =
+  | 'minSize'
+  | 'maxSize'
+  | 'minDuration'
+  | 'maxDuration'
+  | 'minPages'
+  | 'maxPages'
+  | 'minWidth'
+  | 'maxWidth'
+  | 'minHeight'
+  | 'maxHeight'
+
+type DateFilterKey =
+  | 'addedAfter'
+  | 'addedBefore'
+  | 'modifiedAfter'
+  | 'modifiedBefore'
+
+function numberFilter(key: NumberFilterKey) {
+  return computed<number | null>({
+    get: () => filterState[key],
+    set: (value) => {
+      clearSmartSelection()
+      filterState[key] = value
+    },
+  })
+}
+
+function dateFilter(key: DateFilterKey) {
+  return computed<Date | null>({
+    get: () => {
+      const raw = filterState[key]
+      if (!raw) return null
+      const value = new Date(`${raw}T00:00:00`)
+      return Number.isNaN(value.getTime()) ? null : value
+    },
+    set: (value) => {
+      clearSmartSelection()
+      filterState[key] = value ? formatDateKey(value) : null
+    },
+  })
 }
 
 type OptionalFilterKey =
@@ -537,20 +532,37 @@ const OPTIONAL_FILTERS: { key: OptionalFilterKey; label: string }[] = [
   { key: 'modified', label: 'Date modified' },
 ]
 
-const OPTIONAL_FILTER_QUERY_KEYS: Record<OptionalFilterKey, string[]> = {
-  preset: ['preset', 'preset_exclude'],
-  color: ['color'],
-  mime: ['mime'],
-  size: ['size_min', 'size_max'],
-  duration: ['duration_min', 'duration_max'],
-  pages: ['pages_min', 'pages_max'],
-  dimensions: ['width_min', 'width_max', 'height_min', 'height_max'],
-  added: ['added_after', 'added_before'],
-  modified: ['modified_after', 'modified_before'],
-}
-
 function hasFilterValue(key: OptionalFilterKey): boolean {
-  return OPTIONAL_FILTER_QUERY_KEYS[key].some((queryKey) => queryValue(queryKey) !== '')
+  switch (key) {
+    case 'preset':
+      return Boolean(filterState.preset) || filterState.presetExclude
+    case 'color':
+      return filterState.colors.length > 0
+    case 'mime':
+      return filterState.mimeTypes.length > 0
+    case 'size':
+      return filterState.minSize !== null || filterState.maxSize !== null
+    case 'duration':
+      return (
+        filterState.minDuration !== null || filterState.maxDuration !== null
+      )
+    case 'pages':
+      return filterState.minPages !== null || filterState.maxPages !== null
+    case 'dimensions':
+      return (
+        filterState.minWidth !== null ||
+        filterState.maxWidth !== null ||
+        filterState.minHeight !== null ||
+        filterState.maxHeight !== null
+      )
+    case 'added':
+      return filterState.addedAfter !== null || filterState.addedBefore !== null
+    case 'modified':
+      return (
+        filterState.modifiedAfter !== null ||
+        filterState.modifiedBefore !== null
+      )
+  }
 }
 
 const visibleFilters = ref<OptionalFilterKey[]>(
@@ -624,64 +636,107 @@ function onAddFilter(value: unknown): void {
 }
 
 function removeFilter(key: OptionalFilterKey): void {
-  const values: Record<string, string> = {}
-  for (const queryKey of OPTIONAL_FILTER_QUERY_KEYS[key]) {
-    values[queryKey] = ''
+  clearSmartSelection()
+  switch (key) {
+    case 'preset':
+      filterState.preset = ''
+      filterState.presetExclude = false
+      break
+    case 'color':
+      filterState.colors = []
+      break
+    case 'mime':
+      filterState.mimeTypes = []
+      break
+    case 'size':
+      filterState.minSize = null
+      filterState.maxSize = null
+      break
+    case 'duration':
+      filterState.minDuration = null
+      filterState.maxDuration = null
+      break
+    case 'pages':
+      filterState.minPages = null
+      filterState.maxPages = null
+      break
+    case 'dimensions':
+      filterState.minWidth = null
+      filterState.maxWidth = null
+      filterState.minHeight = null
+      filterState.maxHeight = null
+      break
+    case 'added':
+      filterState.addedAfter = null
+      filterState.addedBefore = null
+      break
+    case 'modified':
+      filterState.modifiedAfter = null
+      filterState.modifiedBefore = null
+      break
   }
-  updateQuery(values)
   visibleFilters.value = visibleFilters.value.filter((item) => item !== key)
 }
 
-watch(
-  () => route.query,
-  () => {
-    for (const filter of OPTIONAL_FILTERS) {
-      if (
-        hasFilterValue(filter.key) &&
-        !visibleFilters.value.includes(filter.key)
-      ) {
-        visibleFilters.value.push(filter.key)
-      }
-    }
-  },
-)
-
 const collectionFilter = computed<string[]>({
-  get: () => parseList(route.query.collection),
-  set: (values) => setQueryList('collection', values),
+  get: () => filterState.collections,
+  set: (values) => {
+    clearSmartSelection()
+    filterState.collections = values
+  },
 })
 const tagFilter = computed<string[]>({
-  get: () => parseList(route.query.tag),
-  set: (values) => setQueryList('tag', values),
+  get: () => filterState.tags,
+  set: (values) => {
+    clearSmartSelection()
+    filterState.tags = values
+  },
 })
 const typeFilter = computed<string[]>({
-  get: () => parseList(route.query.type),
-  set: (values) => setQueryList('type', values),
+  get: () => filterState.types,
+  set: (values) => {
+    clearSmartSelection()
+    filterState.types = values
+  },
 })
 const colorFilter = computed<string[]>({
   get: () => {
-    const values = parseList(route.query.color).map((value) =>
+    const values = filterState.colors.map((value) =>
       value === 'teal' ? 'green' : value,
     )
     return [...new Set(values)]
   },
-  set: (values) => setQueryList('color', values),
+  set: (values) => {
+    clearSmartSelection()
+    filterState.colors = values
+  },
 })
 const mimeFilter = computed<string[]>({
-  get: () => parseList(route.query.mime),
-  set: (values) => setQueryList('mime', values),
+  get: () => filterState.mimeTypes,
+  set: (values) => {
+    clearSmartSelection()
+    filterState.mimeTypes = values
+  },
 })
 const presetFilter = computed<string>({
-  get: () => queryValue('preset'),
-  set: (value) => setQueryValue('preset', value),
+  get: () => filterState.preset,
+  set: (value) => {
+    clearSmartSelection()
+    filterState.preset = value
+  },
 })
 const presetExclude = computed<boolean>({
-  get: () => queryValue('preset_exclude') === 'true',
-  set: (value) => setQueryValue('preset_exclude', value ? 'true' : ''),
+  get: () => filterState.presetExclude,
+  set: (value) => {
+    clearSmartSelection()
+    filterState.presetExclude = value
+  },
 })
 const sort = computed({
-  get: () => (route.query.sort as string | undefined) ?? 'date-desc',
-  set: (value: string) => setQueryValue('sort', value),
+  get: () => filterState.sort,
+  set: (value: string) => {
+    filterState.sort = value
+  },
 })
 
 const sortField = computed({
@@ -701,36 +756,31 @@ const sortDirection = computed({
   },
 })
 
-const minSize = numberFilter('size_min')
-const maxSize = numberFilter('size_max')
-const minDuration = numberFilter('duration_min')
-const maxDuration = numberFilter('duration_max')
-const minPages = numberFilter('pages_min')
-const maxPages = numberFilter('pages_max')
-const minWidth = numberFilter('width_min')
-const maxWidth = numberFilter('width_max')
-const minHeight = numberFilter('height_min')
-const maxHeight = numberFilter('height_max')
-const addedAfter = dateFilter('added_after')
-const addedBefore = dateFilter('added_before')
-const modifiedAfter = dateFilter('modified_after')
-const modifiedBefore = dateFilter('modified_before')
+const minSize = numberFilter('minSize')
+const maxSize = numberFilter('maxSize')
+const minDuration = numberFilter('minDuration')
+const maxDuration = numberFilter('maxDuration')
+const minPages = numberFilter('minPages')
+const maxPages = numberFilter('maxPages')
+const minWidth = numberFilter('minWidth')
+const maxWidth = numberFilter('maxWidth')
+const minHeight = numberFilter('minHeight')
+const maxHeight = numberFilter('maxHeight')
+const addedAfter = dateFilter('addedAfter')
+const addedBefore = dateFilter('addedBefore')
+const modifiedAfter = dateFilter('modifiedAfter')
+const modifiedBefore = dateFilter('modifiedBefore')
 
-const uploadCollectionId = computed(() => {
-  const ids = collectionFilter.value.filter((value) => value !== 'uncategorized')
-  return ids.length === 1 ? ids[0] : null
-})
+const uploadCollectionId = computed(() =>
+  collectionFilter.value.length === 1 ? collectionFilter.value[0] : null,
+)
 // Only a single, concrete tag filter is auto-applied to uploads; multi-tag and
 // the virtual "untagged" filter are skipped.
-const uploadTagId = computed(() => {
-  const tags = tagFilter.value
-  if (tags.length !== 1 || tags[0] === 'untagged') return null
-  return tags[0]
-})
-const uncategorizedView = computed(() =>
-  collectionFilter.value.includes('uncategorized'),
+const uploadTagId = computed(() =>
+  tagFilter.value.length === 1 ? tagFilter.value[0] : null,
 )
-const untaggedView = computed(() => tagFilter.value.includes('untagged'))
+const uncategorizedView = computed(() => filterState.uncategorized)
+const untaggedView = computed(() => filterState.untagged)
 
 const presetOptions = computed(() =>
   library.presets.map((preset) => ({
@@ -801,32 +851,7 @@ const mimeOptions = computed(() =>
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
 )
 
-const filterFingerprint = computed(() =>
-  JSON.stringify({
-    collection: collectionFilter.value,
-    tag: tagFilter.value,
-    type: typeFilter.value,
-    color: colorFilter.value,
-    mime: mimeFilter.value,
-    preset: presetFilter.value,
-    presetExclude: presetExclude.value,
-    sort: sort.value,
-    minSize: minSize.value,
-    maxSize: maxSize.value,
-    minDuration: minDuration.value,
-    maxDuration: maxDuration.value,
-    minPages: minPages.value,
-    maxPages: maxPages.value,
-    minWidth: minWidth.value,
-    maxWidth: maxWidth.value,
-    minHeight: minHeight.value,
-    maxHeight: maxHeight.value,
-    addedAfter: formatDateKey(addedAfter.value),
-    addedBefore: formatDateKey(addedBefore.value),
-    modifiedAfter: formatDateKey(modifiedAfter.value),
-    modifiedBefore: formatDateKey(modifiedBefore.value),
-  }),
-)
+const filterFingerprint = computed(() => JSON.stringify(filterState))
 
 const SORT_FIELDS = [
   { value: 'date', label: 'Date added' },
@@ -849,6 +874,292 @@ const sortLabel = computed(() => {
   return `${field}, ${direction}`
 })
 
+const filterClickMode = computed<FacetClickMode>({
+  get: () => filterSettings.clickMode,
+  set: (mode) => {
+    filterSettings.clickMode = mode
+  },
+})
+
+const FILTER_CLICK_OPTIONS: { label: string; value: FacetClickMode }[] = [
+  { label: 'Add', value: 'add' },
+  { label: 'Replace', value: 'replace' },
+]
+
+interface FilterChip {
+  key: string
+  label: string
+  locked?: boolean
+  clear: () => void
+}
+
+function collectionName(id: string): string {
+  return (
+    library.collections.find((collection) => collection.id === id)?.name ??
+    'Collection'
+  )
+}
+
+function tagName(id: string): string {
+  return library.tags.find((tag) => tag.id === id)?.name ?? 'Tag'
+}
+
+function typeName(value: string): string {
+  return (
+    TYPE_CATEGORIES.value.find((category) => category.value === value)?.label ??
+    value
+  )
+}
+
+function colorName(value: string): string {
+  return COLOR_OPTIONS.find((color) => color.value === value)?.label ?? value
+}
+
+function presetName(id: string): string {
+  return presetOptions.value.find((preset) => preset.value === id)?.label ?? 'Preset'
+}
+
+function rangeLabel(
+  prefix: string,
+  min: number | null,
+  max: number | null,
+  suffix: string,
+): string | null {
+  if (min === null && max === null) return null
+  if (min !== null && max !== null) return `${prefix}: ${min}–${max}${suffix}`
+  if (min !== null) return `${prefix}: ≥ ${min}${suffix}`
+  return `${prefix}: ≤ ${max}${suffix}`
+}
+
+function dateRangeLabel(
+  prefix: string,
+  from: string | null,
+  to: string | null,
+): string | null {
+  if (!from && !to) return null
+  if (from && to) return `${prefix}: ${from} – ${to}`
+  if (from) return `${prefix}: from ${from}`
+  return `${prefix}: until ${to}`
+}
+
+const filterChips = computed<FilterChip[]>(() => {
+  const chips: FilterChip[] = []
+  const collectionLocked = embed.active && embed.collectionLocked
+  const tagLocked = embed.active && embed.tagLocked
+
+  for (const id of filterState.collections) {
+    chips.push({
+      key: `collection:${id}`,
+      label: `Collection: ${collectionName(id)}`,
+      locked: collectionLocked,
+      clear: () => clearCollectionFilter(id),
+    })
+  }
+  if (filterState.uncategorized) {
+    chips.push({
+      key: 'uncategorized',
+      label: 'Uncategorized',
+      clear: () => {
+        filterState.uncategorized = false
+      },
+    })
+  }
+  for (const id of filterState.tags) {
+    chips.push({
+      key: `tag:${id}`,
+      label: `Tag: ${tagName(id)}`,
+      locked: tagLocked,
+      clear: () => clearTagFilter(id),
+    })
+  }
+  if (filterState.untagged) {
+    chips.push({
+      key: 'untagged',
+      label: 'Untagged',
+      clear: () => {
+        filterState.untagged = false
+      },
+    })
+  }
+  for (const value of filterState.types) {
+    chips.push({
+      key: `type:${value}`,
+      label: `Type: ${typeName(value)}`,
+      locked: embedTypeLocked.value,
+      clear: () => {
+        filterState.types = filterState.types.filter((item) => item !== value)
+      },
+    })
+  }
+  for (const value of filterState.colors) {
+    chips.push({
+      key: `color:${value}`,
+      label: `Color: ${colorName(value)}`,
+      clear: () => {
+        filterState.colors = filterState.colors.filter(
+          (item) => item !== value,
+        )
+      },
+    })
+  }
+  for (const value of filterState.mimeTypes) {
+    chips.push({
+      key: `mime:${value}`,
+      label: `MIME: ${value}`,
+      locked: embedMimeLocked.value,
+      clear: () => {
+        filterState.mimeTypes = filterState.mimeTypes.filter(
+          (item) => item !== value,
+        )
+      },
+    })
+  }
+  if (filterState.preset) {
+    chips.push({
+      key: 'preset',
+      label: `Preset: ${presetName(filterState.preset)}${
+        filterState.presetExclude ? ' (not allowed)' : ''
+      }`,
+      clear: () => {
+        filterState.preset = ''
+        filterState.presetExclude = false
+      },
+    })
+  }
+  const size = rangeLabel(
+    'Size',
+    filterState.minSize,
+    filterState.maxSize,
+    ' MB',
+  )
+  if (size) {
+    chips.push({
+      key: 'size',
+      label: size,
+      clear: () => {
+        filterState.minSize = null
+        filterState.maxSize = null
+      },
+    })
+  }
+  const duration = rangeLabel(
+    'Duration',
+    filterState.minDuration,
+    filterState.maxDuration,
+    's',
+  )
+  if (duration) {
+    chips.push({
+      key: 'duration',
+      label: duration,
+      clear: () => {
+        filterState.minDuration = null
+        filterState.maxDuration = null
+      },
+    })
+  }
+  const pages = rangeLabel(
+    'Pages',
+    filterState.minPages,
+    filterState.maxPages,
+    '',
+  )
+  if (pages) {
+    chips.push({
+      key: 'pages',
+      label: pages,
+      clear: () => {
+        filterState.minPages = null
+        filterState.maxPages = null
+      },
+    })
+  }
+  if (
+    filterState.minWidth !== null ||
+    filterState.maxWidth !== null ||
+    filterState.minHeight !== null ||
+    filterState.maxHeight !== null
+  ) {
+    const width = rangeLabel(
+      'W',
+      filterState.minWidth,
+      filterState.maxWidth,
+      'px',
+    )
+    const height = rangeLabel(
+      'H',
+      filterState.minHeight,
+      filterState.maxHeight,
+      'px',
+    )
+    chips.push({
+      key: 'dimensions',
+      label: `Dimensions: ${[width, height].filter(Boolean).join(' · ')}`,
+      clear: () => {
+        filterState.minWidth = null
+        filterState.maxWidth = null
+        filterState.minHeight = null
+        filterState.maxHeight = null
+      },
+    })
+  }
+  const added = dateRangeLabel(
+    'Added',
+    filterState.addedAfter,
+    filterState.addedBefore,
+  )
+  if (added) {
+    chips.push({
+      key: 'added',
+      label: added,
+      clear: () => {
+        filterState.addedAfter = null
+        filterState.addedBefore = null
+      },
+    })
+  }
+  const modified = dateRangeLabel(
+    'Modified',
+    filterState.modifiedAfter,
+    filterState.modifiedBefore,
+  )
+  if (modified) {
+    chips.push({
+      key: 'modified',
+      label: modified,
+      clear: () => {
+        filterState.modifiedAfter = null
+        filterState.modifiedBefore = null
+      },
+    })
+  }
+  if (filterState.search.trim()) {
+    chips.push({
+      key: 'search',
+      label: `Search: ${filterState.search.trim()}`,
+      locked: embedSearchLocked.value,
+      clear: () => {
+        filterState.search = ''
+      },
+    })
+  }
+  if (filterState.sort !== 'date-desc') {
+    chips.push({
+      key: 'sort',
+      label: `Sort: ${sortLabel.value}`,
+      locked: embedSortLocked.value,
+      clear: () => resetSort(),
+    })
+  }
+  return chips
+})
+
+const hasFacetFilters = computed(() =>
+  filterChips.value.some(
+    (chip) => chip.key !== 'search' && chip.key !== 'sort',
+  ),
+)
+
 const selectedSet = computed(() => new Set(selectedIds.value))
 const selectedAssets = computed(() =>
   assets.value.filter((asset) => selectedSet.value.has(asset.id)),
@@ -867,22 +1178,20 @@ const singleAsset = computed(() => {
 // asset is selected. Only concrete ids count; the virtual 'uncategorized' /
 // 'untagged' filters have no entity to describe.
 const activeCollection = computed<Collection | null>(() => {
-  if (collectionFilter.value.length !== 1) return null
-  const id = collectionFilter.value[0]
-  if (id === 'uncategorized') return null
-  return library.collections.find((item) => item.id === id) ?? null
+  if (filterState.collections.length !== 1 || filterState.uncategorized) {
+    return null
+  }
+  return (
+    library.collections.find(
+      (item) => item.id === filterState.collections[0],
+    ) ?? null
+  )
 })
 
 const activeTag = computed<TagModel | null>(() => {
-  const ids = tagFilter.value.filter((value) => value !== 'untagged')
-  if (ids.length !== 1) return null
-  return library.tags.find((item) => item.id === ids[0]) ?? null
+  if (filterState.tags.length !== 1 || filterState.untagged) return null
+  return library.tags.find((item) => item.id === filterState.tags[0]) ?? null
 })
-
-function singleQueryValue(value: unknown): string | null {
-  if (typeof value !== 'string' || !value) return ''
-  return value.includes(',') ? null : value
-}
 
 // A smart collection is only "active" when it was explicitly opened from the
 // sidebar (tracked as client-side state); manually setting the same filters
@@ -891,23 +1200,22 @@ const activeSmartCollection = computed<SmartCollection | null>(() => {
   const id = smartSelection.id
   const filter = smartSelection.filter
   if (!id || !filter) return null
-  const q = route.query
-  const collection = singleQueryValue(q.collection)
-  const tag = singleQueryValue(q.tag)
-  const type = singleQueryValue(q.type)
-  if (collection === null || tag === null || type === null) return null
   if (
-    Object.values(OPTIONAL_FILTER_QUERY_KEYS).some((keys) =>
-      keys.some((key) => typeof q[key] === 'string' && q[key] !== ''),
-    )
+    filterState.collections.length > 1 ||
+    filterState.tags.length > 1 ||
+    filterState.types.length > 1 ||
+    filterState.uncategorized ||
+    filterState.untagged ||
+    filterState.search ||
+    OPTIONAL_FILTERS.some((item) => hasFilterValue(item.key))
   ) {
     return null
   }
   const matches =
-    (filter.collection ?? '') === collection &&
-    (filter.tag ?? '') === tag &&
-    (filter.type ?? '') === type &&
-    (filter.sort ?? '') === (typeof q.sort === 'string' ? q.sort : '')
+    (filter.collection ?? '') === (filterState.collections[0] ?? '') &&
+    (filter.tag ?? '') === (filterState.tags[0] ?? '') &&
+    (filter.type ?? '') === (filterState.types[0] ?? '') &&
+    (filter.sort || 'date-desc') === filterState.sort
   if (!matches) return null
   return library.smartCollections.find((item) => item.id === id) ?? null
 })
@@ -937,7 +1245,9 @@ const visibleAssets = computed(() => assets.value)
 const hasActiveFilters = computed(
   () =>
     collectionFilter.value.length > 0 ||
+    filterState.uncategorized ||
     tagFilter.value.length > 0 ||
+    filterState.untagged ||
     typeFilter.value.length > 0 ||
     colorFilter.value.length > 0 ||
     mimeFilter.value.length > 0 ||
@@ -1284,15 +1594,13 @@ function assetParams(): api.AssetListParams {
     sort: sort.value || undefined,
     limit: 100,
   }
-  const collections = collectionFilter.value
-  if (collections.includes('uncategorized')) params.uncategorized = true
-  const collectionIds = collections.filter((value) => value !== 'uncategorized')
-  if (collectionIds.length) params.collectionIds = collectionIds
+  if (filterState.uncategorized) params.uncategorized = true
+  if (filterState.collections.length) {
+    params.collectionIds = [...filterState.collections]
+  }
 
-  const tags = tagFilter.value
-  if (tags.includes('untagged')) params.untagged = true
-  const tagIds = tags.filter((value) => value !== 'untagged')
-  if (tagIds.length) params.tagIds = tagIds
+  if (filterState.untagged) params.untagged = true
+  if (filterState.tags.length) params.tagIds = [...filterState.tags]
   return params
 }
 
@@ -1775,11 +2083,6 @@ function openManage(action: () => void): void {
   action()
 }
 
-function resetSort(): void {
-  if (embedSortLocked.value) return
-  setQueryValue('sort', '')
-}
-
 // onChanged replaces the affected asset client-side (title/note/tags/
 // collections changed), avoiding a full library/asset reload.
 function onChanged(asset: Asset): void {
@@ -1851,6 +2154,14 @@ function onAssetSaved(asset: Asset): void {
 }
 
 watch(filterFingerprint, () => {
+  for (const filter of OPTIONAL_FILTERS) {
+    if (
+      hasFilterValue(filter.key) &&
+      !visibleFilters.value.includes(filter.key)
+    ) {
+      visibleFilters.value.push(filter.key)
+    }
+  }
   if (!embedPicker.value) clearSelection()
   void load()
 })
@@ -1861,11 +2172,6 @@ watch(searchQuery, (value) => {
     searchTimer = null
   }
   if (value !== searchInput.value) searchInput.value = value
-})
-
-watch(searchQuery, () => {
-  if (!embedPicker.value) clearSelection()
-  void load()
 })
 
 watch(searchInput, (value) => {
@@ -1982,62 +2288,60 @@ onBeforeUnmount(() => {
           v-if="!editingAsset"
           class="pointer-events-none absolute inset-0 z-20"
         >
-          <span
-            class="pointer-events-auto absolute bottom-10 left-10 inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-sm text-slate-500 shadow-lg backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/80 dark:text-slate-400"
+          <div
+            class="pointer-events-auto absolute bottom-10 left-10 z-20 flex max-w-[calc(100%-18rem)] flex-wrap items-center gap-1.5"
           >
-            {{ assetCountLabel }}
-            <button
-              v-if="hasSearch"
-              type="button"
-              class="inline-flex max-w-52 items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 transition hover:bg-brand-100 dark:bg-brand-950/60 dark:text-brand-300 dark:hover:bg-brand-950"
-              :title="`Clear search: ${searchQuery}`"
-              @click="clearSearch"
+            <span
+              class="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-sm text-slate-500 shadow-lg backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/80 dark:text-slate-400"
             >
-              <Search :size="11" class="shrink-0" />
-              <span class="truncate">{{ searchQuery.trim() }}</span>
-              <Times :size="11" class="shrink-0" />
-            </button>
+              {{ assetCountLabel }}
+              <span
+                v-if="refreshing"
+                class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-brand-600 dark:border-slate-700 dark:border-t-brand-400"
+                title="Refreshing assets"
+              ></span>
+              <span
+                v-if="
+                  embedCollectionLocked ||
+                  embedTagLocked ||
+                  embedTypeLocked ||
+                  embedMimeLocked ||
+                  embedSearchLocked ||
+                  embedSortLocked
+                "
+                class="text-xs font-medium text-brand-700 dark:text-brand-400"
+                title="The host application restricted this picker"
+              >
+                Restricted
+              </span>
+            </span>
             <button
-              v-if="hasCustomSort"
+              v-for="chip in filterChips"
+              :key="chip.key"
               type="button"
-              class="inline-flex max-w-52 items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 dark:bg-brand-950/60 dark:text-brand-300"
+              class="inline-flex max-w-64 items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 shadow-sm dark:bg-brand-950/60 dark:text-brand-300"
               :class="
-                embedSortLocked
+                chip.locked
                   ? 'cursor-default'
                   : 'transition hover:bg-brand-100 dark:hover:bg-brand-950'
               "
-              :disabled="embedSortLocked"
-              :title="
-                embedSortLocked
-                  ? `Sort: ${sortLabel} (locked by host)`
-                  : `Reset sort: ${sortLabel}`
-              "
-              @click="resetSort"
+              :disabled="chip.locked"
+              :title="chip.locked ? 'Locked by the host application' : chip.label"
+              @click="chip.clear()"
             >
-              <SortAlt :size="11" class="shrink-0" />
-              <span class="truncate">{{ sortLabel }}</span>
-              <Times v-if="!embedSortLocked" :size="11" class="shrink-0" />
+              <Lock v-if="chip.locked" :size="11" class="shrink-0" />
+              <span class="truncate">{{ chip.label }}</span>
+              <Times v-if="!chip.locked" :size="11" class="shrink-0" />
             </button>
-            <span
-              v-if="refreshing"
-              class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-brand-600 dark:border-slate-700 dark:border-t-brand-400"
-              title="Refreshing assets"
-            ></span>
-            <span
-              v-if="
-                embedCollectionLocked ||
-                embedTagLocked ||
-                embedTypeLocked ||
-                embedMimeLocked ||
-                embedSearchLocked ||
-                embedSortLocked
-              "
-              class="text-xs font-medium text-brand-700 dark:text-brand-400"
-              title="The host application restricted this picker"
+            <button
+              v-if="filterChips.length > 1"
+              type="button"
+              class="rounded-full px-2 py-0.5 text-xs font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              @click="clearAllFilters"
             >
-              Restricted
-            </span>
-          </span>
+              Clear all
+            </button>
+          </div>
 
           <div
             class="pointer-events-auto absolute right-10 bottom-10 flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/80 p-1.5 shadow-lg backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/80"
@@ -2105,12 +2409,22 @@ onBeforeUnmount(() => {
             </div>
             <button
               type="button"
-              class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+              class="relative inline-flex h-9 w-9 items-center justify-center rounded-full transition"
+              :class="
+                hasFacetFilters
+                  ? 'bg-brand-50 text-brand-700 hover:bg-brand-100 dark:bg-brand-950/60 dark:text-brand-300 dark:hover:bg-brand-950'
+                  : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
+              "
+              :aria-pressed="hasFacetFilters"
               title="Filters"
               aria-label="Filters"
               @click="toggleFilters"
             >
               <Filter :size="16" />
+              <span
+                v-if="hasFacetFilters"
+                class="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-brand-500 ring-2 ring-white dark:ring-slate-900"
+              />
             </button>
             <button
               type="button"
@@ -2744,6 +3058,28 @@ onBeforeUnmount(() => {
               </div>
 
               <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
+                <p
+                  class="mb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
+                >
+                  Filter clicks
+                </p>
+                <SelectButton
+                  v-model="filterClickMode"
+                  :options="FILTER_CLICK_OPTIONS"
+                  option-label="label"
+                  option-value="value"
+                  :allow-empty="false"
+                  size="small"
+                  fluid
+                  class="w-full"
+                />
+                <p class="mt-2 text-xs text-slate-400">
+                  How clicking a collection or tag in the sidebar changes the
+                  current filters.
+                </p>
+              </div>
+
+              <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
                 <div class="mb-2 flex items-center justify-between">
                   <p
                     class="text-xs font-semibold tracking-wide text-slate-400 uppercase"
@@ -3113,7 +3449,7 @@ onBeforeUnmount(() => {
 .grid-fade-leave-active {
   position: absolute;
   inset-inline: var(--grid-inline-gap, 0);
-  top: calc(var(--grid-scroll-top, 0px) + 0.375rem);
+  top: var(--grid-scroll-top, 0px);
   pointer-events: none;
   transition: opacity 120ms ease;
 }

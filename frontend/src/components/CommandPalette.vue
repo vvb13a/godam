@@ -22,12 +22,18 @@ import {
 } from '@primeicons/vue'
 import type { Component } from 'vue'
 import { computed, nextTick, ref } from 'vue'
-import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
+import { useRouter, type RouteLocationRaw } from 'vue-router'
 import * as api from '../api/client'
 import { openBackupSettings } from '../lib/backupSettings'
 import { notifyConversionCacheChanged } from '../lib/conversionCache'
 import { openCollectionsDialog } from '../lib/collectionsDialog'
 import { commandMenu } from '../lib/command'
+import {
+  applyCollectionFilter,
+  applyTagFilter,
+  clearAllFilters,
+  filterState,
+} from '../lib/filters'
 import { library, loadStats, notifyLibraryChanged } from '../lib/library'
 import { libraryColorHex } from '../lib/libraryColors'
 import { openPresetsDialog } from '../lib/presetsDialog'
@@ -54,7 +60,6 @@ interface PaletteGroup extends CommandMenuItem {
 }
 
 const router = useRouter()
-const route = useRoute()
 const toast = useToast()
 const confirm = useConfirm()
 
@@ -104,47 +109,39 @@ function close(): void {
 }
 
 function navigateFilter(filter: SmartCollectionFilter): void {
-  const query: Record<string, string> = {}
-  if (filter.collection) query.collection = filter.collection
-  if (filter.tag) query.tag = filter.tag
-  if (filter.type) query.type = filter.type
-  if (filter.sort) query.sort = filter.sort
-  void router.push({ name: 'all', query })
+  clearAllFilters()
+  if (filter.collection) filterState.collections = [filter.collection]
+  if (filter.tag) filterState.tags = [filter.tag]
+  if (filter.type) filterState.types = [filter.type]
+  filterState.sort = filter.sort || 'date-desc'
+  void router.push({ name: 'library' })
 }
 
-const hasFilters = computed(() => {
-  const q = route.query
-  return Boolean(
-    (typeof q.collection === 'string' && q.collection) ||
-      (typeof q.tag === 'string' && q.tag) ||
-      (typeof q.type === 'string' && q.type),
-  )
-})
+const hasFilters = computed(
+  () =>
+    filterState.collections.length > 0 ||
+    filterState.tags.length > 0 ||
+    filterState.types.length > 0,
+)
 
 function currentCollectionId(): string | null {
-  const collection = route.query.collection
-  if (typeof collection !== 'string' || collection === 'uncategorized') {
-    return null
-  }
-  return collection.includes(',') ? null : collection
+  return filterState.collections.length === 1
+    ? filterState.collections[0]
+    : null
 }
 
 function currentTagId(): string | null {
-  const tag = route.query.tag
-  if (typeof tag !== 'string' || !tag) return null
-  if (tag === 'untagged' || tag.includes(',')) return null
-  return tag
+  return filterState.tags.length === 1 ? filterState.tags[0] : null
 }
 
 function currentFilter(): SmartCollectionFilter {
-  const q = route.query
   const filter: SmartCollectionFilter = {}
-  if (typeof q.collection === 'string' && q.collection) {
-    filter.collection = q.collection
+  if (filterState.collections.length === 1) {
+    filter.collection = filterState.collections[0]
   }
-  if (typeof q.tag === 'string' && q.tag) filter.tag = q.tag
-  if (typeof q.type === 'string' && q.type) filter.type = q.type
-  if (typeof q.sort === 'string' && q.sort) filter.sort = q.sort
+  if (filterState.tags.length === 1) filter.tag = filterState.tags[0]
+  if (filterState.types.length === 1) filter.type = filterState.types[0]
+  if (filterState.sort !== 'date-desc') filter.sort = filterState.sort
   return filter
 }
 
@@ -222,7 +219,10 @@ const groups = computed<PaletteGroup[]>(() => {
       label: `Search assets for "${term}"`,
       icon: Search,
       keywords: [term, 'search', 'find', 'assets'],
-      command: () => run({ name: 'all', query: { search: term } }),
+      command: () => {
+        filterState.search = term
+        run({ name: 'library' })
+      },
     })
   }
   commands.push(
@@ -328,7 +328,10 @@ const groups = computed<PaletteGroup[]>(() => {
           label: 'All assets',
           icon: Images,
           keywords: ['all', 'library', 'assets', 'everything'],
-          command: () => run({ name: 'all' }),
+          command: () => {
+            clearAllFilters()
+            run({ name: 'library' })
+          },
         },
         {
           label: 'Trash',
@@ -354,8 +357,10 @@ const groups = computed<PaletteGroup[]>(() => {
           ? FolderOpen
           : Folder,
         color: libraryColorHex(collection.color),
-        command: () =>
-          run({ name: 'all', query: { collection: collection.id } }),
+        command: () => {
+          applyCollectionFilter(collection.id)
+          run({ name: 'library' })
+        },
       })),
     })
   }
@@ -372,7 +377,10 @@ const groups = computed<PaletteGroup[]>(() => {
           label: tag.name,
           keywords: ['tag'],
           dot: group?.color ? `#${group.color}` : '#94a3b8',
-          command: () => run({ name: 'all', query: { tag: tag.id } }),
+          command: () => {
+            applyTagFilter(tag.id)
+            run({ name: 'library' })
+          },
         }
       }),
     })
@@ -389,8 +397,8 @@ const groups = computed<PaletteGroup[]>(() => {
         color: libraryColorHex(smart.color),
         command: () => {
           close()
-          selectSmartCollection(smart.id, smart.filter)
           navigateFilter(smart.filter)
+          selectSmartCollection(smart.id, smart.filter)
         },
       })),
     })

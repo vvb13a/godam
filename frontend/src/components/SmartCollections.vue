@@ -14,8 +14,9 @@ import {
 } from '@primeicons/vue'
 import type { Component } from 'vue'
 import { computed, nextTick, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import * as api from '../api/client'
+import { clearAllFilters, filterState } from '../lib/filters'
 import { library } from '../lib/library'
 import { LIBRARY_COLORS, libraryColorHex } from '../lib/libraryColors'
 import { confirmDeleteMenuItem } from '../lib/menu'
@@ -54,7 +55,6 @@ function loadSortMode(): SortMode {
   return SORT_MODES.includes(raw as SortMode) ? (raw as SortMode) : 'custom'
 }
 
-const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 
@@ -115,36 +115,37 @@ const sortedItems = computed(() =>
 // reflow under the pointer; otherwise the computed sorted order is shown.
 const displayItems = computed(() => dragList.value ?? sortedItems.value)
 
-// The smart collection is a preset link: it stores the current asset-view
-// filters (and sort), and selecting it just navigates with those query params.
+// A smart collection is a saved filter combination for the library view.
 function currentFilter(): SmartCollectionFilter {
-  const q = route.query
   const filter: SmartCollectionFilter = {}
-  if (typeof q.collection === 'string' && q.collection) {
-    filter.collection = q.collection
+  if (filterState.collections.length === 1) {
+    filter.collection = filterState.collections[0]
   }
-  if (typeof q.tag === 'string' && q.tag) filter.tag = q.tag
-  if (typeof q.type === 'string' && q.type) filter.type = q.type
-  if (typeof q.sort === 'string' && q.sort) filter.sort = q.sort
+  if (filterState.tags.length === 1) filter.tag = filterState.tags[0]
+  if (filterState.types.length === 1) filter.type = filterState.types[0]
+  if (filterState.sort !== 'date-desc') filter.sort = filterState.sort
   return filter
 }
 
-const hasFilters = computed(() => {
-  const q = route.query
-  return Boolean(
-    (typeof q.collection === 'string' && q.collection) ||
-      (typeof q.tag === 'string' && q.tag) ||
-      (typeof q.type === 'string' && q.type),
-  )
-})
+const hasFilters = computed(
+  () =>
+    filterState.collections.length > 0 ||
+    filterState.tags.length > 0 ||
+    filterState.types.length > 0,
+)
 
 function isFilterActive(f: SmartCollectionFilter): boolean {
-  const current = currentFilter()
   return (
-    (f.collection ?? '') === (current.collection ?? '') &&
-    (f.tag ?? '') === (current.tag ?? '') &&
-    (f.type ?? '') === (current.type ?? '') &&
-    (f.sort ?? '') === (current.sort ?? '')
+    filterState.collections.length <= 1 &&
+    filterState.tags.length <= 1 &&
+    filterState.types.length <= 1 &&
+    !filterState.uncategorized &&
+    !filterState.untagged &&
+    !filterState.search &&
+    (f.collection ?? '') === (filterState.collections[0] ?? '') &&
+    (f.tag ?? '') === (filterState.tags[0] ?? '') &&
+    (f.type ?? '') === (filterState.types[0] ?? '') &&
+    (f.sort || 'date-desc') === filterState.sort
   )
 }
 
@@ -154,12 +155,12 @@ function isActive(item: SmartCollection): boolean {
 
 function navigateFilter(f: SmartCollectionFilter): void {
   if (editingId.value) return
-  const query: Record<string, string> = {}
-  if (f.collection) query.collection = f.collection
-  if (f.tag) query.tag = f.tag
-  if (f.type) query.type = f.type
-  if (f.sort) query.sort = f.sort
-  void router.push({ name: 'all', query })
+  clearAllFilters()
+  if (f.collection) filterState.collections = [f.collection]
+  if (f.tag) filterState.tags = [f.tag]
+  if (f.type) filterState.types = [f.type]
+  filterState.sort = f.sort || 'date-desc'
+  void router.push({ name: 'library' })
 }
 
 function apply(item: SmartCollection): void {
@@ -168,9 +169,9 @@ function apply(item: SmartCollection): void {
     return
   }
   // Smart collections are just saved filters; the Inspector tracks the selected
-  // one as client-side state rather than through a URL param.
-  selectSmartCollection(item.id, item.filter)
+  // one as client-side state.
   navigateFilter(item.filter)
+  selectSmartCollection(item.id, item.filter)
 }
 
 function focusRename(id: string): void {

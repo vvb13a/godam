@@ -19,14 +19,14 @@ import {
 } from '@primeicons/vue'
 import type { Component } from 'vue'
 import { computed, nextTick, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import * as api from '../api/client'
 import { assetDrag } from '../lib/assetDrag'
 import { library, notifyLibraryChanged } from '../lib/library'
 import { confirmDeleteMenuItem } from '../lib/menu'
 import { splitNames } from '../lib/names'
 import { isPinned, toggleQuicklink } from '../lib/quicklinks'
-import { clearSmartSelection } from '../lib/smartSelection'
+import { filterState, toggleTag, toggleUntagged } from '../lib/filters'
 import { openTagsDialog } from '../lib/tagsDialog'
 import type { Tag } from '../types'
 import TagBadge from './TagBadge.vue'
@@ -68,7 +68,6 @@ function loadSort(): SortMode {
   return SORT_MODES.includes(raw as SortMode) ? (raw as SortMode) : 'name-asc'
 }
 
-const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 
@@ -203,19 +202,21 @@ const sections = computed<TagSection[]>(() => {
   return [{ key: 'all', label: '', tags }]
 })
 
-const activeTagIds = computed(() => {
-  const raw = route.query.tag
-  if (typeof raw !== 'string' || !raw) return new Set<string>()
-  return new Set(raw.split(',').filter(Boolean))
-})
+const activeTagIds = computed(() => new Set(filterState.tags))
+const untaggedActive = computed(() => filterState.untagged)
+
+function toggleUntaggedFilter(): void {
+  toggleUntagged()
+  void router.push({ name: 'library' })
+}
 
 function isActive(tag: Tag): boolean {
   return activeTagIds.value.has(tag.id)
 }
 
 function filterByTag(tag: Tag): void {
-  clearSmartSelection()
-  void router.push({ name: 'all', query: { tag: tag.id } })
+  toggleTag(tag.id)
+  void router.push({ name: 'library' })
 }
 
 function recomputeGroupCounts(): void {
@@ -565,6 +566,24 @@ const menuItems = computed<TagMenuItem[]>(() => {
         </template>
       </span>
       <div class="flex items-center gap-2">
+        <button
+          class="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-brand-700 dark:hover:bg-slate-800 dark:hover:text-brand-400"
+          :class="
+            untaggedActive
+              ? 'bg-brand-50 text-brand-700 dark:bg-brand-950/50 dark:text-brand-300'
+              : ''
+          "
+          title="Show untagged assets"
+          @click="toggleUntaggedFilter"
+        >
+          <Tag :size="14" />
+          <span
+            v-if="library.stats?.untagged"
+            class="text-[10px] font-medium tabular-nums"
+          >
+            {{ library.stats.untagged }}
+          </span>
+        </button>
         <button
           class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400"
           title="Manage tags"

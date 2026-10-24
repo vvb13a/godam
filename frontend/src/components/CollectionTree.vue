@@ -24,7 +24,7 @@ import type { Component } from 'vue'
 import type { TreeNode } from 'primevue/treenode'
 import type { TreeNodeDropEvent } from 'primevue/tree'
 import { computed, nextTick, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import * as api from '../api/client'
 import { assetDrag } from '../lib/assetDrag'
 import { library, notifyLibraryChanged } from '../lib/library'
@@ -33,7 +33,13 @@ import { confirmDeleteMenuItem } from '../lib/menu'
 import { splitNames } from '../lib/names'
 import { isPinned, toggleQuicklink } from '../lib/quicklinks'
 import { openCollectionsDialog } from '../lib/collectionsDialog'
-import { clearSmartSelection } from '../lib/smartSelection'
+import {
+  applyCollectionFilter,
+  clearCollectionFilter,
+  filterSettings,
+  filterState,
+  toggleUncategorized,
+} from '../lib/filters'
 import type { Collection } from '../types'
 
 interface CollectionNode {
@@ -103,7 +109,6 @@ const emit = defineEmits<{
   open: [collection: Collection]
 }>()
 
-const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 
@@ -141,16 +146,19 @@ watch(sortMode, (value) => {
   }
 })
 
-const activeCollection = computed(() => {
-  const id = route.query.collection
-  return typeof id === 'string' ? id : null
+const selectionKeys = computed<Record<string, boolean>>(() => {
+  if (props.selectable) return {}
+  const keys: Record<string, boolean> = {}
+  for (const id of filterState.collections) keys[id] = true
+  return keys
 })
 
-const selectionKeys = computed<Record<string, boolean>>(() =>
-  !props.selectable && activeCollection.value
-    ? { [activeCollection.value]: true }
-    : {},
-)
+const uncategorizedActive = computed(() => filterState.uncategorized)
+
+function toggleUncategorizedFilter(): void {
+  toggleUncategorized()
+  void router.push({ name: 'library' })
+}
 
 const selectedSet = computed(() => new Set(props.selectedIds))
 
@@ -239,23 +247,24 @@ watch(
   { immediate: true },
 )
 
-// Reveal the active collection by expanding its ancestors (e.g. when selecting
+// Reveal active collections by expanding their ancestors (e.g. when selecting
 // a nested folder from the command menu).
 watch(
-  [activeCollection, () => library.collections],
+  [() => filterState.collections, () => library.collections],
   () => {
-    const id = activeCollection.value
-    if (!id || id === 'uncategorized') return
+    if (!filterState.collections.length) return
     const byId = new Map(library.collections.map((item) => [item.id, item]))
     const next = { ...expandedKeys.value }
     let changed = false
-    let parent = byId.get(id)?.parent_id ?? null
-    while (parent) {
-      if (!next[parent]) {
-        next[parent] = true
-        changed = true
+    for (const id of filterState.collections) {
+      let parent = byId.get(id)?.parent_id ?? null
+      while (parent) {
+        if (!next[parent]) {
+          next[parent] = true
+          changed = true
+        }
+        parent = byId.get(parent)?.parent_id ?? null
       }
-      parent = byId.get(parent)?.parent_id ?? null
     }
     if (changed) expandedKeys.value = next
   },
@@ -369,11 +378,8 @@ function replaceLocal(updated: Collection): void {
 }
 
 function clearActiveIf(gone: Set<string>): void {
-  const active = activeCollection.value
-  if (active && gone.has(active)) {
-    const query = { ...route.query }
-    delete query.collection
-    void router.push({ name: 'all', query })
+  for (const id of gone) {
+    if (filterState.collections.includes(id)) clearCollectionFilter(id)
   }
 }
 
@@ -698,26 +704,23 @@ function onRowDoubleClick(node: TreeNode): void {
 }
 
 function openCollection(collection: Collection): void {
-  clearSmartSelection()
-  const query: Record<string, string> = { collection: collection.id }
-  if (typeof route.query.sort === 'string' && route.query.sort) {
-    query.sort = route.query.sort
-  }
+  applyCollectionFilter(collection.id)
   emit('open', collection)
-  void router.push({ name: 'all', query })
+  void router.push({ name: 'library' })
 }
 
 function onSelect(node: TreeNode): void {
   if (props.selectable || !props.navigable) return
   if (editingId.value) return
-  // Selecting a collection drops any smart-collection Inspector selection and
-  // resets the other filters (locking comes later).
-  clearSmartSelection()
-  const query: Record<string, string> = { collection: node.key }
-  if (typeof route.query.sort === 'string' && route.query.sort) {
-    query.sort = route.query.sort
-  }
-  void router.push({ name: 'all', query })
+  applyCollectionFilter(String(node.key))
+  void router.push({ name: 'library' })
+}
+
+function onUnselect(node: TreeNode): void {
+  if (props.selectable || !props.navigable) return
+  if (editingId.value) return
+  clearCollectionFilter(String(node.key))
+  void router.push({ name: 'library' })
 }
 
 async function onDrop(event: TreeNodeDropEvent): Promise<void> {
@@ -895,6 +898,24 @@ defineExpose({
       </span>
       <div class="flex items-center gap-1">
         <button
+          class="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-brand-700 dark:hover:bg-slate-800 dark:hover:text-brand-400"
+          :class="
+            uncategorizedActive
+              ? 'bg-brand-50 text-brand-700 dark:bg-brand-950/50 dark:text-brand-300'
+              : ''
+          "
+          title="Show uncategorized assets"
+          @click="toggleUncategorizedFilter"
+        >
+          <Folder :size="14" />
+          <span
+            v-if="library.stats?.uncategorized"
+            class="text-[10px] font-medium tabular-nums"
+          >
+            {{ library.stats.uncategorized }}
+          </span>
+        </button>
+        <button
           class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400"
           title="Manage collections"
           @click="openCollectionsDialog"
@@ -949,7 +970,13 @@ defineExpose({
     <Tree
       :value="treeNodes"
       :selection-keys="selectionKeys"
-      :selection-mode="selectable || !navigable ? undefined : 'single'"
+      :selection-mode="
+        selectable || !navigable
+          ? undefined
+          : filterSettings.clickMode === 'add'
+            ? 'multiple'
+            : 'single'
+      "
       v-model:expanded-keys="expandedKeys"
       :draggable-nodes="manage"
       :droppable-nodes="manage"
@@ -957,6 +984,7 @@ defineExpose({
       :pt="treePt"
       class="!border-0 !bg-transparent !pt-1"
       @node-select="onSelect"
+      @node-unselect="onUnselect"
       @node-drop="onDrop"
     >
       <template #empty>

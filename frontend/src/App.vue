@@ -5,7 +5,7 @@ import Toast from 'primevue/toast'
 import { useConfirm } from 'primevue/useconfirm'
 import { CloudUpload } from '@primeicons/vue'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { RouterView, useRoute } from 'vue-router'
+import { RouterView } from 'vue-router'
 import AppSidebar from './components/AppSidebar.vue'
 import CollectionsDialog from './components/CollectionsDialog.vue'
 import CommandPalette from './components/CommandPalette.vue'
@@ -18,11 +18,11 @@ import UploadDialog from './components/UploadDialog.vue'
 import { auth } from './lib/auth'
 import { commandMenu } from './lib/command'
 import { editorDirty, setLeaveConfirm } from './lib/editorState'
+import { filterState } from './lib/filters'
 import { startEmbedBridge } from './lib/embed'
 import { initLibrary, library, resetLibrary } from './lib/library'
 import { openUpload, upload } from './lib/upload'
 
-const route = useRoute()
 const confirm = useConfirm()
 const dragging = ref(false)
 let dragDepth = 0
@@ -63,18 +63,15 @@ function hasFiles(event: DragEvent): boolean {
 }
 
 function currentCollectionId(): string | null {
-  const collection = route.query.collection
-  if (typeof collection !== 'string' || collection === 'uncategorized') return null
-  return collection
+  return filterState.collections.length === 1
+    ? filterState.collections[0]
+    : null
 }
 
-// currentTagId returns the tag filter's id only when it is a single, concrete
-// tag (not the "untagged" pseudo-filter or a multi-tag selection).
+// currentTagId returns the tag filter's id only when a single concrete tag is
+// active (not the "untagged" pseudo-filter or a multi-tag selection).
 function currentTagId(): string | null {
-  const tag = route.query.tag
-  if (typeof tag !== 'string' || !tag) return null
-  if (tag === 'untagged' || tag.includes(',')) return null
-  return tag
+  return filterState.tags.length === 1 ? filterState.tags[0] : null
 }
 
 function resetGlobalDrag(): void {

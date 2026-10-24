@@ -10,7 +10,8 @@ import {
 } from '@primeicons/vue'
 import type { Component } from 'vue'
 import { computed, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
+import { clearAllFilters, filterState } from '../lib/filters'
 import { library } from '../lib/library'
 import {
   quicklinks,
@@ -18,10 +19,9 @@ import {
   type Quicklink,
   type QuicklinkType,
 } from '../lib/quicklinks'
-import { clearSmartSelection, selectSmartCollection, smartSelection } from '../lib/smartSelection'
+import { selectSmartCollection, smartSelection } from '../lib/smartSelection'
 import type { SmartCollectionFilter } from '../types'
 
-const route = useRoute()
 const router = useRouter()
 const menu = ref<InstanceType<typeof ContextMenu> | null>(null)
 const contextItem = ref<ResolvedQuicklink | null>(null)
@@ -71,38 +71,40 @@ function iconFor(type: QuicklinkType): Component {
 
 function isActive(item: ResolvedQuicklink): boolean {
   if (item.type === 'collection') {
-    return route.query.collection === item.id
+    return filterState.collections.includes(item.id)
   }
   if (item.type === 'tag') {
-    return route.query.tag === item.id
+    return filterState.tags.includes(item.id)
   }
   return smartSelection.id === item.id
 }
 
 function navigateFilter(filter: SmartCollectionFilter): void {
-  const query: Record<string, string> = {}
-  if (filter.collection) query.collection = filter.collection
-  if (filter.tag) query.tag = filter.tag
-  if (filter.type) query.type = filter.type
-  if (filter.sort) query.sort = filter.sort
-  void router.push({ name: 'all', query })
+  clearAllFilters()
+  if (filter.collection) filterState.collections = [filter.collection]
+  if (filter.tag) filterState.tags = [filter.tag]
+  if (filter.type) filterState.types = [filter.type]
+  filterState.sort = filter.sort || 'date-desc'
+  void router.push({ name: 'library' })
 }
 
 function open(item: ResolvedQuicklink): void {
   if (item.type === 'collection') {
-    clearSmartSelection()
-    void router.push({ name: 'all', query: { collection: item.id } })
+    clearAllFilters()
+    filterState.collections = [item.id]
+    void router.push({ name: 'library' })
     return
   }
   if (item.type === 'tag') {
-    clearSmartSelection()
-    void router.push({ name: 'all', query: { tag: item.id } })
+    clearAllFilters()
+    filterState.tags = [item.id]
+    void router.push({ name: 'library' })
     return
   }
   const smart = library.smartCollections.find((c) => c.id === item.id)
   if (!smart) return
-  selectSmartCollection(smart.id, smart.filter)
   navigateFilter(smart.filter)
+  selectSmartCollection(smart.id, smart.filter)
 }
 
 function unpin(item: Quicklink): void {

@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import Splitter from 'primevue/splitter'
 import SplitterPanel from 'primevue/splitterpanel'
-import { ChevronLeft, ChevronRight, Folder, Images, Tag } from '@primeicons/vue'
+import { ChevronLeft, ChevronRight, Images } from '@primeicons/vue'
 import { computed, nextTick, ref, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useToast } from 'primevue/usetoast'
 import * as api from '../api/client'
 import { embed as embedState } from '../lib/embed'
 import { currentLibrary, library, refreshLibrary } from '../lib/library'
 import { panels, toggleLeftPanel } from '../lib/panels'
+import { clearAllFilters, hasActiveFilterState } from '../lib/filters'
 import { sidebarPrefs, type SidebarToggleKey } from '../lib/sidebar'
 import CollectionTree from './CollectionTree.vue'
 import Quicklinks from './Quicklinks.vue'
@@ -16,6 +17,7 @@ import SmartCollections from './SmartCollections.vue'
 import TagsList from './TagsList.vue'
 
 const route = useRoute()
+const router = useRouter()
 const toast = useToast()
 const activeLibrary = computed(() => currentLibrary())
 
@@ -23,8 +25,25 @@ const editingName = ref(false)
 const nameDraft = ref('')
 const nameInput = ref<HTMLInputElement | null>(null)
 const renaming = ref(false)
+let libraryClickTimer: number | null = null
+
+function onLibraryClick(): void {
+  if (libraryClickTimer !== null) {
+    window.clearTimeout(libraryClickTimer)
+    libraryClickTimer = null
+    return
+  }
+  libraryClickTimer = window.setTimeout(() => {
+    libraryClickTimer = null
+    openLibrary()
+  }, 220)
+}
 
 function startRename(): void {
+  if (libraryClickTimer !== null) {
+    window.clearTimeout(libraryClickTimer)
+    libraryClickTimer = null
+  }
   if (!activeLibrary.value) return
   nameDraft.value = activeLibrary.value.name
   editingName.value = true
@@ -120,19 +139,14 @@ const splitterStateKey = computed(
   () => `godam:sidebar:sections:${visibleSections.value.join('|')}`,
 )
 
-const activeCollection = computed(
-  () => (route.query.collection as string | undefined) ?? null,
+const libraryActive = computed(
+  () => route.name === 'library' && !hasActiveFilterState(),
 )
-const activeTag = computed(() => (route.query.tag as string | undefined) ?? null)
-const allActive = computed(
-  () => route.name === 'all' && !activeCollection.value && !activeTag.value,
-)
-const uncategorizedActive = computed(
-  () => route.name === 'all' && route.query.collection === 'uncategorized',
-)
-const untaggedActive = computed(
-  () => route.name === 'all' && route.query.tag === 'untagged',
-)
+
+function openLibrary(): void {
+  clearAllFilters()
+  void router.push({ name: 'library' })
+}
 
 watch(
   () => library.version,
@@ -155,12 +169,40 @@ watch(
         class="flex h-full w-full flex-col"
         :inert="panels.leftCollapsed || undefined"
       >
-        <div class="px-4 pt-4 pb-1">
-          <p
-            class="text-[10px] font-semibold tracking-wide text-slate-400 uppercase"
-          >
-            Library
-          </p>
+        <div
+          class="cursor-pointer border-b border-slate-100 px-4 py-3 transition dark:border-slate-800"
+          :class="
+            libraryActive
+              ? 'bg-brand-50/80 dark:bg-brand-950/40'
+              : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+          "
+          role="button"
+          tabindex="0"
+          title="Show all assets"
+          @click="onLibraryClick"
+          @keydown.enter.prevent="openLibrary"
+          @keydown.space.prevent="openLibrary"
+        >
+          <div class="flex items-center justify-between gap-2">
+            <p
+              class="text-[10px] font-semibold tracking-wide text-slate-400 uppercase"
+            >
+              Library
+            </p>
+            <span
+              class="inline-flex items-center gap-1 text-xs font-medium"
+              :class="
+                libraryActive
+                  ? 'text-brand-700 dark:text-brand-300'
+                  : 'text-slate-400'
+              "
+            >
+              <Images :size="13" />
+              <span v-if="library.stats?.assets">
+                {{ library.stats.assets }}
+              </span>
+            </span>
+          </div>
           <input
             v-if="editingName"
             ref="nameInput"
@@ -168,6 +210,8 @@ watch(
             type="text"
             class="w-full border-b border-brand-400 bg-transparent p-0 text-sm leading-5 font-semibold text-slate-700 outline-none dark:text-slate-200"
             :disabled="renaming"
+            @click.stop
+            @keydown.stop
             @keydown.enter.prevent="commitRename"
             @keydown.esc.prevent="cancelRename"
             @blur="commitRename"
@@ -176,68 +220,11 @@ watch(
             v-else
             class="truncate text-sm font-semibold text-slate-700 dark:text-slate-200"
             title="Double-click to rename"
-            @dblclick="startRename"
+            @dblclick.stop="startRename"
           >
             {{ activeLibrary?.name ?? 'Library' }}
           </p>
         </div>
-
-        <nav class="space-y-0.5 p-3">
-          <RouterLink
-            :to="{ name: 'all' }"
-            class="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium"
-            :class="
-              allActive
-                ? 'bg-brand-50 dark:bg-brand-950/50 text-brand-700 dark:text-brand-300'
-                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
-            "
-          >
-            <Images :size="18" />
-            <span class="flex-1">All</span>
-            <span
-              v-if="library.stats?.assets"
-              class="shrink-0 text-xs text-slate-400"
-            >
-              {{ library.stats.assets }}
-            </span>
-          </RouterLink>
-          <RouterLink
-            :to="{ name: 'all', query: { collection: 'uncategorized' } }"
-            class="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium"
-            :class="
-              uncategorizedActive
-                ? 'bg-brand-50 dark:bg-brand-950/50 text-brand-700 dark:text-brand-300'
-                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
-            "
-          >
-            <Folder :size="18" />
-            <span class="flex-1">Uncategorized</span>
-            <span
-              v-if="library.stats?.uncategorized"
-              class="shrink-0 text-xs text-slate-400"
-            >
-              {{ library.stats.uncategorized }}
-            </span>
-          </RouterLink>
-          <RouterLink
-            :to="{ name: 'all', query: { tag: 'untagged' } }"
-            class="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium"
-            :class="
-              untaggedActive
-                ? 'bg-brand-50 dark:bg-brand-950/50 text-brand-700 dark:text-brand-300'
-                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
-            "
-          >
-            <Tag :size="18" />
-            <span class="flex-1">Untagged</span>
-            <span
-              v-if="library.stats?.untagged"
-              class="shrink-0 text-xs text-slate-400"
-            >
-              {{ library.stats.untagged }}
-            </span>
-          </RouterLink>
-        </nav>
 
         <Splitter
           v-if="visibleSections.length"

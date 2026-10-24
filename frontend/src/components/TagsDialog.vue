@@ -24,6 +24,7 @@ import type { Component } from 'vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import * as api from '../api/client'
+import { applyTagFilter } from '../lib/filters'
 import { library, notifyLibraryChanged } from '../lib/library'
 import { confirmDeleteMenuItem } from '../lib/menu'
 import { splitNames } from '../lib/names'
@@ -609,7 +610,8 @@ async function toggleStar(tag: Tag): Promise<void> {
 
 function filterByTag(tag: Tag): void {
   tagsDialog.visible = false
-  void router.push({ name: 'all', query: { tag: tag.id } })
+  applyTagFilter(tag.id)
+  void router.push({ name: 'library' })
 }
 
 async function assignGroup(tag: Tag, groupId: string | null): Promise<void> {
