@@ -1,8 +1,3 @@
-export interface UserOption {
-  id: string
-  name: string
-}
-
 export interface EmbedScopeFilters {
   collection?: string[]
   tag?: string[]
@@ -24,10 +19,7 @@ export interface EmbedScope {
 
 export interface User {
   id: string
-  name: string
-  email: string
-  created_at: string
-  updated_at: string
+  name?: string
   scope?: EmbedScope
 }
 
@@ -120,7 +112,6 @@ export interface AssetMetadata {
 
 export interface Asset {
   id: string
-  uploaded_by?: string
   uploaded_by_name?: string
   filename: string
   title?: string
@@ -162,8 +153,6 @@ export interface PresetParameters {
 
 export interface Preset {
   id: string
-  added_by?: string
-  added_by_name?: string
   label: string
   name: string
   parameters: PresetParameters

@@ -28,14 +28,6 @@ func TestInitialSchema(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	var users int
-	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&users); err != nil {
-		t.Fatalf("count users: %v", err)
-	}
-	if users != 1 {
-		t.Fatalf("expected seeded developer user, got %d", users)
-	}
-
 	rows, err := sqlDB.Query(`PRAGMA table_info(assets)`)
 	if err != nil {
 		t.Fatalf("table info: %v", err)
@@ -51,6 +43,27 @@ func TestInitialSchema(t *testing.T) {
 		}
 		if name == "library_id" {
 			t.Fatal("assets must not have a library_id column")
+		}
+		if name == "uploaded_by" {
+			t.Fatal("assets must not have an uploaded_by column")
+		}
+	}
+
+	presetRows, err := sqlDB.Query(`PRAGMA table_info(presets)`)
+	if err != nil {
+		t.Fatalf("preset table info: %v", err)
+	}
+	defer presetRows.Close()
+	for presetRows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var dflt any
+		if err := presetRows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			t.Fatalf("scan preset column: %v", err)
+		}
+		if name == "added_by" {
+			t.Fatal("presets must not have an added_by column")
 		}
 	}
 

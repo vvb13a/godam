@@ -45,7 +45,7 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 	if err := png.Encode(&source, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
 		t.Fatalf("encode png: %v", err)
 	}
-	asset, err := assets.Upload(ctx, "user", "", "test.png", "image/png", int64(source.Len()), bytes.NewReader(source.Bytes()))
+	asset, err := assets.Upload(ctx, "", "test.png", "image/png", int64(source.Len()), bytes.NewReader(source.Bytes()))
 	if err != nil {
 		t.Fatalf("upload: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 		t.Fatalf("smallest URL = %q", list[0].URL)
 	}
 
-	preset, err := presets.Create(ctx, "user", "Thumb", "thumb", domain.PresetParameters{
+	preset, err := presets.Create(ctx, "Thumb", "thumb", domain.PresetParameters{
 		Format: "webp",
 		Options: []domain.PresetOption{
 			{Name: "resize", Args: []string{"fit", "200", "0"}},
@@ -153,7 +153,7 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create other collection: %v", err)
 	}
-	if _, err := presets.Create(ctx, "user", "Restricted", "restricted", domain.PresetParameters{
+	if _, err := presets.Create(ctx, "Restricted", "restricted", domain.PresetParameters{
 		Format: "webp",
 		Options: []domain.PresetOption{
 			{Name: "resize", Args: []string{"fit", "100", "0"}},

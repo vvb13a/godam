@@ -11,7 +11,6 @@ import (
 // table and loaded with a Preload.
 type Asset struct {
 	ID             string    `gorm:"column:id;primaryKey;type:text"`
-	UploadedBy     *string   `gorm:"column:uploaded_by;type:text;index"`
 	UploadedByName string    `gorm:"column:uploaded_by_name;type:text;not null;default:''"`
 	Filename       string    `gorm:"column:filename;type:text;not null"`
 	Title          string    `gorm:"column:title;type:text;not null;default:''"`
@@ -59,10 +58,6 @@ func (c *AssetColor) ToDomain() domain.AssetColor {
 
 // AssetModel converts a domain asset into its row model.
 func AssetModel(a *domain.Asset) *Asset {
-	var uploadedBy *string
-	if a.UploadedBy != "" {
-		uploadedBy = &a.UploadedBy
-	}
 	var imageOf *string
 	if a.ImageOf != "" {
 		value := a.ImageOf
@@ -74,7 +69,6 @@ func AssetModel(a *domain.Asset) *Asset {
 	}
 	return &Asset{
 		ID:             a.ID,
-		UploadedBy:     uploadedBy,
 		UploadedByName: a.UploadedByName,
 		Filename:       a.Filename,
 		Title:          a.Title,
@@ -108,10 +102,6 @@ func (m *Asset) ToDomain() *domain.Asset {
 	for i := range m.Colors {
 		colors = append(colors, m.Colors[i].ToDomain())
 	}
-	var uploadedBy string
-	if m.UploadedBy != nil {
-		uploadedBy = *m.UploadedBy
-	}
 	var imageOf string
 	if m.ImageOf != nil {
 		imageOf = *m.ImageOf
@@ -122,7 +112,6 @@ func (m *Asset) ToDomain() *domain.Asset {
 	}
 	return &domain.Asset{
 		ID:             m.ID,
-		UploadedBy:     uploadedBy,
 		UploadedByName: m.UploadedByName,
 		Filename:       m.Filename,
 		Title:          m.Title,

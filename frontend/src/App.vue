@@ -18,7 +18,7 @@ import UploadDialog from './components/UploadDialog.vue'
 import { auth } from './lib/auth'
 import { commandMenu } from './lib/command'
 import { editorDirty, setLeaveConfirm } from './lib/editorState'
-import { embed, startEmbedBridge } from './lib/embed'
+import { startEmbedBridge } from './lib/embed'
 import { initLibrary, library, resetLibrary } from './lib/library'
 import { openUpload, upload } from './lib/upload'
 
@@ -210,56 +210,54 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100">
-    <RouterView v-if="!auth.user" />
+    <div
+      v-if="!library.loaded"
+      class="flex h-full w-full items-center justify-center text-sm text-slate-400"
+    >
+      Loading…
+    </div>
+
+    <p
+      v-else-if="!library.id"
+      class="flex h-full w-full items-center justify-center text-sm text-slate-400"
+    >
+      No library is configured for this instance.
+    </p>
 
     <template v-else>
-      <div
-        v-if="!library.loaded"
-        class="flex h-full w-full items-center justify-center text-sm text-slate-400"
-      >
-        Loading…
-      </div>
-
-      <p
-        v-else-if="!library.id"
-        class="flex h-full w-full items-center justify-center text-sm text-slate-400"
-      >
-        No library is configured for this instance.
-      </p>
-
-      <template v-else>
-        <AppSidebar :embed="embed.active" />
+      <div class="flex min-h-0 min-w-0 flex-1 py-4">
+        <AppSidebar />
         <main class="min-h-0 flex-1 overflow-hidden">
           <RouterView />
         </main>
+      </div>
 
+      <div
+        v-if="dragging"
+        class="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-brand-600/10 backdrop-blur-sm"
+      >
         <div
-          v-if="dragging"
-          class="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-brand-600/10 backdrop-blur-sm"
+          class="rounded-lg border-2 border-dashed border-brand-400 bg-white dark:bg-slate-900 px-12 py-10 text-center shadow-lg"
         >
-          <div
-            class="rounded-lg border-2 border-dashed border-brand-400 bg-white dark:bg-slate-900 px-12 py-10 text-center shadow-lg"
-          >
-            <CloudUpload :size="40" class="mx-auto text-brand-500" />
-            <p class="mt-3 text-lg font-semibold text-brand-700 dark:text-brand-300">
-              Drop files to upload
-            </p>
-            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              They'll be staged for review before uploading.
-            </p>
-          </div>
+          <CloudUpload :size="40" class="mx-auto text-brand-500" />
+          <p class="mt-3 text-lg font-semibold text-brand-700 dark:text-brand-300">
+            Drop files to upload
+          </p>
+          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            They'll be staged for review before uploading.
+          </p>
         </div>
-      </template>
-
-      <UploadDialog />
-      <CommandPalette />
-      <TagsDialog />
-      <CollectionsDialog />
-      <PresetsDialog />
-      <WarmPresetsProgress />
-      <LibraryUploadSettingsDialog />
-      <LibraryBackupDialog />
+      </div>
     </template>
+
+    <UploadDialog />
+    <CommandPalette />
+    <TagsDialog />
+    <CollectionsDialog />
+    <PresetsDialog />
+    <WarmPresetsProgress />
+    <LibraryUploadSettingsDialog />
+    <LibraryBackupDialog />
 
     <ConfirmDialog group="navigation" />
     <ConfirmDialog group="upload-discard" />

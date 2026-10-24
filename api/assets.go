@@ -39,7 +39,6 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 		Types:          append(parseCSV(q.Get("types")), parseCSV(q.Get("type"))...),
 		Colors:         append(parseCSV(q.Get("colors")), parseCSV(q.Get("color"))...),
 		MimeTypes:      append(parseCSV(q.Get("mime_types")), parseCSV(q.Get("mime"))...),
-		UploadedBy:     parseCSV(q.Get("uploaded_by")),
 		MinDuration:    parseFloatPtr(q.Get("min_duration")),
 		MaxDuration:    parseFloatPtr(q.Get("max_duration")),
 		MinPages:       parseIntPtr(q.Get("min_pages")),
@@ -234,7 +233,7 @@ func (s *Server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
 		_, _ = file.Seek(0, 0)
 	}
 
-	asset, err := s.deps.Assets.Upload(r.Context(), currentUser(r).ID, r.FormValue("driver"), header.Filename, mimeType, header.Size, file)
+	asset, err := s.deps.Assets.Upload(r.Context(), r.FormValue("driver"), header.Filename, mimeType, header.Size, file)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -262,7 +261,7 @@ func (s *Server) handleStartUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	session, err := s.deps.Assets.StartUpload(
 		r.Context(),
-		currentUser(r).ID,
+		currentActor(r).ID,
 		req.Driver,
 		req.Filename,
 		req.MimeType,
@@ -290,7 +289,7 @@ func (s *Server) handleUploadChunk(w http.ResponseWriter, r *http.Request) {
 	written, err := s.deps.Assets.WriteUploadChunk(
 		r.Context(),
 		r.PathValue("id"),
-		currentUser(r).ID,
+		currentActor(r).ID,
 		offset,
 		r.Body,
 	)
@@ -314,7 +313,7 @@ func (s *Server) handleCompleteUpload(w http.ResponseWriter, r *http.Request) {
 	if !allowUpload(w, r) {
 		return
 	}
-	asset, err := s.deps.Assets.CompleteUpload(r.Context(), r.PathValue("id"), currentUser(r).ID)
+	asset, err := s.deps.Assets.CompleteUpload(r.Context(), r.PathValue("id"), currentActor(r).ID)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -324,7 +323,7 @@ func (s *Server) handleCompleteUpload(w http.ResponseWriter, r *http.Request) {
 
 // handleCancelUpload discards an in-progress upload.
 func (s *Server) handleCancelUpload(w http.ResponseWriter, r *http.Request) {
-	if err := s.deps.Assets.CancelUpload(r.PathValue("id"), currentUser(r).ID); err != nil {
+	if err := s.deps.Assets.CancelUpload(r.PathValue("id"), currentActor(r).ID); err != nil {
 		writeError(w, err)
 		return
 	}

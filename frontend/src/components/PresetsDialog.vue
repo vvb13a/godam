@@ -613,8 +613,7 @@ watch(
               /&lt;asset-id&gt;/{{ form.name || 'preset' }}.{{ form.format }}
             </p>
             <p v-if="selectedPreset" class="text-[11px] text-slate-400">
-              Added by {{ selectedPreset.added_by_name || 'unknown' }}
-              · created {{ formatRelative(selectedPreset.created_at) }}
+              Created {{ formatRelative(selectedPreset.created_at) }}
               · modified
               <span :title="formatDateTime(selectedPreset.modified_at)">
                 {{ formatRelative(selectedPreset.modified_at) }}

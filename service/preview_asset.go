@@ -75,7 +75,6 @@ func (s *AssetService) upsertVisualAsset(ctx context.Context, parent *domain.Ass
 		}
 		visual := &domain.Asset{
 			ID:             id,
-			UploadedBy:     parent.UploadedBy,
 			UploadedByName: parent.UploadedByName,
 			Filename:       visualFilename(parent.Filename, ext),
 			StorageDriver:  "local",

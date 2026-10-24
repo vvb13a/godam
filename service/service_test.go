@@ -56,44 +56,6 @@ func TestInstance(t *testing.T) {
 	}
 }
 
-func TestSessionCacheDurability(t *testing.T) {
-	db := newTestDB(t)
-	ctx := context.Background()
-	users := NewUserService(db)
-
-	user, err := users.Create(ctx, "Dev", "dev2@example.com", "password1")
-	if err != nil {
-		t.Fatalf("create user: %v", err)
-	}
-	token, err := users.StartSession(ctx, user.ID)
-	if err != nil {
-		t.Fatalf("start session: %v", err)
-	}
-
-	users.mu.RLock()
-	_, cached := users.sessions[token]
-	users.mu.RUnlock()
-	if !cached {
-		t.Fatal("session should be held in memory")
-	}
-
-	// A fresh service instance models a restart: Load must restore the session.
-	restarted := NewUserService(db)
-	if err := restarted.Load(ctx); err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	if got, err := restarted.UserForSession(ctx, token); err != nil || got.ID != user.ID {
-		t.Fatalf("session should survive restart: got=%v err=%v", got, err)
-	}
-
-	if err := restarted.EndSession(ctx, token); err != nil {
-		t.Fatalf("end session: %v", err)
-	}
-	if _, err := restarted.UserForSession(ctx, token); err == nil {
-		t.Fatal("session should be invalid after logout")
-	}
-}
-
 func TestSmartCollections(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()

@@ -38,19 +38,13 @@ func (s *PresetService) List(ctx context.Context) ([]domain.Preset, error) {
 		return nil, err
 	}
 	presets := make([]domain.Preset, 0, len(models))
-	ids := make([]string, 0, len(models))
 	for i := range models {
 		presets = append(presets, *models[i].ToDomain())
-		if models[i].AddedBy != "" {
-			ids = append(ids, models[i].AddedBy)
-		}
 	}
 
 	collections := s.targets(ctx, "preset_collections", "collection_id")
 	tags := s.targets(ctx, "preset_tags", "tag_id")
-	names := s.userNames(ctx, ids)
 	for i := range presets {
-		presets[i].AddedByName = names[presets[i].AddedBy]
 		presets[i].CollectionIDs = collections[presets[i].ID]
 		presets[i].TagIDs = tags[presets[i].ID]
 		if presets[i].CollectionIDs == nil {
@@ -73,9 +67,6 @@ func (s *PresetService) GetByID(ctx context.Context, id string) (*domain.Preset,
 		return nil, err
 	}
 	preset := model.ToDomain()
-	if preset.AddedBy != "" {
-		preset.AddedByName = s.userNames(ctx, []string{preset.AddedBy})[preset.AddedBy]
-	}
 	collectionIDs, tagIDs, err := s.loadTargets(ctx, id)
 	if err != nil {
 		return nil, err
@@ -99,7 +90,7 @@ func (s *PresetService) GetByName(ctx context.Context, name string) (*domain.Pre
 	return model.ToDomain(), nil
 }
 
-func (s *PresetService) Create(ctx context.Context, userID, label, name string, params domain.PresetParameters, libraryWide bool, collectionIDs, tagIDs []string) (*domain.Preset, error) {
+func (s *PresetService) Create(ctx context.Context, label, name string, params domain.PresetParameters, libraryWide bool, collectionIDs, tagIDs []string) (*domain.Preset, error) {
 	label, name, params, err := ValidatePreset(label, name, params)
 	if err != nil {
 		return nil, err
@@ -120,7 +111,6 @@ func (s *PresetService) Create(ctx context.Context, userID, label, name string, 
 	now := time.Now().UTC()
 	preset := &domain.Preset{
 		ID:            uuid.New().String(),
-		AddedBy:       userID,
 		Label:         label,
 		Name:          name,
 		Parameters:    params,
@@ -329,21 +319,6 @@ func (s *PresetService) targets(ctx context.Context, table, column string) map[s
 		out[row.PresetID] = append(out[row.PresetID], row.TargetID)
 	}
 	return out
-}
-
-func (s *PresetService) userNames(ctx context.Context, ids []string) map[string]string {
-	names := make(map[string]string, len(ids))
-	if len(ids) == 0 {
-		return names
-	}
-	var users []store.User
-	if err := s.db.WithContext(ctx).Select("id", "name").Where("id IN ?", ids).Find(&users).Error; err != nil {
-		return names
-	}
-	for i := range users {
-		names[users[i].ID] = users[i].Name
-	}
-	return names
 }
 
 func normalizeTargets(libraryWide bool, collectionIDs, tagIDs []string) ([]string, []string, error) {

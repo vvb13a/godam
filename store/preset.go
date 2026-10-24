@@ -12,7 +12,6 @@ import (
 // grows.
 type Preset struct {
 	ID          string    `gorm:"column:id;primaryKey;type:text"`
-	AddedBy     string    `gorm:"column:added_by;type:text;not null;default:''"`
 	Label       string    `gorm:"column:label;type:text;not null"`
 	Name        string    `gorm:"column:name;type:text;not null;uniqueIndex"`
 	Parameters  string    `gorm:"column:parameters;type:text;not null"`
@@ -30,7 +29,6 @@ func PresetModel(p *domain.Preset) (*Preset, error) {
 	}
 	return &Preset{
 		ID:          p.ID,
-		AddedBy:     p.AddedBy,
 		Label:       p.Label,
 		Name:        p.Name,
 		Parameters:  string(parameters),
@@ -47,7 +45,6 @@ func (m *Preset) ToDomain() *domain.Preset {
 	}
 	return &domain.Preset{
 		ID:          m.ID,
-		AddedBy:     m.AddedBy,
 		Label:       m.Label,
 		Name:        m.Name,
 		Parameters:  parameters,

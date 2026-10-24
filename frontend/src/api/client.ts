@@ -15,14 +15,9 @@ import type {
   TagGroup,
   UploadLimits,
   User,
-  UserOption,
 } from '../types'
 
-// Auth endpoints legitimately return 401 (bad/absent credentials); every other
-// 401 means the session expired, which the app handles by returning to login.
-let unauthorizedHandler: (() => void) | null = null
-
-// Embed sessions authenticate with a scoped JWT instead of a cookie. The token
+// Embed sessions authenticate with a scoped JWT. The token
 // is kept in memory and attached to API requests; URL-based asset references
 // append it as a query parameter because <img>/<video> cannot send headers.
 let authToken = ''
@@ -62,10 +57,6 @@ function withAuth(init?: RequestInit): RequestInit {
   return { ...init, headers }
 }
 
-export function setUnauthorizedHandler(handler: (() => void) | null): void {
-  unauthorizedHandler = handler
-}
-
 async function ensureOk(res: Response): Promise<void> {
   if (res.ok) return
   let message = `Request failed (${res.status})`
@@ -76,9 +67,6 @@ async function ensureOk(res: Response): Promise<void> {
     }
   } catch {
     // Non-JSON error body: keep the status message.
-  }
-  if (res.status === 401 && !res.url.includes('/api/auth/')) {
-    unauthorizedHandler?.()
   }
   throw new Error(message)
 }
@@ -116,40 +104,6 @@ function sendJSON<T>(url: string, method: string, body: unknown): Promise<T> {
 
 export function getMe(): Promise<User> {
   return getJSON<User>('/api/auth/me')
-}
-
-export function listUsers(): Promise<UserOption[]> {
-  return getJSON<UserOption[]>('/api/users')
-}
-
-export function login(email: string, password: string): Promise<User> {
-  return sendJSON<User>('/api/auth/login', 'POST', { email, password })
-}
-
-export function devLogin(): Promise<User> {
-  return requestJSON<User>('/api/auth/dev-login', { method: 'POST' })
-}
-
-export function logout(): Promise<void> {
-  return requestVoid('/api/auth/logout', { method: 'POST' })
-}
-
-export function updateProfile(name: string, email: string): Promise<User> {
-  return sendJSON<User>('/api/auth/profile', 'PUT', { name, email })
-}
-
-export function changePassword(
-  currentPassword: string,
-  newPassword: string,
-): Promise<void> {
-  return requestVoid('/api/auth/password', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      current_password: currentPassword,
-      new_password: newPassword,
-    }),
-  })
 }
 
 // ---- Instance ----
@@ -240,7 +194,6 @@ export interface AssetListParams {
   types?: string[]
   colors?: string[]
   mimeTypes?: string[]
-  uploadedBy?: string[]
   minDuration?: number | null
   maxDuration?: number | null
   minPages?: number | null
@@ -282,9 +235,6 @@ export function listAssets(params: AssetListParams): Promise<AssetPage> {
   if (params.types?.length) query.set('types', params.types.join(','))
   if (params.colors?.length) query.set('colors', params.colors.join(','))
   if (params.mimeTypes?.length) query.set('mime_types', params.mimeTypes.join(','))
-  if (params.uploadedBy?.length) {
-    query.set('uploaded_by', params.uploadedBy.join(','))
-  }
   setNumberParam(query, 'min_duration', params.minDuration)
   setNumberParam(query, 'max_duration', params.maxDuration)
   setNumberParam(query, 'min_pages', params.minPages)

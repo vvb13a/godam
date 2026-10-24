@@ -247,8 +247,8 @@ They are no longer read or written and can be deleted.
 - Visual assets and the library preview are re-encoded derivatives and are not
   the originals, but they still reveal content (including PDF pages and video
   frames).
-- `/api/*` routes remain session-protected, except the explicitly public
-  delivery and auth routes.
+- `/api/*` routes require a scoped JWT or trusted direct access, except the
+  explicitly public delivery routes.
 - Caddy blocks `/internal/*` from the public site.
 
 These are intentional gaps for now. The delivery routes are the foundation;

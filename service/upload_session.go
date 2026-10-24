@@ -32,7 +32,7 @@ type UploadSession struct {
 
 type uploadSession struct {
 	UploadSession
-	UserID       string
+	ActorID      string
 	Driver       string
 	Path         string
 	Done         bool
@@ -56,7 +56,7 @@ func newUploadManager(dir string) *uploadManager {
 	}
 }
 
-func (m *uploadManager) create(userID, driver, filename, mimeType string, size int64) (*UploadSession, error) {
+func (m *uploadManager) create(actorID, driver, filename, mimeType string, size int64) (*UploadSession, error) {
 	if err := os.MkdirAll(m.dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create upload staging directory: %w", err)
 	}
@@ -82,7 +82,7 @@ func (m *uploadManager) create(userID, driver, filename, mimeType string, size i
 			ChunkSize: UploadChunkSize,
 			CreatedAt: now,
 		},
-		UserID:       userID,
+		ActorID:      actorID,
 		Driver:       driver,
 		Path:         path,
 		LastActivity: now,
@@ -96,11 +96,11 @@ func (m *uploadManager) create(userID, driver, filename, mimeType string, size i
 	return session.snapshot(), nil
 }
 
-func (m *uploadManager) lookup(id, userID string) (*uploadSession, error) {
+func (m *uploadManager) lookup(id, actorID string) (*uploadSession, error) {
 	m.mu.Lock()
 	session := m.sessions[id]
 	m.mu.Unlock()
-	if session == nil || session.UserID != userID {
+	if session == nil || session.ActorID != actorID {
 		return nil, domain.ErrNotFound
 	}
 	return session, nil
@@ -108,8 +108,8 @@ func (m *uploadManager) lookup(id, userID string) (*uploadSession, error) {
 
 // detach removes a session from the active map and marks it as finished so
 // concurrent chunk writes cannot race with completion.
-func (m *uploadManager) detach(id, userID string) (*uploadSession, error) {
-	session, err := m.lookup(id, userID)
+func (m *uploadManager) detach(id, actorID string) (*uploadSession, error) {
+	session, err := m.lookup(id, actorID)
 	if err != nil {
 		return nil, err
 	}
@@ -165,8 +165,8 @@ func (m *uploadManager) pruneLocked(now time.Time) {
 	}
 }
 
-func (m *uploadManager) write(id, userID string, offset int64, reader io.Reader) (int64, error) {
-	session, err := m.lookup(id, userID)
+func (m *uploadManager) write(id, actorID string, offset int64, reader io.Reader) (int64, error) {
+	session, err := m.lookup(id, actorID)
 	if err != nil {
 		return 0, err
 	}
@@ -213,8 +213,8 @@ func (m *uploadManager) write(id, userID string, offset int64, reader io.Reader)
 	return written, nil
 }
 
-func (m *uploadManager) remove(id, userID string) error {
-	session, err := m.detach(id, userID)
+func (m *uploadManager) remove(id, actorID string) error {
+	session, err := m.detach(id, actorID)
 	if err != nil {
 		return err
 	}

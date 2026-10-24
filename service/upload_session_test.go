@@ -106,8 +106,8 @@ func TestChunkedUploadPersistsTokenUploaderName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("complete upload: %v", err)
 	}
-	if asset.UploadedBy != "cms-user-42" || asset.UploadedByName != "Ada Lovelace" {
-		t.Fatalf("uploader not persisted: %+v", asset)
+	if asset.UploadedByName != "Ada Lovelace" {
+		t.Fatalf("uploader name not persisted: %+v", asset)
 	}
 }
 

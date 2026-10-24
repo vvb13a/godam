@@ -5,12 +5,10 @@ import "time"
 // Preset is a named, reusable imgproxy processing pipeline. Name is the
 // URL-safe key used in conversion URLs; Label is the display name.
 type Preset struct {
-	ID          string           `json:"id"`
-	AddedBy     string           `json:"added_by,omitempty"`
-	AddedByName string           `json:"added_by_name,omitempty"`
-	Label       string           `json:"label"`
-	Name        string           `json:"name"`
-	Parameters  PresetParameters `json:"parameters"`
+	ID         string           `json:"id"`
+	Label      string           `json:"label"`
+	Name       string           `json:"name"`
+	Parameters PresetParameters `json:"parameters"`
 	// LibraryWide makes the preset available to every asset. Otherwise it is
 	// available to assets whose collection or tag is listed in the join tables.
 	LibraryWide   bool      `json:"library_wide"`

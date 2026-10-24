@@ -9,16 +9,11 @@ import * as api from '../api/client'
 import { embed as embedState } from '../lib/embed'
 import { currentLibrary, library, refreshLibrary } from '../lib/library'
 import { panels, toggleLeftPanel } from '../lib/panels'
-import { sidebarPrefs } from '../lib/sidebar'
+import { sidebarPrefs, type SidebarToggleKey } from '../lib/sidebar'
 import CollectionTree from './CollectionTree.vue'
 import Quicklinks from './Quicklinks.vue'
 import SmartCollections from './SmartCollections.vue'
 import TagsList from './TagsList.vue'
-import UserMenu from './UserMenu.vue'
-
-const props = withDefaults(defineProps<{ embed?: boolean }>(), {
-  embed: false,
-})
 
 const route = useRoute()
 const toast = useToast()
@@ -76,19 +71,53 @@ const collectionsLocked = computed(
 const tagsLocked = computed(
   () => pickerRestricted.value && embedState.tagLocked,
 )
-const showQuicklinks = computed(() => sidebarPrefs.quicklinks)
-const showCollections = computed(
-  () => sidebarPrefs.collections && !collectionsLocked.value,
+const SECTION_COMPONENTS = {
+  quicklinks: Quicklinks,
+  collections: CollectionTree,
+  smartCollections: SmartCollections,
+  tags: TagsList,
+}
+
+const SECTION_SPACE: Record<SidebarToggleKey, number> = {
+  quicklinks: 18,
+  collections: 34,
+  smartCollections: 22,
+  tags: 26,
+}
+
+const sectionVisible = (key: SidebarToggleKey): boolean => {
+  switch (key) {
+    case 'quicklinks':
+      return sidebarPrefs.quicklinks
+    case 'collections':
+      return sidebarPrefs.collections && !collectionsLocked.value
+    case 'smartCollections':
+      return (
+        sidebarPrefs.smartCollections &&
+        !collectionsLocked.value &&
+        !tagsLocked.value
+      )
+    case 'tags':
+      return sidebarPrefs.tags && !tagsLocked.value
+  }
+}
+
+const visibleSections = computed<SidebarToggleKey[]>(() =>
+  sidebarPrefs.order.filter(sectionVisible),
 )
-const showSmartCollections = computed(
-  () =>
-    sidebarPrefs.smartCollections &&
-    !collectionsLocked.value &&
-    !tagsLocked.value,
-)
-const showTags = computed(() => sidebarPrefs.tags && !tagsLocked.value)
-const showSections = computed(
-  () => showCollections.value || showSmartCollections.value,
+
+const sectionSizes = computed<Record<SidebarToggleKey, number>>(() => {
+  const keys = visibleSections.value
+  const total = keys.reduce((sum, key) => sum + SECTION_SPACE[key], 0)
+  const sizes = {} as Record<SidebarToggleKey, number>
+  for (const key of keys) {
+    sizes[key] = total > 0 ? (SECTION_SPACE[key] / total) * 100 : 100
+  }
+  return sizes
+})
+
+const splitterStateKey = computed(
+  () => `godam:sidebar:sections:${visibleSections.value.join('|')}`,
 )
 
 const activeCollection = computed(
@@ -116,8 +145,8 @@ watch(
 <template>
   <div
     class="relative h-full shrink-0 transition-[width] duration-200 ease-in-out"
-    :class="panels.leftCollapsed ? '' : 'p-4'"
-    :style="{ width: panels.leftCollapsed ? '0px' : '18rem' }"
+    :class="panels.leftCollapsed ? '' : 'px-4'"
+    :style="{ width: panels.leftCollapsed ? '0px' : '22rem' }"
   >
     <aside
       class="h-full w-full overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg"
@@ -210,41 +239,26 @@ watch(
           </RouterLink>
         </nav>
 
-        <div
-          v-if="showQuicklinks"
-          class="max-h-56 shrink-0 overflow-y-auto border-b border-slate-100 dark:border-slate-800"
-        >
-          <Quicklinks />
-        </div>
-
         <Splitter
-          v-if="showSections"
+          v-if="visibleSections.length"
+          :key="splitterStateKey"
           layout="vertical"
-          state-key="godam:sidebar:sections"
+          :state-key="splitterStateKey"
           state-storage="local"
           :gutter-size="14"
           class="min-h-0 flex-1"
         >
-          <SplitterPanel v-if="showCollections" :size="60" :min-size="8">
+          <SplitterPanel
+            v-for="section in visibleSections"
+            :key="section"
+            :size="sectionSizes[section]"
+            :min-size="8"
+          >
             <div class="h-full overflow-y-auto pb-2">
-              <CollectionTree />
-            </div>
-          </SplitterPanel>
-          <SplitterPanel v-if="showSmartCollections" :size="40" :min-size="8">
-            <div class="h-full overflow-y-auto pb-2">
-              <SmartCollections />
+              <component :is="SECTION_COMPONENTS[section]" />
             </div>
           </SplitterPanel>
         </Splitter>
-
-        <div
-          v-if="showTags"
-          class="min-h-0 max-h-64 shrink-0 overflow-y-auto border-t border-slate-100 dark:border-slate-800"
-        >
-          <TagsList />
-        </div>
-
-        <UserMenu v-if="!props.embed" />
       </div>
     </aside>
 

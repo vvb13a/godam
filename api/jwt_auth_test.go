@@ -7,12 +7,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/vvb13a/godam/service"
-	"github.com/vvb13a/godam/store"
 )
 
 func signAPITestJWT(t *testing.T, secret string, claims map[string]any) string {
@@ -31,14 +27,7 @@ func signAPITestJWT(t *testing.T, secret string, claims map[string]any) string {
 }
 
 func TestJWTAuthMeReturnsScope(t *testing.T) {
-	db, err := store.Open(filepath.Join(t.TempDir(), "jwt.db"))
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	server := httptest.NewServer(NewServer(Deps{
-		Users:     service.NewUserService(db),
-		JWTSecret: "test-secret",
-	}))
+	server := httptest.NewServer(NewServer(Deps{JWTSecret: "test-secret"}))
 	defer server.Close()
 
 	token := signAPITestJWT(t, "test-secret", map[string]any{
@@ -87,9 +76,14 @@ func TestJWTAuthMeReturnsScope(t *testing.T) {
 		t.Fatal("can_upload should default to true")
 	}
 
-	unauthorized, _ := http.Get(server.URL + "/api/auth/me")
-	if unauthorized.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("missing token status = %d", unauthorized.StatusCode)
+	req, _ = http.NewRequest(http.MethodGet, server.URL+"/api/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer not-a-jwt")
+	unauthorized, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
 	}
-	unauthorized.Body.Close()
+	defer unauthorized.Body.Close()
+	if unauthorized.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("invalid token status = %d", unauthorized.StatusCode)
+	}
 }

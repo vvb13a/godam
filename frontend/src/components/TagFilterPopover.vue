@@ -34,6 +34,8 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   'update:modelValue': [value: string[]]
+  show: []
+  hide: []
 }>()
 
 const popover = ref<InstanceType<typeof Popover> | null>(null)
@@ -183,7 +185,7 @@ function toggleTag(tag: Tag): void {
 <template>
   <button
     type="button"
-    class="flex h-9 w-56 items-center gap-2 rounded-md border border-slate-300 bg-white px-2 text-left text-sm text-slate-700 shadow-sm transition hover:border-brand-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+    class="flex h-9 w-full min-w-0 items-center gap-2 rounded-md border border-slate-300 bg-white px-2 text-left text-sm text-slate-700 shadow-sm transition hover:border-brand-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
     :disabled="disabled"
     :title="disabled ? lockedTitle : 'Filter by tag'"
     @click="toggle"
@@ -212,7 +214,7 @@ function toggleTag(tag: Tag): void {
     <ChevronDown :size="14" class="shrink-0 text-slate-400" />
   </button>
 
-  <Popover ref="popover">
+  <Popover ref="popover" @show="emit('show')" @hide="emit('hide')">
     <div class="w-80">
       <div
         class="flex items-center gap-2 border-b border-slate-100 pb-2 dark:border-slate-800"

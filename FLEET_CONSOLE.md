@@ -64,7 +64,7 @@ X-Godam-Management-Token: <token>
 Rules:
 
 - one token per instance
-- separate from user sessions and library/service tokens
+- separate from library/service tokens
 - rotate independently
 - never put it in URLs or logs
 - if unset, the system endpoints return `404`

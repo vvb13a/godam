@@ -32,7 +32,6 @@ var (
 	tagService             *service.TagService
 	tagGroupService        *service.TagGroupService
 	instanceService        *service.InstanceService
-	userService            *service.UserService
 	statsService           *service.StatsService
 	backupService          *service.BackupService
 	systemService          *service.SystemService
@@ -55,7 +54,6 @@ func main() {
 		Tags:             tagService,
 		TagGroups:        tagGroupService,
 		Instance:         instanceService,
-		Users:            userService,
 		Stats:            statsService,
 		Backups:          backupService,
 		System:           systemService,
@@ -147,10 +145,6 @@ func initDependencies() {
 	smartCollectionService = service.NewSmartCollectionService(db)
 	presetService = service.NewPresetService(db)
 	statsService = service.NewStatsService(db, conversionStore)
-	userService = service.NewUserService(db)
-	if err := userService.Load(context.Background()); err != nil {
-		log.Printf("warning: could not prime user session cache: %v", err)
-	}
 	secretBox, err := service.NewSecretBox(filepath.Join(filepath.Dir(dbPath), "backup.key"))
 	if err != nil {
 		log.Fatalf("backup secret init failed: %v", err)

@@ -1,32 +1,62 @@
 import { reactive, watch } from 'vue'
 
-// SidebarPrefs controls which optional panels the layout shows. It is a
-// per-device preference (like the asset grid display settings) persisted to
-// localStorage.
+// SidebarPrefs controls which optional panels the layout shows and their order.
+// It is a per-device preference (like the asset grid display settings)
+// persisted to localStorage.
+export type SidebarToggleKey =
+  | 'quicklinks'
+  | 'collections'
+  | 'smartCollections'
+  | 'tags'
+
 export interface SidebarPrefs {
   quicklinks: boolean
   collections: boolean
   smartCollections: boolean
   tags: boolean
+  order: SidebarToggleKey[]
 }
 
 const SIDEBAR_STORAGE_KEY = 'godam:sidebar'
+const SIDEBAR_KEYS: SidebarToggleKey[] = [
+  'quicklinks',
+  'collections',
+  'smartCollections',
+  'tags',
+]
 
 const DEFAULT_PREFS: SidebarPrefs = {
   quicklinks: true,
   collections: true,
   smartCollections: true,
   tags: true,
+  order: [...SIDEBAR_KEYS],
+}
+
+function normalizeOrder(value: unknown): SidebarToggleKey[] {
+  const raw = Array.isArray(value) ? value : []
+  const order = raw.filter(
+    (key): key is SidebarToggleKey =>
+      typeof key === 'string' && SIDEBAR_KEYS.includes(key as SidebarToggleKey),
+  )
+  for (const key of SIDEBAR_KEYS) {
+    if (!order.includes(key)) order.push(key)
+  }
+  return order
 }
 
 function loadPrefs(): SidebarPrefs {
   try {
     const raw = localStorage.getItem(SIDEBAR_STORAGE_KEY)
-    if (!raw) return { ...DEFAULT_PREFS }
+    if (!raw) return { ...DEFAULT_PREFS, order: [...SIDEBAR_KEYS] }
     const parsed = JSON.parse(raw) as Partial<SidebarPrefs>
-    return { ...DEFAULT_PREFS, ...parsed }
+    return {
+      ...DEFAULT_PREFS,
+      ...parsed,
+      order: normalizeOrder(parsed.order),
+    }
   } catch {
-    return { ...DEFAULT_PREFS }
+    return { ...DEFAULT_PREFS, order: [...SIDEBAR_KEYS] }
   }
 }
 
@@ -43,12 +73,6 @@ watch(
   },
   { deep: true },
 )
-
-export type SidebarToggleKey =
-  | 'quicklinks'
-  | 'collections'
-  | 'smartCollections'
-  | 'tags'
 
 export interface SidebarToggle {
   key: SidebarToggleKey

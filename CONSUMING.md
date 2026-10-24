@@ -95,7 +95,7 @@ is an HS256 JWT signed with the same secret. godam validates the signature,
 }
 ```
 
-- `sub` becomes the asset's `uploaded_by` value.
+- `sub` identifies the token actor (for example, the upload-session owner).
 - `username` becomes `uploaded_by_name` for uploads made with this token.
 - `scope.default_filters` are applied when the URL/request does not supply that
   filter.
@@ -112,14 +112,15 @@ is an HS256 JWT signed with the same secret. godam validates the signature,
 `uncategorized` and `untagged` are also understood. `allowed_mime_types` and
 `locked_filters` accept a string or an array.
 
-Token authentication works anywhere cookie authentication does, including
-`/api/auth/me`, asset listing, uploads, previews, and content. Browser elements
-that cannot send an `Authorization` header (`<img>`, `<video>`, PDF viewers) can
-use `?token=<jwt>` on the authenticated content/preview URLs instead. The embed
-frontend adds that parameter automatically.
+Token authentication works on every API route, including `/api/auth/me`, asset
+listing, uploads, previews, and content. Browser elements that cannot send an
+`Authorization` header (`<img>`, `<video>`, PDF viewers) can use `?token=<jwt>`
+on the authenticated content/preview URLs instead. The embed frontend adds that
+parameter automatically.
 
-When a request carries a JWT, godam uses the token scope even if the browser also
-has a godam session cookie. An embed cannot inherit a broader login.
+When a request carries a JWT, godam enforces the token scope. Requests without a
+JWT are treated as trusted direct access and must be restricted at the network
+or proxy layer.
 
 ## Environment variables
 
@@ -128,7 +129,7 @@ has a godam session cookie. An embed cannot inherit a broader login.
 | Variable | Purpose |
 | --- | --- |
 | `GODAM_DOMAIN` | Public hostname, e.g. `dam.example.com`. godam derives `assets.<domain>` for rendered conversions. |
-| `GODAM_JWT_SECRET` | HS256 signing secret. Leave empty to disable JWT auth and use cookie sessions only. Use at least 32 random bytes, e.g. `openssl rand -hex 32`. |
+| `GODAM_JWT_SECRET` | HS256 signing secret. Leave empty to disable JWT auth; requests are then treated as trusted direct access. Use at least 32 random bytes, e.g. `openssl rand -hex 32`. |
 | `IMGPROXY_KEY` / `IMGPROXY_SALT` | Image conversion signing pair for Docker Compose. The godam container receives them as `GODAM_IMGPROXY_KEY` / `GODAM_IMGPROXY_SALT`. |
 
 ### Optional JWT checks

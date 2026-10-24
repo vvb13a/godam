@@ -24,7 +24,7 @@ func TestPresetServiceCRUD(t *testing.T) {
 	ctx := context.Background()
 	presets := NewPresetService(db)
 
-	created, err := presets.Create(ctx, "user-1", "Thumbnail", "thumbnail", testPresetParameters(), true, nil, nil)
+	created, err := presets.Create(ctx, "Thumbnail", "thumbnail", testPresetParameters(), true, nil, nil)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestPresetServiceCRUD(t *testing.T) {
 		t.Fatalf("created = %+v", created)
 	}
 
-	if _, err := presets.Create(ctx, "user-1", "Duplicate", "thumbnail", testPresetParameters(), true, nil, nil); !errors.Is(err, ErrPresetNameTaken) {
+	if _, err := presets.Create(ctx, "Duplicate", "thumbnail", testPresetParameters(), true, nil, nil); !errors.Is(err, ErrPresetNameTaken) {
 		t.Fatalf("duplicate error = %v", err)
 	}
 
@@ -67,13 +67,13 @@ func TestPresetServiceValidation(t *testing.T) {
 	presets := NewPresetService(db)
 	ctx := context.Background()
 
-	if _, err := presets.Create(ctx, "user-1", "", "empty-label", testPresetParameters(), true, nil, nil); !errors.Is(err, ErrInvalidInput) {
+	if _, err := presets.Create(ctx, "", "empty-label", testPresetParameters(), true, nil, nil); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("empty label error = %v", err)
 	}
-	if _, err := presets.Create(ctx, "user-1", "Label", "Bad Name", testPresetParameters(), true, nil, nil); !errors.Is(err, ErrInvalidInput) {
+	if _, err := presets.Create(ctx, "Label", "Bad Name", testPresetParameters(), true, nil, nil); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("bad name error = %v", err)
 	}
-	if _, err := presets.Create(ctx, "user-1", "Label", "800x600", testPresetParameters(), true, nil, nil); !errors.Is(err, ErrInvalidInput) {
+	if _, err := presets.Create(ctx, "Label", "800x600", testPresetParameters(), true, nil, nil); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("reserved name error = %v", err)
 	}
 }
@@ -111,7 +111,7 @@ func TestPresetAvailability(t *testing.T) {
 		t.Fatalf("link tag: %v", err)
 	}
 
-	restricted, err := presets.Create(ctx, "user", "Restricted", "restricted", testPresetParameters(), false, []string{collection.ID}, []string{tag.ID})
+	restricted, err := presets.Create(ctx, "Restricted", "restricted", testPresetParameters(), false, []string{collection.ID}, []string{tag.ID})
 	if err != nil {
 		t.Fatalf("create restricted preset: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestPresetAvailability(t *testing.T) {
 		t.Fatalf("asset-3 presets = %+v err=%v", allowed, err)
 	}
 
-	global, err := presets.Create(ctx, "user", "Global", "global", testPresetParameters(), true, nil, nil)
+	global, err := presets.Create(ctx, "Global", "global", testPresetParameters(), true, nil, nil)
 	if err != nil {
 		t.Fatalf("create global preset: %v", err)
 	}

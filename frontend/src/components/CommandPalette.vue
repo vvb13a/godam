@@ -15,18 +15,15 @@ import {
   Images,
   Palette,
   Search,
-  SignOut,
   SlidersH,
   Tag,
   Trash,
   Upload,
-  UserEdit,
 } from '@primeicons/vue'
 import type { Component } from 'vue'
 import { computed, nextTick, ref } from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import * as api from '../api/client'
-import { logout } from '../lib/auth'
 import { openBackupSettings } from '../lib/backupSettings'
 import { notifyConversionCacheChanged } from '../lib/conversionCache'
 import { openCollectionsDialog } from '../lib/collectionsDialog'
@@ -40,7 +37,6 @@ import { openTagsDialog } from '../lib/tagsDialog'
 import { THEME_OPTIONS, setThemeMode } from '../lib/theme'
 import { openUpload } from '../lib/upload'
 import { openUploadSettings } from '../lib/uploadSettings'
-import { openUserSettings } from '../lib/userSettings'
 import type { SmartCollectionFilter } from '../types'
 import Kbd from './Kbd.vue'
 
@@ -303,15 +299,6 @@ const groups = computed<PaletteGroup[]>(() => {
         openBackupSettings()
       },
     },
-    {
-      label: 'Open user settings',
-      icon: UserEdit,
-      keywords: ['user', 'account', 'profile', 'password'],
-      command: () => {
-        close()
-        openUserSettings()
-      },
-    },
     ...SIDEBAR_TOGGLES.map((toggle) => ({
       label: `${sidebarPrefs[toggle.key] ? 'Hide' : 'Show'} ${toggle.label}`,
       icon: SlidersH,
@@ -330,16 +317,6 @@ const groups = computed<PaletteGroup[]>(() => {
         setThemeMode(option.value)
       },
     })),
-    {
-      label: 'Sign out',
-      icon: SignOut,
-      keywords: ['logout', 'sign out', 'exit'],
-      command: async () => {
-        close()
-        await logout()
-        await router.push({ name: 'login' })
-      },
-    },
   )
 
   const result: PaletteGroup[] = [

@@ -26,6 +26,7 @@ import (
 )
 
 var (
+	ErrInvalidInput      = errors.New("invalid input")
 	ErrUnsupportedFormat = errors.New("file format not supported")
 	ErrFileTooLarge      = errors.New("file exceeds maximum allowed size")
 )
@@ -87,43 +88,7 @@ func (s *AssetService) GetByID(ctx context.Context, id string) (*domain.Asset, e
 	if err != nil {
 		return nil, err
 	}
-	asset := m.ToDomain()
-	if asset.UploadedBy != "" && asset.UploadedByName == "" {
-		asset.UploadedByName = s.uploaderNames(ctx, []string{asset.UploadedBy})[asset.UploadedBy]
-	}
-	return asset, nil
-}
-
-// uploaderNames resolves a set of user ids to display names in one query. A
-// missing or unknown id simply has no entry, so the caller leaves it blank.
-func (s *AssetService) uploaderNames(ctx context.Context, ids []string) map[string]string {
-	names := make(map[string]string, len(ids))
-	if len(ids) == 0 {
-		return names
-	}
-	unique := make([]string, 0, len(ids))
-	seen := make(map[string]struct{}, len(ids))
-	for _, id := range ids {
-		if id == "" {
-			continue
-		}
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		unique = append(unique, id)
-	}
-	if len(unique) == 0 {
-		return names
-	}
-	var users []store.User
-	if err := s.db.WithContext(ctx).Select("id", "name").Where("id IN ?", unique).Find(&users).Error; err != nil {
-		return names
-	}
-	for i := range users {
-		names[users[i].ID] = users[i].Name
-	}
-	return names
+	return m.ToDomain(), nil
 }
 
 const (
@@ -277,10 +242,6 @@ func (s *AssetService) applyAssetFilters(query *gorm.DB, filter domain.AssetFilt
 			query = query.Where("("+strings.Join(clauses, " OR ")+")", args...)
 		}
 	}
-	if len(filter.UploadedBy) > 0 {
-		query = query.Where("assets.uploaded_by IN ?", filter.UploadedBy)
-	}
-
 	if filter.MinDuration != nil {
 		query = query.Where("assets.duration_sec >= ?", *filter.MinDuration)
 	}
@@ -488,7 +449,7 @@ func (s *AssetService) List(ctx context.Context, filter domain.AssetFilter) (*do
 	var models []assetListRow
 	if err := query.
 		Select(
-			`assets.id, assets.uploaded_by, assets.uploaded_by_name,
+			`assets.id, assets.uploaded_by_name,
 			 assets.filename, assets.title, assets.note,
 			 assets.mime_type, assets.byte_size, assets.width, assets.height,
 			 assets.duration_sec, assets.page_count, assets.created_at, assets.updated_at,
@@ -508,21 +469,8 @@ func (s *AssetService) List(ctx context.Context, filter domain.AssetFilter) (*do
 	}
 
 	items := make([]domain.Asset, 0, len(models))
-	missingNames := make([]string, 0, len(models))
 	for i := range models {
-		item := models[i].ToDomain()
-		if item.UploadedBy != "" && item.UploadedByName == "" {
-			missingNames = append(missingNames, item.UploadedBy)
-		}
-		items = append(items, *item)
-	}
-	if len(missingNames) > 0 {
-		names := s.uploaderNames(ctx, missingNames)
-		for i := range items {
-			if items[i].UploadedByName == "" && items[i].UploadedBy != "" {
-				items[i].UploadedByName = names[items[i].UploadedBy]
-			}
-		}
+		items = append(items, *models[i].ToDomain())
 	}
 	return &domain.AssetPage{
 		Items:       items,
@@ -642,7 +590,7 @@ func (s *AssetService) deleteLegacyPreviews(ctx context.Context, id string) {
 
 // StartUpload creates a resumable upload session. Large files are sent in
 // chunks so the server never needs to hold the whole asset in memory.
-func (s *AssetService) StartUpload(ctx context.Context, userID, driverName, filename, mimeType string, size int64) (*UploadSession, error) {
+func (s *AssetService) StartUpload(ctx context.Context, actorID, driverName, filename, mimeType string, size int64) (*UploadSession, error) {
 	filename = strings.TrimSpace(filename)
 	if filename == "" {
 		return nil, fmt.Errorf("%w: filename is required", ErrInvalidInput)
@@ -657,18 +605,18 @@ func (s *AssetService) StartUpload(ctx context.Context, userID, driverName, file
 	if maxBytes > 0 && size > maxBytes {
 		return nil, fmt.Errorf("%w: %d bytes (limit: %d)", ErrFileTooLarge, size, maxBytes)
 	}
-	return s.uploads.create(userID, driverName, filename, mimeType, size)
+	return s.uploads.create(actorID, driverName, filename, mimeType, size)
 }
 
 // WriteUploadChunk appends one sequential chunk to an upload session.
-func (s *AssetService) WriteUploadChunk(ctx context.Context, id, userID string, offset int64, reader io.Reader) (int64, error) {
-	return s.uploads.write(id, userID, offset, reader)
+func (s *AssetService) WriteUploadChunk(ctx context.Context, id, actorID string, offset int64, reader io.Reader) (int64, error) {
+	return s.uploads.write(id, actorID, offset, reader)
 }
 
 // CompleteUpload validates the assembled file against the upload policy and
 // stores it as a new asset.
-func (s *AssetService) CompleteUpload(ctx context.Context, id, userID string) (*domain.Asset, error) {
-	session, err := s.uploads.detach(id, userID)
+func (s *AssetService) CompleteUpload(ctx context.Context, id, actorID string) (*domain.Asset, error) {
+	session, err := s.uploads.detach(id, actorID)
 	if err != nil {
 		return nil, err
 	}
@@ -677,21 +625,21 @@ func (s *AssetService) CompleteUpload(ctx context.Context, id, userID string) (*
 	if session.Received != session.Size {
 		return nil, fmt.Errorf("%w: upload incomplete (%d of %d bytes)", ErrInvalidInput, session.Received, session.Size)
 	}
-	return s.storeUploadFile(ctx, session.UserID, session.Driver, session.Filename, session.MimeType, session.Received, session.Path)
+	return s.storeUploadFile(ctx, session.Driver, session.Filename, session.MimeType, session.Received, session.Path)
 }
 
 // CancelUpload discards an in-progress upload and removes its staging file.
-func (s *AssetService) CancelUpload(id, userID string) error {
-	return s.uploads.remove(id, userID)
+func (s *AssetService) CancelUpload(id, actorID string) error {
+	return s.uploads.remove(id, actorID)
 }
 
-func (s *AssetService) Upload(ctx context.Context, userID, driverName, filename, mimeType string, size int64, reader io.Reader) (*domain.Asset, error) {
+func (s *AssetService) Upload(ctx context.Context, driverName, filename, mimeType string, size int64, reader io.Reader) (*domain.Asset, error) {
 	path, written, err := s.spoolUpload(ctx, reader)
 	if err != nil {
 		return nil, err
 	}
 	defer os.Remove(path)
-	return s.storeUploadFile(ctx, userID, driverName, filename, mimeType, written, path)
+	return s.storeUploadFile(ctx, driverName, filename, mimeType, written, path)
 }
 
 // spoolUpload streams a request body to a staging file, enforcing the library
@@ -734,7 +682,7 @@ const uploadSniffBytes int64 = 1 << 20
 // storeUploadFile finalises a staged file: it sniffs the content, stores the
 // original through the selected driver, creates a derived visual asset for
 // non-image types, and records the asset plus its metadata and colors.
-func (s *AssetService) storeUploadFile(ctx context.Context, userID, driverName, filename, mimeType string, size int64, path string) (*domain.Asset, error) {
+func (s *AssetService) storeUploadFile(ctx context.Context, driverName, filename, mimeType string, size int64, path string) (*domain.Asset, error) {
 	driver, err := s.registry.Get(driverName)
 	if err != nil {
 		return nil, err
@@ -771,7 +719,6 @@ func (s *AssetService) storeUploadFile(ctx context.Context, userID, driverName, 
 	now := time.Now().UTC()
 	asset := &domain.Asset{
 		ID:             id,
-		UploadedBy:     userID,
 		UploadedByName: uploaderName,
 		Filename:       filename,
 		StorageDriver:  driverName,

@@ -3,10 +3,7 @@ import Button from 'primevue/button'
 import DatePicker from 'primevue/datepicker'
 import ContextMenu from 'primevue/contextmenu'
 import Message from 'primevue/message'
-import IconField from 'primevue/iconfield'
-import InputIcon from 'primevue/inputicon'
 import InputNumber from 'primevue/inputnumber'
-import InputText from 'primevue/inputtext'
 import MultiSelect from 'primevue/multiselect'
 import Select from 'primevue/select'
 import Popover from 'primevue/popover'
@@ -21,14 +18,17 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  CloudUpload,
+  Cog,
   Download,
   Eye,
   EyeSlash,
   ExternalLink,
+  Filter,
   Folder,
+  GripVertical,
   Images,
   Pencil,
-  Plus,
   Refresh,
   Save,
   Search,
@@ -42,6 +42,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as api from '../api/client'
 import { assetDrag, endAssetDrag, startAssetDrag } from '../lib/assetDrag'
+import { openBackupSettings } from '../lib/backupSettings'
 import { notifyConversionCacheChanged } from '../lib/conversionCache'
 import { confirmDeleteMenuItem } from '../lib/menu'
 import {
@@ -61,22 +62,37 @@ import { editorDirty, leaveEditor, setEditorCloser } from '../lib/editorState'
 import { searchAssetWithGoogleLens } from '../lib/googleLens'
 import { library, loadLibraries, notifyLibraryChanged } from '../lib/library'
 import { panels, toggleRightPanel } from '../lib/panels'
-import { SIDEBAR_TOGGLES, sidebarPrefs } from '../lib/sidebar'
-import { openAssetCollections, openBulkAssetCollections } from '../lib/collectionsDialog'
+import {
+  SIDEBAR_TOGGLES,
+  sidebarPrefs,
+  type SidebarToggleKey,
+} from '../lib/sidebar'
+import {
+  openAssetCollections,
+  openBulkAssetCollections,
+  openCollectionsDialog,
+} from '../lib/collectionsDialog'
+import { openPresetsDialog } from '../lib/presetsDialog'
 import { clearSmartSelection, smartSelection } from '../lib/smartSelection'
-import { openAssetTags, openBulkAssetTags } from '../lib/tagsDialog'
+import { openAssetTags, openBulkAssetTags, openTagsDialog } from '../lib/tagsDialog'
 import { openUpload } from '../lib/upload'
+import { openUploadSettings } from '../lib/uploadSettings'
 import { warmPresets } from '../lib/warmPresets'
+import {
+  THEME_OPTIONS,
+  setThemeMode,
+  theme,
+  type ThemeMode,
+} from '../lib/theme'
 import type {
   Asset,
   Collection,
   SmartCollection,
   Tag as TagModel,
-  UserOption,
 } from '../types'
 import AssetCard from './AssetCard.vue'
-import CollectionFilterPopover from './CollectionFilterPopover.vue'
 import AssetEditor from './AssetEditor.vue'
+import CollectionFilterPopover from './CollectionFilterPopover.vue'
 import FilterInspector from './FilterInspector.vue'
 import Inspector from './Inspector.vue'
 import LibraryInspector from './LibraryInspector.vue'
@@ -100,6 +116,8 @@ const searchQuery = computed({
   },
 })
 const searchInput = ref(searchQuery.value)
+const searchInputRef = ref<HTMLInputElement | null>(null)
+const hasSearch = computed(() => searchQuery.value.trim() !== '')
 const assets = ref<Asset[]>([])
 const nextCursor = ref<string | null>(null)
 const total = ref(0)
@@ -164,10 +182,40 @@ function normalizeSpacing(value: unknown): SpacingLevel {
     : 'normal'
 }
 
+type LayoutSpacing = 'dense' | 'normal' | 'relaxed' | 'spacious'
+
+const LAYOUT_SPACING_LEVELS: LayoutSpacing[] = [
+  'dense',
+  'normal',
+  'relaxed',
+  'spacious',
+]
+const LAYOUT_SPACING_OPTIONS = [
+  { label: 'Dense', value: 'dense' },
+  { label: 'Normal', value: 'normal' },
+  { label: 'Relaxed', value: 'relaxed' },
+  { label: 'Spacious', value: 'spacious' },
+]
+// Total gap from the panel edge, including the scroll container's 4px padding.
+const LAYOUT_GAP_PX: Record<LayoutSpacing, number> = {
+  dense: 16,
+  normal: 32,
+  relaxed: 48,
+  spacious: 64,
+}
+const SCROLL_PADDING_PX = 4
+
+function normalizeLayoutSpacing(value: unknown): LayoutSpacing {
+  return LAYOUT_SPACING_LEVELS.includes(value as LayoutSpacing)
+    ? (value as LayoutSpacing)
+    : 'relaxed'
+}
+
 interface DisplayPrefs {
   size: number
   shape: CardShape
   gridGap: SpacingLevel
+  layoutSpacing: LayoutSpacing
   showExtension: boolean
   showName: boolean
   showSize: boolean
@@ -204,6 +252,20 @@ const shape = ref<CardShape>(
 )
 const gridGap = ref<SpacingLevel>(normalizeSpacing(savedPrefs.gridGap))
 const gridGapPx = computed(() => GRID_GAP_PX[gridGap.value])
+const layoutSpacing = ref<LayoutSpacing>(
+  normalizeLayoutSpacing(savedPrefs.layoutSpacing),
+)
+const layoutSpacingStyle = computed(() => {
+  const side = LAYOUT_GAP_PX[layoutSpacing.value] - SCROLL_PADDING_PX
+  return {
+    marginRight: `${side}px`,
+    marginLeft: `${side}px`,
+  }
+})
+const layoutInlineGap = computed(
+  () => `${LAYOUT_GAP_PX[layoutSpacing.value]}px`,
+)
+const layoutSpacingPx = computed(() => LAYOUT_GAP_PX[layoutSpacing.value])
 const showExtension = ref(savedPrefs.showExtension ?? false)
 const showName = ref(savedPrefs.showName ?? false)
 const showSize = ref(savedPrefs.showSize ?? false)
@@ -213,6 +275,11 @@ const playAudioOnHover = ref(savedPrefs.playAudioOnHover ?? true)
 const playVideoOnHover = ref(savedPrefs.playVideoOnHover ?? true)
 const displayPopover = ref<InstanceType<typeof Popover> | null>(null)
 const sortPopover = ref<InstanceType<typeof Popover> | null>(null)
+const managePopover = ref<InstanceType<typeof Popover> | null>(null)
+const themeMode = computed<ThemeMode>({
+  get: () => theme.mode,
+  set: (mode) => setThemeMode(mode),
+})
 const showSidebar = computed({
   get: () => !panels.leftCollapsed,
   set: (value: boolean) => {
@@ -231,6 +298,7 @@ watch(
     size,
     shape,
     gridGap,
+    layoutSpacing,
     showExtension,
     showName,
     showSize,
@@ -244,6 +312,7 @@ watch(
       size: clampSize(size.value),
       shape: shape.value,
       gridGap: gridGap.value,
+      layoutSpacing: layoutSpacing.value,
       showExtension: showExtension.value,
       showName: showName.value,
       showSize: showSize.value,
@@ -288,6 +357,62 @@ function toggleAllAutoplay(): void {
   playVideoOnHover.value = next
 }
 
+const allPanelsOn = computed(
+  () => showSidebar.value && showInspector.value,
+)
+
+function toggleAllPanels(): void {
+  const next = !allPanelsOn.value
+  showSidebar.value = next
+  showInspector.value = next
+}
+
+const allSidebarSectionsOn = computed(() =>
+  SIDEBAR_TOGGLES.every((toggle) => sidebarPrefs[toggle.key]),
+)
+
+function toggleAllSidebarSections(): void {
+  const next = !allSidebarSectionsOn.value
+  for (const toggle of SIDEBAR_TOGGLES) {
+    sidebarPrefs[toggle.key] = next
+  }
+}
+
+const orderedSidebarToggles = computed(() =>
+  sidebarPrefs.order.flatMap((key) => {
+    const toggle = SIDEBAR_TOGGLES.find((item) => item.key === key)
+    return toggle ? [toggle] : []
+  }),
+)
+
+const draggedSidebarSection = ref<SidebarToggleKey | null>(null)
+
+function onSidebarSectionDragStart(
+  event: DragEvent,
+  key: SidebarToggleKey,
+): void {
+  draggedSidebarSection.value = key
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', key)
+  }
+}
+
+function onSidebarSectionDragEnter(key: SidebarToggleKey): void {
+  const dragged = draggedSidebarSection.value
+  if (!dragged || dragged === key) return
+  const order = [...sidebarPrefs.order]
+  const from = order.indexOf(dragged)
+  const to = order.indexOf(key)
+  if (from < 0 || to < 0) return
+  ;[order[from], order[to]] = [order[to], order[from]]
+  sidebarPrefs.order = order
+}
+
+function onSidebarSectionDragEnd(): void {
+  draggedSidebarSection.value = null
+}
+
 const contextMenu = ref<{ show: (event: MouseEvent) => void } | null>(null)
 
 // Lasso (marquee) selection state. Coordinates are viewport-relative
@@ -308,6 +433,7 @@ interface LassoSession {
 }
 
 const gridContainer = ref<HTMLElement | null>(null)
+const gridContent = ref<HTMLElement | null>(null)
 const showBackToTop = ref(false)
 const transitionScrollTop = ref(0)
 const lasso = ref<LassoRect | null>(null)
@@ -392,7 +518,6 @@ type OptionalFilterKey =
   | 'preset'
   | 'color'
   | 'mime'
-  | 'uploader'
   | 'size'
   | 'duration'
   | 'pages'
@@ -404,7 +529,6 @@ const OPTIONAL_FILTERS: { key: OptionalFilterKey; label: string }[] = [
   { key: 'preset', label: 'Preset' },
   { key: 'color', label: 'Color' },
   { key: 'mime', label: 'MIME type' },
-  { key: 'uploader', label: 'Uploaded by' },
   { key: 'size', label: 'Size' },
   { key: 'duration', label: 'Duration' },
   { key: 'pages', label: 'Pages' },
@@ -417,7 +541,6 @@ const OPTIONAL_FILTER_QUERY_KEYS: Record<OptionalFilterKey, string[]> = {
   preset: ['preset', 'preset_exclude'],
   color: ['color'],
   mime: ['mime'],
-  uploader: ['uploader'],
   size: ['size_min', 'size_max'],
   duration: ['duration_min', 'duration_max'],
   pages: ['pages_min', 'pages_max'],
@@ -438,17 +561,66 @@ const visibleFilters = ref<OptionalFilterKey[]>(
 const availableOptionalFilters = computed(() =>
   OPTIONAL_FILTERS.filter((filter) => !visibleFilters.value.includes(filter.key)),
 )
-const filterPopover = ref<InstanceType<typeof Popover> | null>(null)
+const filtersPopover = ref<InstanceType<typeof Popover> | null>(null)
+const collectionFilterOpen = ref(false)
+const tagFilterOpen = ref(false)
+const searchOpen = ref(false)
+const searchWrapper = ref<HTMLElement | null>(null)
 
-function toggleFilterPopover(event: Event): void {
-  filterPopover.value?.toggle(event)
+function toggleFilters(event: Event): void {
+  filtersPopover.value?.toggle(event)
+}
+
+function onFiltersHide(): void {
+  collectionFilterOpen.value = false
+  tagFilterOpen.value = false
+}
+
+function toggleSearch(): void {
+  searchOpen.value = !searchOpen.value
+  if (searchOpen.value) nextTick(focusSearch)
+}
+
+function closeSearch(): void {
+  searchOpen.value = false
+}
+
+function onSearchPointerDown(event: PointerEvent): void {
+  if (!searchOpen.value) return
+  const wrapper = searchWrapper.value
+  if (wrapper && !wrapper.contains(event.target as Node)) closeSearch()
+}
+
+function focusSearch(): void {
+  nextTick(() => {
+    searchInputRef.value?.focus({ preventScroll: true })
+    searchInputRef.value?.select()
+  })
+}
+
+function commitSearch(value: string = searchInput.value): void {
+  if (searchTimer !== null) {
+    window.clearTimeout(searchTimer)
+    searchTimer = null
+  }
+  if (value !== searchQuery.value) searchQuery.value = value
+}
+
+function clearSearch(): void {
+  searchInput.value = ''
+  commitSearch('')
 }
 
 function addFilter(key: OptionalFilterKey): void {
   if (!visibleFilters.value.includes(key)) {
     visibleFilters.value.push(key)
   }
-  filterPopover.value?.hide()
+}
+
+function onAddFilter(value: unknown): void {
+  if (typeof value === 'string' && value) {
+    addFilter(value as OptionalFilterKey)
+  }
 }
 
 function removeFilter(key: OptionalFilterKey): void {
@@ -498,10 +670,6 @@ const colorFilter = computed<string[]>({
 const mimeFilter = computed<string[]>({
   get: () => parseList(route.query.mime),
   set: (values) => setQueryList('mime', values),
-})
-const uploaderFilter = computed<string[]>({
-  get: () => parseList(route.query.uploader),
-  set: (values) => setQueryList('uploader', values),
 })
 const presetFilter = computed<string>({
   get: () => queryValue('preset'),
@@ -563,20 +731,6 @@ const uncategorizedView = computed(() =>
   collectionFilter.value.includes('uncategorized'),
 )
 const untaggedView = computed(() => tagFilter.value.includes('untagged'))
-
-const users = ref<UserOption[]>([])
-
-async function loadUsers(): Promise<void> {
-  try {
-    users.value = await api.listUsers()
-  } catch {
-    users.value = []
-  }
-}
-
-const uploaderOptions = computed(() =>
-  users.value.map((user) => ({ value: user.id, label: user.name })),
-)
 
 const presetOptions = computed(() =>
   library.presets.map((preset) => ({
@@ -654,7 +808,6 @@ const filterFingerprint = computed(() =>
     type: typeFilter.value,
     color: colorFilter.value,
     mime: mimeFilter.value,
-    uploader: uploaderFilter.value,
     preset: presetFilter.value,
     presetExclude: presetExclude.value,
     sort: sort.value,
@@ -687,6 +840,14 @@ const SORT_DIRECTIONS = [
   { value: 'desc', label: 'Descending' },
 ]
 
+const hasCustomSort = computed(() => sort.value !== 'date-desc')
+const sortLabel = computed(() => {
+  const field =
+    SORT_FIELDS.find((option) => option.value === sortField.value)?.label ??
+    'Date added'
+  const direction = sortDirection.value === 'asc' ? 'ascending' : 'descending'
+  return `${field}, ${direction}`
+})
 
 const selectedSet = computed(() => new Set(selectedIds.value))
 const selectedAssets = computed(() =>
@@ -780,7 +941,6 @@ const hasActiveFilters = computed(
     typeFilter.value.length > 0 ||
     colorFilter.value.length > 0 ||
     mimeFilter.value.length > 0 ||
-    uploaderFilter.value.length > 0 ||
     Boolean(presetFilter.value) ||
     minSize.value !== null ||
     maxSize.value !== null ||
@@ -831,15 +991,12 @@ const cardWidth = computed(() =>
 const containerWidth = ref(0)
 
 function measureGrid(): void {
-  const el = gridContainer.value
+  const el = gridContent.value
   if (!el) return
-  const style = getComputedStyle(el)
-  const padding =
-    parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
-  containerWidth.value = Math.max(0, el.clientWidth - padding)
+  containerWidth.value = Math.max(0, el.clientWidth)
 }
 
-watch(gridGap, () => {
+watch([gridGap, layoutSpacing], () => {
   void nextTick(measureGrid)
 })
 
@@ -1102,7 +1259,6 @@ function assetParams(): api.AssetListParams {
     types: typeFilter.value.length ? typeFilter.value : undefined,
     colors: colorFilter.value.length ? colorFilter.value : undefined,
     mimeTypes: mimeFilter.value.length ? mimeFilter.value : undefined,
-    uploadedBy: uploaderFilter.value.length ? uploaderFilter.value : undefined,
     presetId: presetFilter.value || undefined,
     presetExclude: presetFilter.value ? presetExclude.value : undefined,
     minDuration: minDuration.value ?? undefined,
@@ -1610,6 +1766,20 @@ function toggleSort(event: Event): void {
   sortPopover.value?.toggle(event)
 }
 
+function toggleManage(event: Event): void {
+  managePopover.value?.toggle(event)
+}
+
+function openManage(action: () => void): void {
+  managePopover.value?.hide()
+  action()
+}
+
+function resetSort(): void {
+  if (embedSortLocked.value) return
+  setQueryValue('sort', '')
+}
+
 // onChanged replaces the affected asset client-side (title/note/tags/
 // collections changed), avoiding a full library/asset reload.
 function onChanged(asset: Asset): void {
@@ -1780,10 +1950,10 @@ function onAssetsSelectAll(event: KeyboardEvent): void {
 
 onMounted(() => {
   void load()
-  void loadUsers()
   measureGrid()
   setEditorCloser(closeEditor)
   window.addEventListener('keydown', onAssetsSelectAll)
+  document.addEventListener('pointerdown', onSearchPointerDown)
   if (gridContainer.value) {
     gridResizeObserver = new ResizeObserver(measureGrid)
     gridResizeObserver.observe(gridContainer.value)
@@ -1794,6 +1964,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('mousemove', onLassoMove)
   window.removeEventListener('mouseup', onLassoEnd)
   window.removeEventListener('keydown', onAssetsSelectAll)
+  document.removeEventListener('pointerdown', onSearchPointerDown)
   gridResizeObserver?.disconnect()
   clearLoadMoreTimer()
   if (searchTimer !== null) window.clearTimeout(searchTimer)
@@ -1806,510 +1977,541 @@ onBeforeUnmount(() => {
     <Message v-if="error" severity="error" class="mx-6 mt-4">{{ error }}</Message>
 
     <div class="flex min-h-0 flex-1">
-      <div class="relative flex min-w-0 flex-1 flex-col py-4">
-        <header
+      <div class="relative flex min-w-0 flex-1 flex-col">
+        <div
           v-if="!editingAsset"
-          class="flex flex-wrap items-center gap-3 pb-3"
+          class="pointer-events-none absolute inset-0 z-20"
         >
-          <CollectionFilterPopover
-            v-model="collectionFilter"
-            :disabled="embedCollectionLocked || uncategorizedView"
-            :locked-title="
-              uncategorizedView
-                ? 'Uncategorized is automatically applied in this view'
-                : 'This collection is locked by the host application'
-            "
-          />
-
-          <TagFilterPopover
-            v-model="tagFilter"
-            :disabled="embedTagLocked || untaggedView"
-            :locked-title="
-              untaggedView
-                ? 'Untagged is automatically applied in this view'
-                : 'Tags are locked by the host application'
-            "
-          />
-
-          <MultiSelect
-            v-model="typeFilter"
-            :options="TYPE_CATEGORIES"
-            option-label="label"
-            option-value="value"
-            display="chip"
-            placeholder="All types"
-            filter
-            showClear
-            :max-selected-labels="2"
-            :disabled="embedTypeLocked"
-            class="w-40"
+          <span
+            class="pointer-events-auto absolute bottom-10 left-10 inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-sm text-slate-500 shadow-lg backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/80 dark:text-slate-400"
           >
-            <template #option="slotProps">
-              <span class="flex w-full items-center gap-2">
-                <span class="min-w-0 flex-1 truncate">
-                  {{ slotProps.option.label }}
-                </span>
-                <span class="shrink-0 text-xs text-slate-400">
-                  {{ slotProps.option.count }}
-                </span>
-              </span>
-            </template>
-          </MultiSelect>
+            {{ assetCountLabel }}
+            <button
+              v-if="hasSearch"
+              type="button"
+              class="inline-flex max-w-52 items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 transition hover:bg-brand-100 dark:bg-brand-950/60 dark:text-brand-300 dark:hover:bg-brand-950"
+              :title="`Clear search: ${searchQuery}`"
+              @click="clearSearch"
+            >
+              <Search :size="11" class="shrink-0" />
+              <span class="truncate">{{ searchQuery.trim() }}</span>
+              <Times :size="11" class="shrink-0" />
+            </button>
+            <button
+              v-if="hasCustomSort"
+              type="button"
+              class="inline-flex max-w-52 items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 dark:bg-brand-950/60 dark:text-brand-300"
+              :class="
+                embedSortLocked
+                  ? 'cursor-default'
+                  : 'transition hover:bg-brand-100 dark:hover:bg-brand-950'
+              "
+              :disabled="embedSortLocked"
+              :title="
+                embedSortLocked
+                  ? `Sort: ${sortLabel} (locked by host)`
+                  : `Reset sort: ${sortLabel}`
+              "
+              @click="resetSort"
+            >
+              <SortAlt :size="11" class="shrink-0" />
+              <span class="truncate">{{ sortLabel }}</span>
+              <Times v-if="!embedSortLocked" :size="11" class="shrink-0" />
+            </button>
+            <span
+              v-if="refreshing"
+              class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-brand-600 dark:border-slate-700 dark:border-t-brand-400"
+              title="Refreshing assets"
+            ></span>
+            <span
+              v-if="
+                embedCollectionLocked ||
+                embedTagLocked ||
+                embedTypeLocked ||
+                embedMimeLocked ||
+                embedSearchLocked ||
+                embedSortLocked
+              "
+              class="text-xs font-medium text-brand-700 dark:text-brand-400"
+              title="The host application restricted this picker"
+            >
+              Restricted
+            </span>
+          </span>
 
-          <Button
-            severity="secondary"
-            title="Add filter"
-            aria-label="Add filter"
-            @click="toggleFilterPopover"
+          <div
+            class="pointer-events-auto absolute right-10 bottom-10 flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/80 p-1.5 shadow-lg backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/80"
           >
-            <template #icon><Plus :size="16" /></template>
-          </Button>
-
-          <Popover ref="filterPopover">
-            <div class="w-56 p-1">
-              <p
-                class="px-2 py-1 text-xs font-semibold tracking-wide text-slate-400 uppercase"
-              >
-                Add filter
-              </p>
+            <button
+              v-if="embedCanUpload"
+              type="button"
+              class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+              title="Upload"
+              aria-label="Upload"
+              @click="openUpload([], uploadCollectionId, uploadTagId)"
+            >
+              <Upload :size="16" />
+            </button>
+            <div ref="searchWrapper" class="relative">
               <button
-                v-for="filter in availableOptionalFilters"
-                :key="filter.key"
                 type="button"
-                class="flex w-full items-center rounded px-2 py-1.5 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
-                @click="addFilter(filter.key)"
+                class="relative inline-flex h-9 w-9 items-center justify-center rounded-full transition"
+                :class="
+                  hasSearch
+                    ? 'bg-brand-50 text-brand-700 hover:bg-brand-100 dark:bg-brand-950/60 dark:text-brand-300 dark:hover:bg-brand-950'
+                    : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
+                "
+                :aria-pressed="hasSearch"
+                title="Search"
+                aria-label="Search"
+                @click="toggleSearch"
               >
-                {{ filter.label }}
+                <Search :size="16" />
+                <span
+                  v-if="hasSearch"
+                  class="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-brand-500 ring-2 ring-white dark:ring-slate-900"
+                />
               </button>
-              <p
-                v-if="!availableOptionalFilters.length"
-                class="px-2 py-1 text-sm text-slate-400"
+              <div
+                v-if="searchOpen"
+                class="absolute right-0 bottom-full z-30 mb-2 flex w-80 max-w-[calc(100vw-2rem)] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-900 shadow-xl focus-within:border-brand-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                role="dialog"
+                aria-label="Search assets"
+                @keydown.esc.prevent="closeSearch"
               >
-                All filters are shown.
-              </p>
+                <Search :size="16" class="shrink-0 text-slate-400" />
+                <input
+                  ref="searchInputRef"
+                  v-model="searchInput"
+                  type="text"
+                  placeholder="Search assets…"
+                  title="Search title, note, and filename"
+                  :disabled="embedSearchLocked"
+                  class="min-w-0 flex-1 border-0 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-100"
+                  @keydown.enter.prevent="commitSearch()"
+                />
+                <button
+                  v-if="searchInput"
+                  type="button"
+                  class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  title="Clear search"
+                  aria-label="Clear search"
+                  @mousedown.prevent
+                  @click="clearSearch"
+                >
+                  <Times :size="12" />
+                </button>
+              </div>
+            </div>
+            <button
+              type="button"
+              class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+              title="Filters"
+              aria-label="Filters"
+              @click="toggleFilters"
+            >
+              <Filter :size="16" />
+            </button>
+            <button
+              type="button"
+              class="relative inline-flex h-9 w-9 items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-40"
+              :class="
+                hasCustomSort
+                  ? 'bg-brand-50 text-brand-700 hover:bg-brand-100 dark:bg-brand-950/60 dark:text-brand-300 dark:hover:bg-brand-950'
+                  : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
+              "
+              :aria-pressed="hasCustomSort"
+              :title="`Sort: ${sortLabel}`"
+              aria-label="Sort"
+              :disabled="embedSortLocked"
+              @click="toggleSort"
+            >
+              <SortAlt :size="16" />
+              <span
+                v-if="hasCustomSort"
+                class="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-brand-500 ring-2 ring-white dark:ring-slate-900"
+              />
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+              title="Display settings"
+              aria-label="Display settings"
+              @click="toggleDisplay"
+            >
+              <SlidersH :size="16" />
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+              title="Manage library"
+              aria-label="Manage library"
+              @click="toggleManage"
+            >
+              <Cog :size="16" />
+            </button>
+          </div>
+
+          <button
+            v-if="showBackToTop"
+            type="button"
+            class="pointer-events-auto absolute bottom-24 left-10 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-500 shadow-lg backdrop-blur transition-colors hover:bg-white hover:text-brand-700 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-brand-400"
+            title="Back to top"
+            aria-label="Back to top"
+            @click="scrollGridToTop"
+          >
+            <ChevronUp :size="16" />
+          </button>
+
+          <Popover
+            ref="filtersPopover"
+            :pt="{ content: { class: '!p-0' } }"
+            :dismissable="!collectionFilterOpen && !tagFilterOpen"
+            @hide="onFiltersHide"
+          >
+            <div class="w-[34rem] max-w-[calc(100vw-2rem)]">
+              <div
+                class="flex items-center justify-between border-b border-slate-100 px-3 py-2 dark:border-slate-800"
+              >
+                <span
+                  class="text-xs font-semibold tracking-wide text-slate-400 uppercase"
+                >
+                  Filters
+                </span>
+                <span class="text-xs text-slate-400">
+                  {{ assetCountLabel }}
+                </span>
+              </div>
+              <div class="max-h-[70vh] space-y-2 overflow-y-auto p-3">
+                <div class="grid grid-cols-2 gap-2">
+                  <CollectionFilterPopover
+                    v-model="collectionFilter"
+                    :disabled="embedCollectionLocked || uncategorizedView"
+                    :locked-title="
+                      uncategorizedView
+                        ? 'Uncategorized is automatically applied in this view'
+                        : 'This collection is locked by the host application'
+                    "
+                    @show="collectionFilterOpen = true"
+                    @hide="collectionFilterOpen = false"
+                  />
+                  <TagFilterPopover
+                    v-model="tagFilter"
+                    :disabled="embedTagLocked || untaggedView"
+                    :locked-title="
+                      untaggedView
+                        ? 'Untagged is automatically applied in this view'
+                        : 'Tags are locked by the host application'
+                    "
+                    @show="tagFilterOpen = true"
+                    @hide="tagFilterOpen = false"
+                  />
+                  <MultiSelect
+                    v-model="typeFilter"
+                    :options="TYPE_CATEGORIES"
+                    option-label="label"
+                    option-value="value"
+                    display="chip"
+                    placeholder="Types"
+                    filter
+                    showClear
+                    :max-selected-labels="1"
+                    :disabled="embedTypeLocked"
+                    class="w-full"
+                  >
+                    <template #option="slotProps">
+                      <span class="flex w-full items-center gap-2">
+                        <span class="min-w-0 flex-1 truncate">
+                          {{ slotProps.option.label }}
+                        </span>
+                        <span class="shrink-0 text-xs text-slate-400">
+                          {{ slotProps.option.count }}
+                        </span>
+                      </span>
+                    </template>
+                  </MultiSelect>
+                </div>
+
+                <div
+                  v-if="visibleFilters.length"
+                  class="grid grid-cols-2 gap-2"
+                >
+                  <div
+                    v-if="visibleFilters.includes('preset')"
+                    class="col-span-2 rounded-md border border-slate-200 p-2 dark:border-slate-800"
+                  >
+                    <div class="mb-1 flex items-center justify-between">
+                      <span class="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Preset</span>
+                      <button
+                        type="button"
+                        class="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+                        title="Remove preset filter"
+                        @click="removeFilter('preset')"
+                      >
+                        <Times :size="12" />
+                      </button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <Select
+                        v-model="presetFilter"
+                        :options="presetOptions"
+                        option-label="label"
+                        option-value="value"
+                        placeholder="Preset"
+                        filter
+                        showClear
+                        class="min-w-0 flex-1"
+                      >
+                        <template #option="slotProps">
+                          <span class="flex w-full items-center gap-2">
+                            <span class="min-w-0 flex-1 truncate">
+                              {{ slotProps.option.label }}
+                            </span>
+                            <span class="shrink-0 font-mono text-[11px] text-slate-400">
+                              {{ slotProps.option.name }}
+                            </span>
+                          </span>
+                        </template>
+                      </Select>
+                      <label
+                        class="flex shrink-0 items-center gap-1 text-[11px] text-slate-500"
+                        title="Show assets that are not allowed to use the selected preset"
+                      >
+                        <input
+                          v-model="presetExclude"
+                          type="checkbox"
+                          :disabled="!presetFilter"
+                        />
+                        Not allowed
+                      </label>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="visibleFilters.includes('color')"
+                    class="rounded-md border border-slate-200 p-2 dark:border-slate-800"
+                  >
+                    <div class="mb-1 flex items-center justify-between">
+                      <span class="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Color</span>
+                      <button
+                        type="button"
+                        class="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+                        title="Remove color filter"
+                        @click="removeFilter('color')"
+                      >
+                        <Times :size="12" />
+                      </button>
+                    </div>
+                    <MultiSelect
+                      v-model="colorFilter"
+                      :options="COLOR_OPTIONS"
+                      option-label="label"
+                      option-value="value"
+                      display="chip"
+                      placeholder="Colors"
+                      filter
+                      showClear
+                      :max-selected-labels="1"
+                      class="w-full"
+                      title="Filter images where a color covers at least 10% of the image"
+                    >
+                      <template #option="slotProps">
+                        <span class="flex items-center gap-2">
+                          <span
+                            v-if="slotProps.option.hex"
+                            class="h-3 w-3 shrink-0 rounded-full border border-slate-200 dark:border-slate-700"
+                            :style="{ backgroundColor: slotProps.option.hex }"
+                          />
+                          <span>{{ slotProps.option.label }}</span>
+                        </span>
+                      </template>
+                    </MultiSelect>
+                  </div>
+
+                  <div
+                    v-if="visibleFilters.includes('mime')"
+                    class="rounded-md border border-slate-200 p-2 dark:border-slate-800"
+                  >
+                    <div class="mb-1 flex items-center justify-between">
+                      <span class="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">MIME type</span>
+                      <button
+                        type="button"
+                        class="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-slate-800"
+                        :disabled="embedMimeLocked"
+                        title="Remove MIME type filter"
+                        @click="removeFilter('mime')"
+                      >
+                        <Times :size="12" />
+                      </button>
+                    </div>
+                    <MultiSelect
+                      v-model="mimeFilter"
+                      :options="mimeOptions"
+                      option-label="label"
+                      option-value="value"
+                      display="chip"
+                      placeholder="MIME types"
+                      filter
+                      showClear
+                      :max-selected-labels="1"
+                      :disabled="embedMimeLocked"
+                      class="w-full"
+                    >
+                      <template #option="slotProps">
+                        <span class="flex w-full items-center gap-2">
+                          <span class="min-w-0 flex-1 truncate">
+                            {{ slotProps.option.label }}
+                          </span>
+                          <span class="shrink-0 text-xs text-slate-400">
+                            {{ slotProps.option.count }}
+                          </span>
+                        </span>
+                      </template>
+                    </MultiSelect>
+                  </div>
+
+                  <div
+                    v-if="visibleFilters.includes('size')"
+                    class="rounded-md border border-slate-200 p-2 dark:border-slate-800"
+                  >
+                    <div class="mb-1 flex items-center justify-between">
+                      <span class="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Size (MB)</span>
+                      <button
+                        type="button"
+                        class="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+                        title="Remove size filter"
+                        @click="removeFilter('size')"
+                      >
+                        <Times :size="12" />
+                      </button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-1">
+                      <InputNumber v-model="minSize" :min="0" :max-fraction-digits="1" :use-grouping="false" showClear placeholder="Min" class="w-full" />
+                      <InputNumber v-model="maxSize" :min="0" :max-fraction-digits="1" :use-grouping="false" showClear placeholder="Max" class="w-full" />
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="visibleFilters.includes('duration')"
+                    class="rounded-md border border-slate-200 p-2 dark:border-slate-800"
+                  >
+                    <div class="mb-1 flex items-center justify-between">
+                      <span class="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Duration (s)</span>
+                      <button
+                        type="button"
+                        class="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+                        title="Remove duration filter"
+                        @click="removeFilter('duration')"
+                      >
+                        <Times :size="12" />
+                      </button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-1">
+                      <InputNumber v-model="minDuration" :min="0" :max-fraction-digits="1" :use-grouping="false" showClear placeholder="Min" class="w-full" />
+                      <InputNumber v-model="maxDuration" :min="0" :max-fraction-digits="1" :use-grouping="false" showClear placeholder="Max" class="w-full" />
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="visibleFilters.includes('pages')"
+                    class="rounded-md border border-slate-200 p-2 dark:border-slate-800"
+                  >
+                    <div class="mb-1 flex items-center justify-between">
+                      <span class="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Pages</span>
+                      <button
+                        type="button"
+                        class="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+                        title="Remove pages filter"
+                        @click="removeFilter('pages')"
+                      >
+                        <Times :size="12" />
+                      </button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-1">
+                      <InputNumber v-model="minPages" :min="0" :max-fraction-digits="0" :use-grouping="false" showClear placeholder="Min" class="w-full" />
+                      <InputNumber v-model="maxPages" :min="0" :max-fraction-digits="0" :use-grouping="false" showClear placeholder="Max" class="w-full" />
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="visibleFilters.includes('dimensions')"
+                    class="col-span-2 rounded-md border border-slate-200 p-2 dark:border-slate-800"
+                  >
+                    <div class="mb-1 flex items-center justify-between">
+                      <span class="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Dimensions</span>
+                      <button
+                        type="button"
+                        class="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+                        title="Remove dimensions filter"
+                        @click="removeFilter('dimensions')"
+                      >
+                        <Times :size="12" />
+                      </button>
+                    </div>
+                    <div class="grid grid-cols-4 gap-1">
+                      <InputNumber v-model="minWidth" :min="0" :max-fraction-digits="0" :use-grouping="false" showClear placeholder="W min" class="w-full" />
+                      <InputNumber v-model="maxWidth" :min="0" :max-fraction-digits="0" :use-grouping="false" showClear placeholder="W max" class="w-full" />
+                      <InputNumber v-model="minHeight" :min="0" :max-fraction-digits="0" :use-grouping="false" showClear placeholder="H min" class="w-full" />
+                      <InputNumber v-model="maxHeight" :min="0" :max-fraction-digits="0" :use-grouping="false" showClear placeholder="H max" class="w-full" />
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="visibleFilters.includes('added')"
+                    class="col-span-2 rounded-md border border-slate-200 p-2 dark:border-slate-800"
+                  >
+                    <div class="mb-1 flex items-center justify-between">
+                      <span class="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Date added</span>
+                      <button
+                        type="button"
+                        class="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+                        title="Remove added date filter"
+                        @click="removeFilter('added')"
+                      >
+                        <Times :size="12" />
+                      </button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-1">
+                      <DatePicker v-model="addedAfter" showClear showIcon date-format="yy-mm-dd" placeholder="From" class="w-full" />
+                      <DatePicker v-model="addedBefore" showClear showIcon date-format="yy-mm-dd" placeholder="To" class="w-full" />
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="visibleFilters.includes('modified')"
+                    class="col-span-2 rounded-md border border-slate-200 p-2 dark:border-slate-800"
+                  >
+                    <div class="mb-1 flex items-center justify-between">
+                      <span class="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Date modified</span>
+                      <button
+                        type="button"
+                        class="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+                        title="Remove modified date filter"
+                        @click="removeFilter('modified')"
+                      >
+                        <Times :size="12" />
+                      </button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-1">
+                      <DatePicker v-model="modifiedAfter" showClear showIcon date-format="yy-mm-dd" placeholder="From" class="w-full" />
+                      <DatePicker v-model="modifiedBefore" showClear showIcon date-format="yy-mm-dd" placeholder="To" class="w-full" />
+                    </div>
+                  </div>
+                </div>
+
+                <Select
+                  v-if="availableOptionalFilters.length"
+                  :model-value="''"
+                  :options="availableOptionalFilters"
+                  option-label="label"
+                  option-value="key"
+                  placeholder="Add filter"
+                  class="w-full"
+                  @update:model-value="onAddFilter"
+                />
+              </div>
             </div>
           </Popover>
-
-          <div
-            v-if="visibleFilters.includes('preset')"
-            class="flex items-center gap-1"
-          >
-            <Select
-              v-model="presetFilter"
-              :options="presetOptions"
-              option-label="label"
-              option-value="value"
-              placeholder="Preset"
-              filter
-              showClear
-              class="w-56"
-            >
-              <template #option="slotProps">
-                <span class="flex w-full items-center gap-2">
-                  <span class="min-w-0 flex-1 truncate">
-                    {{ slotProps.option.label }}
-                  </span>
-                  <span class="shrink-0 font-mono text-[11px] text-slate-400">
-                    {{ slotProps.option.name }}
-                  </span>
-                </span>
-              </template>
-            </Select>
-            <label
-              class="flex shrink-0 items-center gap-1.5 text-xs text-slate-500"
-              title="Show assets that are not allowed to use the selected preset"
-            >
-              <input
-                v-model="presetExclude"
-                type="checkbox"
-                :disabled="!presetFilter"
-              />
-              Not allowed
-            </label>
-            <button
-              type="button"
-              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
-              title="Remove preset filter"
-              @click="removeFilter('preset')"
-            >
-              <Times :size="14" />
-            </button>
-          </div>
-
-          <div
-            v-if="visibleFilters.includes('color')"
-            class="flex items-center gap-1"
-          >
-            <MultiSelect
-              v-model="colorFilter"
-              :options="COLOR_OPTIONS"
-              option-label="label"
-              option-value="value"
-              display="chip"
-              placeholder="Colors"
-              filter
-              showClear
-              :max-selected-labels="2"
-              class="w-40"
-              title="Filter images where a color covers at least 10% of the image"
-            >
-              <template #option="slotProps">
-                <span class="flex items-center gap-2">
-                  <span
-                    v-if="slotProps.option.hex"
-                    class="h-3 w-3 shrink-0 rounded-full border border-slate-200 dark:border-slate-700"
-                    :style="{ backgroundColor: slotProps.option.hex }"
-                  />
-                  <span>{{ slotProps.option.label }}</span>
-                </span>
-              </template>
-            </MultiSelect>
-            <button
-              type="button"
-              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
-              title="Remove color filter"
-              @click="removeFilter('color')"
-            >
-              <Times :size="14" />
-            </button>
-          </div>
-
-          <div
-            v-if="visibleFilters.includes('mime')"
-            class="flex items-center gap-1"
-          >
-            <MultiSelect
-              v-model="mimeFilter"
-              :options="mimeOptions"
-              option-label="label"
-              option-value="value"
-              display="chip"
-              placeholder="MIME types"
-              filter
-              showClear
-              :max-selected-labels="2"
-              :disabled="embedMimeLocked"
-              class="w-64"
-            >
-              <template #option="slotProps">
-                <span class="flex w-full items-center gap-2">
-                  <span class="min-w-0 flex-1 truncate">
-                    {{ slotProps.option.label }}
-                  </span>
-                  <span class="shrink-0 text-xs text-slate-400">
-                    {{ slotProps.option.count }}
-                  </span>
-                </span>
-              </template>
-            </MultiSelect>
-            <button
-              type="button"
-              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-slate-800"
-              :disabled="embedMimeLocked"
-              title="Remove MIME type filter"
-              @click="removeFilter('mime')"
-            >
-              <Times :size="14" />
-            </button>
-          </div>
-
-          <div
-            v-if="visibleFilters.includes('uploader')"
-            class="flex items-center gap-1"
-          >
-            <MultiSelect
-              v-model="uploaderFilter"
-              :options="uploaderOptions"
-              option-label="label"
-              option-value="value"
-              display="chip"
-              placeholder="Uploaded by"
-              filter
-              showClear
-              :max-selected-labels="2"
-              class="w-48"
-            />
-            <button
-              type="button"
-              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
-              title="Remove uploader filter"
-              @click="removeFilter('uploader')"
-            >
-              <Times :size="14" />
-            </button>
-          </div>
-
-          <div
-            v-if="visibleFilters.includes('size')"
-            class="flex items-center gap-1"
-          >
-            <span class="text-xs font-medium text-slate-500">Size (MB)</span>
-            <InputNumber
-              v-model="minSize"
-              :min="0"
-              :max-fraction-digits="1"
-              :use-grouping="false"
-              showClear
-              placeholder="Min"
-              class="w-24"
-            />
-            <span class="text-slate-400">–</span>
-            <InputNumber
-              v-model="maxSize"
-              :min="0"
-              :max-fraction-digits="1"
-              :use-grouping="false"
-              showClear
-              placeholder="Max"
-              class="w-24"
-            />
-            <button
-              type="button"
-              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
-              title="Remove size filter"
-              @click="removeFilter('size')"
-            >
-              <Times :size="14" />
-            </button>
-          </div>
-
-          <div
-            v-if="visibleFilters.includes('duration')"
-            class="flex items-center gap-1"
-          >
-            <span class="text-xs font-medium text-slate-500">Duration (s)</span>
-            <InputNumber
-              v-model="minDuration"
-              :min="0"
-              :max-fraction-digits="1"
-              :use-grouping="false"
-              showClear
-              placeholder="Min"
-              class="w-24"
-            />
-            <span class="text-slate-400">–</span>
-            <InputNumber
-              v-model="maxDuration"
-              :min="0"
-              :max-fraction-digits="1"
-              :use-grouping="false"
-              showClear
-              placeholder="Max"
-              class="w-24"
-            />
-            <button
-              type="button"
-              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
-              title="Remove duration filter"
-              @click="removeFilter('duration')"
-            >
-              <Times :size="14" />
-            </button>
-          </div>
-
-          <div
-            v-if="visibleFilters.includes('pages')"
-            class="flex items-center gap-1"
-          >
-            <span class="text-xs font-medium text-slate-500">Pages</span>
-            <InputNumber
-              v-model="minPages"
-              :min="0"
-              :max-fraction-digits="0"
-              :use-grouping="false"
-              showClear
-              placeholder="Min"
-              class="w-20"
-            />
-            <span class="text-slate-400">–</span>
-            <InputNumber
-              v-model="maxPages"
-              :min="0"
-              :max-fraction-digits="0"
-              :use-grouping="false"
-              showClear
-              placeholder="Max"
-              class="w-20"
-            />
-            <button
-              type="button"
-              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
-              title="Remove pages filter"
-              @click="removeFilter('pages')"
-            >
-              <Times :size="14" />
-            </button>
-          </div>
-
-          <div
-            v-if="visibleFilters.includes('dimensions')"
-            class="flex flex-wrap items-center gap-1"
-          >
-            <span class="text-xs font-medium text-slate-500">Dimensions</span>
-            <InputNumber
-              v-model="minWidth"
-              :min="0"
-              :max-fraction-digits="0"
-              :use-grouping="false"
-              showClear
-              placeholder="W min"
-              class="w-20"
-            />
-            <InputNumber
-              v-model="maxWidth"
-              :min="0"
-              :max-fraction-digits="0"
-              :use-grouping="false"
-              showClear
-              placeholder="W max"
-              class="w-20"
-            />
-            <InputNumber
-              v-model="minHeight"
-              :min="0"
-              :max-fraction-digits="0"
-              :use-grouping="false"
-              showClear
-              placeholder="H min"
-              class="w-20"
-            />
-            <InputNumber
-              v-model="maxHeight"
-              :min="0"
-              :max-fraction-digits="0"
-              :use-grouping="false"
-              showClear
-              placeholder="H max"
-              class="w-20"
-            />
-            <button
-              type="button"
-              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
-              title="Remove dimensions filter"
-              @click="removeFilter('dimensions')"
-            >
-              <Times :size="14" />
-            </button>
-          </div>
-
-          <div
-            v-if="visibleFilters.includes('added')"
-            class="flex flex-wrap items-center gap-1"
-          >
-            <span class="text-xs font-medium text-slate-500">Added</span>
-            <DatePicker
-              v-model="addedAfter"
-              showClear
-              showIcon
-              date-format="yy-mm-dd"
-              placeholder="From"
-              class="w-36"
-            />
-            <span class="text-slate-400">–</span>
-            <DatePicker
-              v-model="addedBefore"
-              showClear
-              showIcon
-              date-format="yy-mm-dd"
-              placeholder="To"
-              class="w-36"
-            />
-            <button
-              type="button"
-              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
-              title="Remove added date filter"
-              @click="removeFilter('added')"
-            >
-              <Times :size="14" />
-            </button>
-          </div>
-
-          <div
-            v-if="visibleFilters.includes('modified')"
-            class="flex flex-wrap items-center gap-1"
-          >
-            <span class="text-xs font-medium text-slate-500">Modified</span>
-            <DatePicker
-              v-model="modifiedAfter"
-              showClear
-              showIcon
-              date-format="yy-mm-dd"
-              placeholder="From"
-              class="w-36"
-            />
-            <span class="text-slate-400">–</span>
-            <DatePicker
-              v-model="modifiedBefore"
-              showClear
-              showIcon
-              date-format="yy-mm-dd"
-              placeholder="To"
-              class="w-36"
-            />
-            <button
-              type="button"
-              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
-              title="Remove modified date filter"
-              @click="removeFilter('modified')"
-            >
-              <Times :size="14" />
-            </button>
-          </div>
-
-          <IconField class="w-60">
-            <InputIcon>
-              <Search :size="14" />
-            </InputIcon>
-            <InputText
-              v-model="searchInput"
-              placeholder="Search assets…"
-              title="Search title, note, and filename"
-              :disabled="embedSearchLocked"
-              class="w-full"
-            />
-          </IconField>
-
-          <span
-            v-if="
-              embedCollectionLocked ||
-              embedTagLocked ||
-              embedTypeLocked ||
-              embedMimeLocked ||
-              embedSearchLocked ||
-              embedSortLocked
-            "
-            class="text-xs font-medium text-brand-700 dark:text-brand-400"
-            title="The host application restricted this picker"
-          >
-            Restricted by host
-          </span>
-
-          <Button
-            v-if="embedCanUpload"
-            label="Upload"
-            @click="openUpload([], uploadCollectionId, uploadTagId)"
-          >
-            <template #icon><Upload :size="16" /></template>
-          </Button>
-
-          <span class="ml-auto text-sm text-slate-400">
-            {{ assetCountLabel }}
-          </span>
-          <span
-            v-if="refreshing"
-            class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-brand-600 dark:border-slate-700 dark:border-t-brand-400"
-            title="Refreshing assets"
-          ></span>
-
-          <Button
-            severity="secondary"
-            title="Sort"
-            aria-label="Sort"
-            :disabled="embedSortLocked"
-            @click="toggleSort"
-          >
-            <template #icon><SortAlt :size="16" /></template>
-          </Button>
 
           <Popover ref="sortPopover">
             <div class="w-56 space-y-3">
@@ -2345,15 +2547,6 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </Popover>
-
-          <Button
-            severity="secondary"
-            title="Display settings"
-            aria-label="Display settings"
-            @click="toggleDisplay"
-          >
-            <template #icon><SlidersH :size="16" /></template>
-          </Button>
 
           <Popover ref="displayPopover">
             <div class="w-72 space-y-4">
@@ -2391,28 +2584,47 @@ onBeforeUnmount(() => {
               </div>
 
               <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
-                <p
-                  class="mb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
-                >
-                  Spacing
-                </p>
-                <div>
-                  <div class="mb-1 flex items-center justify-between">
-                    <span class="text-xs font-medium">Grid gap</span>
-                    <span class="text-xs text-slate-400">
-                      {{ gridGapPx }}px
-                    </span>
-                  </div>
-                  <SelectButton
-                    v-model="gridGap"
-                    :options="SPACING_OPTIONS"
-                    option-label="label"
-                    option-value="value"
-                    :allow-empty="false"
-                    size="small"
-                    class="w-full"
-                  />
+                <div class="mb-2 flex items-center justify-between">
+                  <p
+                    class="text-xs font-semibold tracking-wide text-slate-400 uppercase"
+                  >
+                    Layout Spacing
+                  </p>
+                  <span class="text-xs text-slate-400">
+                    {{ layoutSpacingPx }}px
+                  </span>
                 </div>
+                <SelectButton
+                  v-model="layoutSpacing"
+                  :options="LAYOUT_SPACING_OPTIONS"
+                  option-label="label"
+                  option-value="value"
+                  :allow-empty="false"
+                  size="small"
+                  class="w-full"
+                />
+              </div>
+
+              <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
+                <div class="mb-2 flex items-center justify-between">
+                  <p
+                    class="text-xs font-semibold tracking-wide text-slate-400 uppercase"
+                  >
+                    Grid Spacing
+                  </p>
+                  <span class="text-xs text-slate-400">
+                    {{ gridGapPx }}px
+                  </span>
+                </div>
+                <SelectButton
+                  v-model="gridGap"
+                  :options="SPACING_OPTIONS"
+                  option-label="label"
+                  option-value="value"
+                  :allow-empty="false"
+                  size="small"
+                  class="w-full"
+                />
               </div>
 
               <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
@@ -2456,11 +2668,21 @@ onBeforeUnmount(() => {
               </div>
 
               <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
-                <p
-                  class="mb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
-                >
-                  Panels
-                </p>
+                <div class="mb-2 flex items-center justify-between">
+                  <p
+                    class="text-xs font-semibold tracking-wide text-slate-400 uppercase"
+                  >
+                    Panels
+                  </p>
+                  <button
+                    type="button"
+                    class="inline-flex items-center text-slate-400 transition-colors hover:text-brand-700 dark:hover:text-brand-400"
+                    :title="allPanelsOn ? 'Hide all' : 'Show all'"
+                    @click="toggleAllPanels"
+                  >
+                    <component :is="allPanelsOn ? Eye : EyeSlash" :size="14" />
+                  </button>
+                </div>
                 <div class="space-y-2">
                   <div class="flex items-center justify-between">
                     <span class="text-xs font-medium">Sidebar</span>
@@ -2474,18 +2696,48 @@ onBeforeUnmount(() => {
               </div>
 
               <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
-                <p
-                  class="mb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
-                >
-                  Sidebar sections
-                </p>
+                <div class="mb-2 flex items-center justify-between">
+                  <p
+                    class="text-xs font-semibold tracking-wide text-slate-400 uppercase"
+                  >
+                    Sidebar sections
+                  </p>
+                  <button
+                    type="button"
+                    class="inline-flex items-center text-slate-400 transition-colors hover:text-brand-700 dark:hover:text-brand-400"
+                    :title="allSidebarSectionsOn ? 'Hide all' : 'Show all'"
+                    @click="toggleAllSidebarSections"
+                  >
+                    <component
+                      :is="allSidebarSectionsOn ? Eye : EyeSlash"
+                      :size="14"
+                    />
+                  </button>
+                </div>
                 <div class="space-y-2">
                   <div
-                    v-for="toggle in SIDEBAR_TOGGLES"
+                    v-for="toggle in orderedSidebarToggles"
                     :key="toggle.key"
-                    class="flex items-center justify-between"
+                    draggable="true"
+                    class="flex cursor-grab items-center justify-between gap-2 rounded px-1 py-1 select-none transition-colors hover:bg-slate-100 active:cursor-grabbing dark:hover:bg-slate-800"
+                    :class="
+                      draggedSidebarSection === toggle.key ? 'opacity-50' : ''
+                    "
+                    @dragstart="onSidebarSectionDragStart($event, toggle.key)"
+                    @dragenter.prevent="onSidebarSectionDragEnter(toggle.key)"
+                    @dragover.prevent
+                    @drop.prevent="onSidebarSectionDragEnd"
+                    @dragend="onSidebarSectionDragEnd"
                   >
-                    <span class="text-xs font-medium">{{ toggle.label }}</span>
+                    <div class="flex min-w-0 items-center gap-1.5">
+                      <GripVertical
+                        :size="14"
+                        class="shrink-0 text-slate-400"
+                      />
+                      <span class="truncate text-xs font-medium">
+                        {{ toggle.label }}
+                      </span>
+                    </div>
                     <ToggleSwitch v-model="sidebarPrefs[toggle.key]" />
                   </div>
                 </div>
@@ -2496,7 +2748,7 @@ onBeforeUnmount(() => {
                   <p
                     class="text-xs font-semibold tracking-wide text-slate-400 uppercase"
                   >
-                    Autoplay
+                    Autoplay on Hover
                   </p>
                   <button
                     type="button"
@@ -2520,13 +2772,79 @@ onBeforeUnmount(() => {
                     <ToggleSwitch v-model="playVideoOnHover" />
                   </div>
                 </div>
-                <p class="mt-2 text-xs text-slate-400">
-                  Preview audio/video on hover.
+              </div>
+
+              <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
+                <p
+                  class="mb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
+                >
+                  Theme
                 </p>
+                <SelectButton
+                  v-model="themeMode"
+                  :options="THEME_OPTIONS"
+                  option-label="label"
+                  option-value="value"
+                  :allow-empty="false"
+                  size="small"
+                  fluid
+                  class="w-full"
+                />
               </div>
             </div>
           </Popover>
-        </header>
+
+          <Popover ref="managePopover">
+            <div class="w-60">
+              <p
+                class="px-2 py-1 text-xs font-semibold tracking-wide text-slate-400 uppercase"
+              >
+                Manage
+              </p>
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                @click="openManage(openPresetsDialog)"
+              >
+                <Images :size="14" />
+                <span>Presets</span>
+              </button>
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                @click="openManage(openTagsDialog)"
+              >
+                <Tag :size="14" />
+                <span>Tags</span>
+              </button>
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                @click="openManage(openCollectionsDialog)"
+              >
+                <Folder :size="14" />
+                <span>Collections</span>
+              </button>
+              <div class="my-1 border-t border-slate-100 dark:border-slate-800" />
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                @click="openManage(openUploadSettings)"
+              >
+                <Cog :size="14" />
+                <span>Upload settings</span>
+              </button>
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                @click="openManage(openBackupSettings)"
+              >
+                <CloudUpload :size="14" />
+                <span>Storage &amp; backup</span>
+              </button>
+            </div>
+          </Popover>
+        </div>
 
         <AssetEditor
           v-if="editingAsset"
@@ -2539,14 +2857,18 @@ onBeforeUnmount(() => {
         <div v-show="!editingAsset" class="relative min-h-0 flex-1">
           <div
             ref="gridContainer"
-            class="relative h-full overflow-y-auto py-1.5 [overflow-anchor:none] [&_*]:[overflow-anchor:none]"
+            class="godam-scroll relative h-full overflow-y-auto px-1 [overflow-anchor:none] [&_*]:[overflow-anchor:none]"
             @mousedown="onLassoStart"
             @scroll.passive="onGridScroll"
           >
+          <div ref="gridContent" :style="layoutSpacingStyle">
           <Transition name="grid-fade">
             <div
               :key="gridRevision"
-              :style="{ '--grid-scroll-top': `${transitionScrollTop}px` }"
+              :style="{
+                '--grid-inline-gap': layoutInlineGap,
+                '--grid-scroll-top': `${transitionScrollTop}px`,
+              }"
             >
               <div
                 v-if="loading && !loadedOnce"
@@ -2622,17 +2944,8 @@ onBeforeUnmount(() => {
             </div>
           </Transition>
           </div>
+          </div>
 
-          <button
-            v-if="showBackToTop"
-            type="button"
-            class="absolute bottom-4 right-4 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-500 shadow-lg backdrop-blur transition-colors hover:bg-white hover:text-brand-700 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-brand-400"
-            title="Back to top"
-            aria-label="Back to top"
-            @click="scrollGridToTop"
-          >
-            <ChevronUp :size="16" />
-          </button>
         </div>
 
         <!-- Bottom-right control cluster, left to right: Save, Cancel, then
@@ -2688,7 +3001,7 @@ onBeforeUnmount(() => {
 
       <div
         class="relative h-full shrink-0 transition-[width] duration-200 ease-in-out"
-        :class="panels.rightCollapsed ? '' : 'p-4'"
+        :class="panels.rightCollapsed ? '' : 'px-4'"
         :style="{ width: panels.rightCollapsed ? '0px' : '22rem' }"
       >
         <aside
@@ -2812,5 +3125,37 @@ onBeforeUnmount(() => {
 .grid-fade-enter-from,
 .grid-fade-leave-to {
   opacity: 0;
+}
+
+.godam-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--brand-500) transparent;
+}
+
+.godam-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.godam-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.godam-scroll::-webkit-scrollbar-thumb {
+  border: none;
+  border-radius: 999px;
+  background: var(--brand-500);
+}
+
+.godam-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--brand-600);
+}
+
+.godam-scroll::-webkit-scrollbar-button {
+  display: none;
+}
+
+.godam-scroll::-webkit-scrollbar-corner {
+  background: transparent;
 }
 </style>

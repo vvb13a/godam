@@ -129,7 +129,7 @@ func TestBackupSFTPFlow(t *testing.T) {
 	}
 
 	content := testPNG(t)
-	asset, err := assets.Upload(context.Background(), "", "", "hello.png", "image/png", int64(len(content)), bytes.NewReader(content))
+	asset, err := assets.Upload(context.Background(), "", "hello.png", "image/png", int64(len(content)), bytes.NewReader(content))
 	if err != nil {
 		t.Fatal(err)
 	}

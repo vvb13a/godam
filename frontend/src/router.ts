@@ -5,7 +5,6 @@ import {
   type RouteLocationRaw,
   type RouteRecordRaw,
 } from 'vue-router'
-import * as api from './api/client'
 import { auth, loadMe } from './lib/auth'
 import { leaveEditor } from './lib/editorState'
 import {
@@ -18,12 +17,6 @@ import type { EmbedScope } from './types'
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/all' },
-  {
-    path: '/login',
-    name: 'login',
-    component: () => import('./components/LoginView.vue'),
-    meta: { public: true },
-  },
   {
     path: '/all',
     name: 'all',
@@ -135,23 +128,11 @@ function scopedFilterQuery(
     : true
 }
 
-// Resolve the session once, then gate every non-public route behind it.
+// Resolve the current actor once, then apply an embed token's scope.
 router.beforeEach(async (to) => {
   if (!auth.ready) await loadMe()
   if (embed.active && auth.user?.scope) applyEmbedScope(auth.user.scope)
-  if (to.meta.public) {
-    if (to.name === 'login' && auth.user) {
-      return embed.active
-        ? { name: 'all', query: embedQuery() }
-        : { name: 'all' }
-    }
-    return true
-  }
-  if (!auth.user) {
-    const redirect = to.fullPath && to.fullPath !== '/' ? { redirect: to.fullPath } : {}
-    return { name: 'login', query: redirect }
-  }
-  if (embed.active && auth.user.scope && to.name === 'all') {
+  if (embed.active && auth.user?.scope && to.name === 'all') {
     return scopedFilterQuery(to, auth.user.scope)
   }
   return true
@@ -161,13 +142,4 @@ router.beforeEach(async (to) => {
 // collections/tags, other routes, …), matching the editor's Back control.
 router.beforeEach(async () => {
   return await leaveEditor()
-})
-
-// A 401 from any non-auth API call means the session expired; drop the user and
-// send them back to login.
-api.setUnauthorizedHandler(() => {
-  auth.user = null
-  if (router.currentRoute.value.name !== 'login') {
-    void router.push({ name: 'login' })
-  }
 })

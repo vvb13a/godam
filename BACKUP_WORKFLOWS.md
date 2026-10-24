@@ -11,7 +11,7 @@ The guiding principle is:
 
 > The SQLite database is the catalog. Storage files alone are not a portable
 > import; the database owns asset IDs, storage keys, metadata, tags,
-> collections, libraries, and users.
+> collections, and libraries.
 
 There are three distinct workflows:
 

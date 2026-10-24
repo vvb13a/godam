@@ -4,7 +4,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -25,7 +24,6 @@ type Deps struct {
 	Tags             *service.TagService
 	TagGroups        *service.TagGroupService
 	Instance         *service.InstanceService
-	Users            *service.UserService
 	Stats            *service.StatsService
 	Backups          *service.BackupService
 	System           *service.SystemService
@@ -84,13 +82,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/system/info", s.handleSystemInfo)
 	s.mux.HandleFunc("GET /api/system/metrics", s.handleSystemMetrics)
 
-	s.mux.HandleFunc("POST /api/auth/login", s.handleLogin)
-	s.mux.HandleFunc("POST /api/auth/dev-login", s.handleDevLogin)
-	s.mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	s.mux.HandleFunc("GET /api/auth/me", s.handleMe)
-	s.mux.HandleFunc("GET /api/users", s.handleListUsers)
-	s.mux.HandleFunc("PUT /api/auth/profile", s.handleUpdateProfile)
-	s.mux.HandleFunc("PUT /api/auth/password", s.handleChangePassword)
 
 	s.mux.HandleFunc("GET /api/stats", s.handleStats)
 
@@ -176,11 +168,9 @@ func writeError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		status = http.StatusNotFound
-	case errors.Is(err, service.ErrInvalidCredentials):
-		status = http.StatusUnauthorized
-	case errors.Is(err, service.ErrEmailTaken), errors.Is(err, service.ErrPresetNameTaken):
+	case errors.Is(err, service.ErrPresetNameTaken):
 		status = http.StatusConflict
-	case errors.Is(err, service.ErrInvalidInput), errors.Is(err, service.ErrWeakPassword):
+	case errors.Is(err, service.ErrInvalidInput):
 		status = http.StatusBadRequest
 	case errors.Is(err, service.ErrUnsupportedFormat), errors.Is(err, service.ErrFileTooLarge):
 		status = http.StatusBadRequest
@@ -208,19 +198,18 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 
 // ---- Authentication context & ownership ----
 
-type contextKey int
+// adminActorID identifies direct (non-embed) callers for upload-session
+// ownership. Direct access is expected to be restricted at the network layer.
+const adminActorID = "admin"
 
-const userContextKey contextKey = iota
-
-func userFromContext(ctx context.Context) *domain.User {
-	user, _ := ctx.Value(userContextKey).(*domain.User)
-	return user
-}
-
-// currentUser returns the authenticated user. The auth middleware guarantees a
-// non-nil user on every protected route.
-func currentUser(r *http.Request) *domain.User {
-	return userFromContext(r.Context())
+// currentActor returns the authenticated actor. The auth middleware guarantees
+// a non-nil actor on every protected route.
+func currentActor(r *http.Request) *domain.Actor {
+	actor := domain.ActorFromContext(r.Context())
+	if actor == nil {
+		return &domain.Actor{ID: adminActorID}
+	}
+	return actor
 }
 
 // The owned* helpers resolve a resource by id.

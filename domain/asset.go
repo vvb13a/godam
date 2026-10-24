@@ -9,7 +9,6 @@ const (
 
 type Asset struct {
 	ID             string       `json:"id"`
-	UploadedBy     string       `json:"uploaded_by,omitempty"`
 	UploadedByName string       `json:"uploaded_by_name,omitempty"`
 	Filename       string       `json:"filename"`
 	Title          string       `json:"title,omitempty"`
@@ -36,11 +35,11 @@ type AssetColor struct {
 }
 
 // AssetFilter narrows an asset listing. List-valued filters (collections,
-// tags, types, colors, MIME types and uploaders) use OR within the list;
-// different filters combine with AND. Uncategorized and Untagged include
-// assets with no collection or tags in the corresponding OR group. Search
-// matches title, note and filename. Sort is a frontend sort key; Cursor is the
-// opaque keyset position.
+// tags, types, colors and MIME types) use OR within the list; different filters
+// combine with AND. Uncategorized and Untagged include assets with no
+// collection or tags in the corresponding OR group. Search matches title, note
+// and filename. Sort is a frontend sort key; Cursor is the opaque keyset
+// position.
 
 type AssetFilter struct {
 	CollectionIDs    []string
@@ -54,7 +53,6 @@ type AssetFilter struct {
 	Colors           []string
 	MimeTypes        []string
 	AllowedMimeTypes []string
-	UploadedBy       []string
 	MinDuration      *float64
 	MaxDuration      *float64
 	MinPages         *int

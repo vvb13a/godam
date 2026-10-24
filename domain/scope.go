@@ -40,8 +40,8 @@ func (s Scope) Locked(name string) bool {
 	return false
 }
 
-// Actor is the authenticated caller for a request. Session actors carry a user
-// id and no scope; JWT actors carry a token-backed scope and a synthetic user
+// Actor is the authenticated caller for a request. Direct actors have an id
+// and no scope; JWT actors carry a token-backed scope and a synthetic identity
 // whose id comes from the token subject.
 type Actor struct {
 	ID    string

@@ -136,10 +136,10 @@ func TestAssetListTotalCap(t *testing.T) {
 				SELECT ? UNION ALL SELECT n + 1 FROM seq WHERE n < ?
 			)
 			INSERT INTO assets (
-				id, uploaded_by, filename, storage_driver, storage_key,
+				id, filename, storage_driver, storage_key,
 				mime_type, byte_size, created_at, updated_at
 			)
-			SELECT lower(hex(randomblob(16))), '', printf('cap-%04d.txt', n),
+			SELECT lower(hex(randomblob(16))), printf('cap-%04d.txt', n),
 			       'local', '', 'text/plain', 1,
 			       '2026-01-01 00:00:00', '2026-01-01 00:00:00'
 			FROM seq`,
@@ -401,16 +401,15 @@ func TestAssetListMultiValueAndRangeFilters(t *testing.T) {
 	assets := &AssetService{db: db}
 	ctx := context.Background()
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	u1, u2 := "u1", "u2"
 	d10, d20 := 10.0, 20.0
 	p5, p10 := 5, 10
 	w100, w200, w300 := 100, 200, 300
 	h50, h100, h150 := 50, 100, 150
 
 	rows := []store.Asset{
-		{ID: "a1", Filename: "a1.png", UploadedBy: &u1, MimeType: "image/png", ByteSize: 100, Width: &w100, Height: &h50, DurationSec: &d10, CreatedAt: base, UpdatedAt: base},
-		{ID: "a2", Filename: "a2.pdf", UploadedBy: &u2, MimeType: "application/pdf", ByteSize: 200, Width: &w200, Height: &h100, DurationSec: &d20, PageCount: &p5, CreatedAt: base.Add(24 * time.Hour), UpdatedAt: base.Add(24 * time.Hour)},
-		{ID: "a3", Filename: "a3.txt", UploadedBy: &u1, MimeType: "text/plain", ByteSize: 300, Width: &w300, Height: &h150, PageCount: &p10, CreatedAt: base.Add(48 * time.Hour), UpdatedAt: base.Add(48 * time.Hour)},
+		{ID: "a1", Filename: "a1.png", MimeType: "image/png", ByteSize: 100, Width: &w100, Height: &h50, DurationSec: &d10, CreatedAt: base, UpdatedAt: base},
+		{ID: "a2", Filename: "a2.pdf", MimeType: "application/pdf", ByteSize: 200, Width: &w200, Height: &h100, DurationSec: &d20, PageCount: &p5, CreatedAt: base.Add(24 * time.Hour), UpdatedAt: base.Add(24 * time.Hour)},
+		{ID: "a3", Filename: "a3.txt", MimeType: "text/plain", ByteSize: 300, Width: &w300, Height: &h150, PageCount: &p10, CreatedAt: base.Add(48 * time.Hour), UpdatedAt: base.Add(48 * time.Hour)},
 	}
 	for i := range rows {
 		rows[i].StorageDriver = "local"
@@ -478,7 +477,6 @@ func TestAssetListMultiValueAndRangeFilters(t *testing.T) {
 	expect(domain.AssetFilter{Types: []string{"image", "video"}}, "a1")
 	expect(domain.AssetFilter{Types: []string{"image", "document"}}, "a1", "a2", "a3")
 	expect(domain.AssetFilter{MimeTypes: []string{"image/png", "application/pdf"}}, "a1", "a2")
-	expect(domain.AssetFilter{UploadedBy: []string{"u1"}}, "a1", "a3")
 
 	minSize, maxSize := int64(150), int64(250)
 	expect(domain.AssetFilter{MinSize: &minSize, MaxSize: &maxSize}, "a2")
@@ -531,7 +529,7 @@ func TestAssetListPresetFilter(t *testing.T) {
 	}
 
 	presets := NewPresetService(db)
-	restricted, err := presets.Create(ctx, "user", "Restricted", "restricted", testPresetParameters(), false, []string{collection.ID}, []string{tag.ID})
+	restricted, err := presets.Create(ctx, "Restricted", "restricted", testPresetParameters(), false, []string{collection.ID}, []string{tag.ID})
 	if err != nil {
 		t.Fatalf("create preset: %v", err)
 	}
@@ -567,7 +565,7 @@ func TestAssetListPresetFilter(t *testing.T) {
 	assertIDs(ids(domain.AssetFilter{PresetID: restricted.ID, Sort: "name-asc"}), "a1", "a2")
 	assertIDs(ids(domain.AssetFilter{PresetID: restricted.ID, PresetExclude: true, Sort: "name-asc"}), "a3")
 
-	global, err := presets.Create(ctx, "user", "Global", "global", testPresetParameters(), true, nil, nil)
+	global, err := presets.Create(ctx, "Global", "global", testPresetParameters(), true, nil, nil)
 	if err != nil {
 		t.Fatalf("create global preset: %v", err)
 	}

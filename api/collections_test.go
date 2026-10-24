@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
-	"net/http/cookiejar"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
@@ -27,14 +26,9 @@ func newTestClient(t *testing.T) (*httptest.Server, *http.Client) {
 	deps := api.Deps{
 		Collections: service.NewCollectionService(db),
 		Instance:    instances,
-		Users:       service.NewUserService(db),
 	}
 	server := httptest.NewServer(api.NewServer(deps))
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatalf("cookie jar: %v", err)
-	}
-	return server, &http.Client{Jar: jar}
+	return server, &http.Client{}
 }
 
 func request(t *testing.T, client *http.Client, method, url string, body any) (int, []byte) {
@@ -70,12 +64,6 @@ func TestCollectionTreeAPI(t *testing.T) {
 	server, client := newTestClient(t)
 	defer server.Close()
 
-	if code, _ := request(t, client, http.MethodGet, server.URL+"/api/instance", nil); code != http.StatusUnauthorized {
-		t.Fatalf("expected 401 before login, got %d", code)
-	}
-	if code, _ := request(t, client, http.MethodPost, server.URL+"/api/auth/dev-login", nil); code != http.StatusOK {
-		t.Fatalf("dev login status %d", code)
-	}
 	code, body := request(t, client, http.MethodGet, server.URL+"/api/instance", nil)
 	if code != http.StatusOK {
 		t.Fatalf("get instance: %d %s", code, body)

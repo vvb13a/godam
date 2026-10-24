@@ -45,7 +45,7 @@ func (s *Server) handleCreatePreset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	preset, err := s.deps.Presets.Create(
-		r.Context(), currentUser(r).ID, req.Label, req.Name, req.Parameters,
+		r.Context(), req.Label, req.Name, req.Parameters,
 		req.libraryWide(), req.CollectionIDs, req.TagIDs,
 	)
 	if err != nil {
