@@ -54,7 +54,14 @@ html {
 }
 
 html.dark {
-  background-color: #020617;
+  background-color: #0b1220;
+}
+
+/* Picker embeds are hosted inside the consuming application's modal, which
+   owns the backdrop, size and rounded corners. Keep the iframe transparent. */
+html.embed-picker,
+html.embed-picker.dark {
+  background-color: transparent;
 }
 
 /* Keep confirmation popups compact so long messages wrap instead of stretching

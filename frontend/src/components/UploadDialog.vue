@@ -22,6 +22,7 @@ import {
 } from '@primeicons/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as api from '../api/client'
+import { hasCapability } from '../lib/capabilities'
 import { formatDuration, formatSize } from '../lib/format'
 import { library, notifyLibraryChanged } from '../lib/library'
 import { libraryColorHex } from '../lib/libraryColors'
@@ -79,6 +80,7 @@ const dragActive = ref(false)
 let dragDepth = 0
 
 const categoryLimits = computed(() => hasCategoryUploadLimits())
+const canDeleteAssets = computed(() => hasCapability('assets:delete'))
 
 const totalBytes = computed(() =>
   upload.items.reduce((sum, item) => sum + item.file.size, 0),
@@ -584,6 +586,7 @@ function requestRemoveItem(item: UploadItem, event: Event): void {
     removeFile(item)
     return
   }
+  if (!canDeleteAssets.value) return
   confirm.require({
     group: 'upload',
     target: event.currentTarget as HTMLElement,
@@ -599,7 +602,7 @@ function requestRemoveItem(item: UploadItem, event: Event): void {
 }
 
 async function revertItem(item: UploadItem): Promise<void> {
-  if (!item.assetId || running.value) return
+  if (!item.assetId || running.value || !canDeleteAssets.value) return
   try {
     await api.deleteAsset(item.assetId)
     appliedAssetIds.delete(item.assetId)
@@ -628,7 +631,7 @@ function requestRevertUploaded(event: Event): void {
   const uploaded = upload.items.filter(
     (item) => item.status === 'done' && item.assetId,
   )
-  if (running.value || !uploaded.length) return
+  if (running.value || !uploaded.length || !canDeleteAssets.value) return
   confirm.require({
     group: 'upload',
     target: event.currentTarget as HTMLElement,
@@ -646,7 +649,7 @@ function requestRevertUploaded(event: Event): void {
 }
 
 async function revertUploaded(): Promise<void> {
-  if (running.value) return
+  if (running.value || !canDeleteAssets.value) return
   const uploaded = upload.items.filter(
     (item) => item.status === 'done' && item.assetId,
   )
@@ -980,7 +983,7 @@ function onPrimary(): void {
                       item.status === 'queued' ||
                       item.status === 'error' ||
                       item.status === 'canceled' ||
-                      item.status === 'done'
+                      (item.status === 'done' && canDeleteAssets)
                     "
                     class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/20 bg-black/60 text-white shadow-sm backdrop-blur transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-40"
                     :disabled="running"
@@ -1295,7 +1298,7 @@ function onPrimary(): void {
             <template #icon><Trash :size="16" /></template>
           </Button>
           <Button
-            v-if="doneCount"
+            v-if="doneCount && canDeleteAssets"
             label="Revert uploaded"
             severity="danger"
             outlined

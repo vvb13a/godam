@@ -1,25 +1,49 @@
-export interface EmbedScopeFilters {
-  collection?: string[]
-  tag?: string[]
-  type?: string[]
-  mime?: string[]
-  uncategorized?: boolean
-  untagged?: boolean
-  search?: string
-  sort?: string
+export type ScopeMode = 'allowed' | 'active' | 'locked' | 'hidden' | 'denied'
+
+export interface FilterGrant {
+  values?: string[]
+  mode: ScopeMode
+}
+
+export interface AttributeGrant {
+  key: string
+  values: string[]
+  mode: ScopeMode
+}
+
+export interface UploadSetting {
+  format?: string
+  mime_types?: string[]
+  max_bytes?: number
+}
+
+export interface AssetAttribute {
+  key: string
+  value: string
+}
+
+export interface AttributeFacetValue {
+  value: string
+  count: number
+}
+
+export interface AttributeFacet {
+  key: string
+  values: AttributeFacetValue[]
 }
 
 export interface EmbedScope {
   username?: string
-  default_filters: EmbedScopeFilters
-  locked_filters?: string[]
-  allowed_mime_types?: string[]
-  can_upload: boolean
+  all_filters?: boolean
+  filters?: Record<string, FilterGrant>
+  attributes?: AttributeGrant[]
+  upload_settings?: UploadSetting[]
 }
 
 export interface User {
   id: string
   name?: string
+  capabilities?: string[]
   scope?: EmbedScope
 }
 
@@ -113,6 +137,7 @@ export interface AssetMetadata {
 export interface Asset {
   id: string
   uploaded_by_name?: string
+  attributes?: AssetAttribute[]
   filename: string
   title?: string
   note?: string

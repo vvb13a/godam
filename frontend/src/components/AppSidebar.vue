@@ -9,6 +9,8 @@ import * as api from '../api/client'
 import { embed as embedState } from '../lib/embed'
 import { currentLibrary, library, refreshLibrary } from '../lib/library'
 import { panels, toggleLeftPanel } from '../lib/panels'
+import { hasCapability } from '../lib/capabilities'
+import { leaveEditor } from '../lib/editorState'
 import { clearAllFilters, hasActiveFilterState } from '../lib/filters'
 import { sidebarPrefs, type SidebarToggleKey } from '../lib/sidebar'
 import CollectionTree from './CollectionTree.vue'
@@ -40,6 +42,7 @@ function onLibraryClick(): void {
 }
 
 function startRename(): void {
+  if (!hasCapability('library:update')) return
   if (libraryClickTimer !== null) {
     window.clearTimeout(libraryClickTimer)
     libraryClickTimer = null
@@ -143,7 +146,8 @@ const libraryActive = computed(
   () => route.name === 'library' && !hasActiveFilterState(),
 )
 
-function openLibrary(): void {
+async function openLibrary(): Promise<void> {
+  if (!(await leaveEditor())) return
   clearAllFilters()
   void router.push({ name: 'library' })
 }

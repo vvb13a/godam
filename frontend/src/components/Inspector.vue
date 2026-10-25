@@ -3,6 +3,8 @@ import Message from 'primevue/message'
 import { Bolt, Plus, Refresh, Times } from '@primeicons/vue'
 import { computed, ref, watch } from 'vue'
 import * as api from '../api/client'
+import { auth } from '../lib/auth'
+import { hasCapability } from '../lib/capabilities'
 import { conversionCacheVersion } from '../lib/conversionCache'
 import { formatDateTime, formatDuration, formatRelative, formatSize } from '../lib/format'
 import { library } from '../lib/library'
@@ -19,6 +21,10 @@ import TagBadge from './TagBadge.vue'
 const props = defineProps<{ asset: Asset }>()
 const emit = defineEmits<{ close: []; changed: [asset: Asset] }>()
 
+const canUpdate = computed(() => hasCapability('assets:update'))
+const canWarm = computed(() => hasCapability('conversions:warm'))
+const canManagePresets = computed(() => hasCapability('settings:presets'))
+
 const busy = ref(false)
 const error = ref<string | null>(null)
 const previewFailed = ref(false)
@@ -34,6 +40,15 @@ const note = ref('')
 const saving = ref(false)
 
 const displayTitle = computed(() => props.asset.title || props.asset.filename)
+
+const visibleAttributes = computed(() => {
+  const grants = new Map(
+    (auth.user?.scope?.attributes ?? []).map((grant) => [grant.key, grant]),
+  )
+  return (props.asset.attributes ?? []).filter(
+    (attribute) => grants.get(attribute.key)?.mode !== 'hidden',
+  )
+})
 
 interface PropertyRow {
   label: string
@@ -171,6 +186,7 @@ function editCollections(): void {
 }
 
 async function save(): Promise<void> {
+  if (!canUpdate.value) return
   const nextTitle = title.value.trim()
   const nextNote = note.value.trim()
   if (
@@ -264,7 +280,8 @@ function removeCollection(collectionId: string): void {
             id="inspector-title"
             v-model="title"
             :placeholder="asset.filename"
-            class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm"
+            :disabled="!canUpdate"
+            class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm disabled:opacity-60"
             @blur="save"
             @keydown.enter.prevent="save"
           />
@@ -281,11 +298,26 @@ function removeCollection(collectionId: string): void {
             v-model="note"
             rows="3"
             placeholder="Add a note…"
-            class="w-full resize-y rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm"
+            :disabled="!canUpdate"
+            class="w-full resize-y rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm disabled:opacity-60"
             @blur="save"
           />
         </div>
         <p v-if="saving" class="text-xs text-slate-400">Saving…</p>
+      </section>
+
+      <section v-if="visibleAttributes.length">
+        <h3 class="mb-2 text-sm font-semibold">Attributes</h3>
+        <dl class="space-y-1 text-xs">
+          <div
+            v-for="attribute in visibleAttributes"
+            :key="`${attribute.key}:${attribute.value}`"
+            class="flex gap-2"
+          >
+            <dt class="w-24 shrink-0 text-slate-400">{{ attribute.key }}</dt>
+            <dd class="min-w-0 break-words">{{ attribute.value }}</dd>
+          </div>
+        </dl>
       </section>
 
       <section
@@ -339,6 +371,7 @@ function removeCollection(collectionId: string): void {
               {{ conversions.length }}
             </span>
             <button
+              v-if="canManagePresets"
               class="text-xs text-brand-700 hover:underline dark:text-brand-400"
               title="Manage presets"
               @click="openPresetsDialog(null, asset.id)"
@@ -346,6 +379,7 @@ function removeCollection(collectionId: string): void {
               Manage
             </button>
             <button
+              v-if="canWarm"
               class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400 disabled:opacity-40"
               title="Warm all presets for this asset"
               :disabled="warmProgress.active"

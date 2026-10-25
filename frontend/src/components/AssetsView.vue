@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
 import DatePicker from 'primevue/datepicker'
 import ContextMenu from 'primevue/contextmenu'
 import Message from 'primevue/message'
@@ -42,17 +41,22 @@ import {
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as api from '../api/client'
 import { auth } from '../lib/auth'
+import { hasAnyCapability, hasCapability } from '../lib/capabilities'
 import { assetDrag, endAssetDrag, startAssetDrag } from '../lib/assetDrag'
 import { openBackupSettings } from '../lib/backupSettings'
 import { notifyConversionCacheChanged } from '../lib/conversionCache'
 import {
   clearAllFilters,
+  clearAttributeFilter,
+  clearAttributeValue,
   clearCollectionFilter,
   clearTagFilter,
   filterSettings,
   filterState,
   initFilterState,
+  isFilterDenied,
   resetSort,
+  toggleAttribute,
   type FacetClickMode,
 } from '../lib/filters'
 import { confirmDeleteMenuItem } from '../lib/menu'
@@ -63,6 +67,7 @@ import {
   CARD_SIZE_MIN,
 } from '../lib/display'
 import type { CardShape } from '../lib/display'
+import { displaySettingsAnchor, displaySettingsRequest } from '../lib/displaySettings'
 import {
   cancelEmbedSelection,
   confirmEmbedSelection,
@@ -76,6 +81,7 @@ import { panels, toggleRightPanel } from '../lib/panels'
 import {
   SIDEBAR_TOGGLES,
   sidebarPrefs,
+  type SidebarMode,
   type SidebarToggleKey,
 } from '../lib/sidebar'
 import {
@@ -159,9 +165,6 @@ const embedTypeLocked = computed(() => embed.active && embed.typeLocked)
 const embedMimeLocked = computed(() => embed.active && embed.mimeLocked)
 const embedSearchLocked = computed(() => embed.active && embed.searchLocked)
 const embedSortLocked = computed(() => embed.active && embed.sortLocked)
-const embedCanUpload = computed(
-  () => !embed.active || (embed.scope?.can_upload !== false && embed.canUpload),
-)
 
 const DISPLAY_STORAGE_KEY = 'godam:display'
 
@@ -279,6 +282,14 @@ const showDuration = ref(savedPrefs.showDuration ?? false)
 const playAudioOnHover = ref(savedPrefs.playAudioOnHover ?? true)
 const playVideoOnHover = ref(savedPrefs.playVideoOnHover ?? true)
 const displayPopover = ref<InstanceType<typeof Popover> | null>(null)
+
+watch(displaySettingsRequest, () => {
+  if (displaySettingsAnchor.value) {
+    displayPopover.value?.toggle({
+      currentTarget: displaySettingsAnchor.value,
+    } as unknown as Event)
+  }
+})
 const sortPopover = ref<InstanceType<typeof Popover> | null>(null)
 const managePopover = ref<InstanceType<typeof Popover> | null>(null)
 const themeMode = computed<ThemeMode>({
@@ -499,7 +510,7 @@ function dateFilter(key: DateFilterKey) {
     get: () => {
       const raw = filterState[key]
       if (!raw) return null
-      const value = new Date(`${raw}T00:00:00`)
+      const value = new Date(raw.includes('T') ? raw : `${raw}T00:00:00`)
       return Number.isNaN(value.getTime()) ? null : value
     },
     set: (value) => {
@@ -874,6 +885,31 @@ const sortLabel = computed(() => {
   return `${field}, ${direction}`
 })
 
+const sidebarMode = computed<SidebarMode>({
+  get: () => sidebarPrefs.mode,
+  set: (mode) => {
+    sidebarPrefs.mode = mode
+  },
+})
+
+const SIDEBAR_MODE_OPTIONS: { label: string; value: SidebarMode }[] = [
+  { label: 'Classic', value: 'classic' },
+  { label: 'Attributes', value: 'attributes' },
+]
+
+const isAttributesSidebar = computed(
+  () => sidebarPrefs.mode === 'attributes',
+)
+
+const canManage = computed(() =>
+  hasAnyCapability([
+    'settings:presets',
+    'settings:upload',
+    'settings:storage',
+    'library:update',
+  ]),
+)
+
 const filterClickMode = computed<FacetClickMode>({
   get: () => filterSettings.clickMode,
   set: (mode) => {
@@ -937,9 +973,10 @@ function dateRangeLabel(
   to: string | null,
 ): string | null {
   if (!from && !to) return null
-  if (from && to) return `${prefix}: ${from} – ${to}`
-  if (from) return `${prefix}: from ${from}`
-  return `${prefix}: until ${to}`
+  const display = (value: string) => value.replace('T', ' ')
+  if (from && to) return `${prefix}: ${display(from)} – ${display(to)}`
+  if (from) return `${prefix}: from ${display(from)}`
+  return `${prefix}: until ${display(to as string)}`
 }
 
 const filterChips = computed<FilterChip[]>(() => {
@@ -980,6 +1017,20 @@ const filterChips = computed<FilterChip[]>(() => {
         filterState.untagged = false
       },
     })
+  }
+  for (const [key, values] of Object.entries(filterState.attributes)) {
+    const grant = auth.user?.scope?.attributes?.find(
+      (item) => item.key === key,
+    )
+    if (grant?.mode === 'hidden') continue
+    for (const value of values) {
+      chips.push({
+        key: `attribute:${key}:${value}`,
+        label: `${key}: ${value}`,
+        locked: grant?.mode === 'locked',
+        clear: () => clearAttributeValue(key, value),
+      })
+    }
   }
   for (const value of filterState.types) {
     chips.push({
@@ -1160,6 +1211,12 @@ const hasFacetFilters = computed(() =>
   ),
 )
 
+const activeAttributeGrants = computed(() =>
+  (auth.user?.scope?.attributes ?? []).filter(
+    (grant) => grant.mode === 'active',
+  ),
+)
+
 const selectedSet = computed(() => new Set(selectedIds.value))
 const selectedAssets = computed(() =>
   assets.value.filter((asset) => selectedSet.value.has(asset.id)),
@@ -1249,6 +1306,7 @@ const hasActiveFilters = computed(
     tagFilter.value.length > 0 ||
     filterState.untagged ||
     typeFilter.value.length > 0 ||
+    Object.keys(filterState.attributes).length > 0 ||
     colorFilter.value.length > 0 ||
     mimeFilter.value.length > 0 ||
     Boolean(presetFilter.value) ||
@@ -1320,6 +1378,7 @@ function clearLoadMoreTimer(): void {
 function scheduleLoadMore(): void {
   clearLoadMoreTimer()
   if (
+    editingAssetId.value ||
     !nextCursor.value ||
     loadingMore.value ||
     loading.value ||
@@ -1333,6 +1392,7 @@ function scheduleLoadMore(): void {
     const el = gridContainer.value
     if (
       !el ||
+      editingAssetId.value ||
       !nextCursor.value ||
       loadingMore.value ||
       loading.value ||
@@ -1462,12 +1522,17 @@ const menuItems = computed<MenuItem[]>(() => {
       icon: Download,
       command: downloadAsset,
     })
-    items.push({
-      label: 'Regenerate preview',
-      icon: Refresh,
-      command: () => void regeneratePreviews(selectedAssets.value.slice()),
-    })
-    if (selectedAssets.value[0]?.mime_type.startsWith('image/')) {
+    if (hasCapability('assets:update')) {
+      items.push({
+        label: 'Regenerate preview',
+        icon: Refresh,
+        command: () => void regeneratePreviews(selectedAssets.value.slice()),
+      })
+    }
+    if (
+      hasCapability('conversions:warm') &&
+      selectedAssets.value[0]?.mime_type.startsWith('image/')
+    ) {
       items.push({
         label: 'Warm presets',
         icon: Bolt,
@@ -1476,41 +1541,50 @@ const menuItems = computed<MenuItem[]>(() => {
         },
       })
     }
-    items.push({
-      label: 'Tags',
-      icon: Tag,
-      command: openTags,
-    })
-    items.push({
-      label: 'Collections',
-      icon: Folder,
-      command: () => {
-        const asset = selectedAssets.value[0]
-        if (asset) openAssetCollections(asset.id)
-      },
-    })
-    items.push({
-      label: 'Set as library cover',
-      icon: Images,
-      command: setAsLibraryCover,
-    })
-    items.push({
-      label: 'Set as library watermark',
-      icon: SlidersH,
-      command: setAsLibraryWatermark,
-    })
+    if (hasCapability('assets:update')) {
+      items.push({
+        label: 'Tags',
+        icon: Tag,
+        command: openTags,
+      })
+      items.push({
+        label: 'Collections',
+        icon: Folder,
+        command: () => {
+          const asset = selectedAssets.value[0]
+          if (asset) openAssetCollections(asset.id)
+        },
+      })
+    }
+    if (hasCapability('library:update')) {
+      items.push({
+        label: 'Set as library cover',
+        icon: Images,
+        command: setAsLibraryCover,
+      })
+      items.push({
+        label: 'Set as library watermark',
+        icon: SlidersH,
+        command: setAsLibraryWatermark,
+      })
+    }
   } else if (count > 1) {
     items.push({
       label: `Download ${count} as zip`,
       icon: Download,
       command: downloadSelectionZip,
     })
-    items.push({
-      label: `Regenerate ${count} previews`,
-      icon: Refresh,
-      command: () => void regeneratePreviews(selectedAssets.value.slice()),
-    })
-    if (selectedAssets.value.some((asset) => asset.mime_type.startsWith('image/'))) {
+    if (hasCapability('assets:update')) {
+      items.push({
+        label: `Regenerate ${count} previews`,
+        icon: Refresh,
+        command: () => void regeneratePreviews(selectedAssets.value.slice()),
+      })
+    }
+    if (
+      hasCapability('conversions:warm') &&
+      selectedAssets.value.some((asset) => asset.mime_type.startsWith('image/'))
+    ) {
       items.push({
         label: `Warm presets for ${count} assets`,
         icon: Bolt,
@@ -1519,43 +1593,47 @@ const menuItems = computed<MenuItem[]>(() => {
         },
       })
     }
-    items.push({
-      label: 'Tags',
-      icon: Tag,
-      items: [
-        {
-          label: 'Replace',
-          command: () => openBulkAssetTags(selectedIds.value.slice(), 'replace'),
-        },
-        {
-          label: 'Add',
-          command: () => openBulkAssetTags(selectedIds.value.slice(), 'add'),
-        },
-      ],
-    })
-    items.push({
-      label: 'Collections',
-      icon: Folder,
-      items: [
-        {
-          label: 'Replace',
-          command: () =>
-            openBulkAssetCollections(selectedIds.value.slice(), 'replace'),
-        },
-        {
-          label: 'Add',
-          command: () =>
-            openBulkAssetCollections(selectedIds.value.slice(), 'add'),
-        },
-      ],
-    })
+    if (hasCapability('assets:update')) {
+      items.push({
+        label: 'Tags',
+        icon: Tag,
+        items: [
+          {
+            label: 'Replace',
+            command: () => openBulkAssetTags(selectedIds.value.slice(), 'replace'),
+          },
+          {
+            label: 'Add',
+            command: () => openBulkAssetTags(selectedIds.value.slice(), 'add'),
+          },
+        ],
+      })
+      items.push({
+        label: 'Collections',
+        icon: Folder,
+        items: [
+          {
+            label: 'Replace',
+            command: () =>
+              openBulkAssetCollections(selectedIds.value.slice(), 'replace'),
+          },
+          {
+            label: 'Add',
+            command: () =>
+              openBulkAssetCollections(selectedIds.value.slice(), 'add'),
+          },
+        ],
+      })
+    }
   }
-  items.push(
-    confirmDeleteMenuItem(
-      count > 1 ? `Delete ${count} assets` : 'Delete',
-      () => void performDelete(selectedIds.value.slice()),
-    ),
-  )
+  if (hasCapability('assets:delete')) {
+    items.push(
+      confirmDeleteMenuItem(
+        count > 1 ? `Delete ${count} assets` : 'Delete',
+        () => void performDelete(selectedIds.value.slice()),
+      ),
+    )
+  }
   return items
 })
 
@@ -1587,11 +1665,11 @@ function assetParams(): api.AssetListParams {
       maxSize.value === null
         ? undefined
         : Math.round(maxSize.value * 1024 * 1024),
-    addedAfter: formatDateKey(addedAfter.value) || undefined,
-    addedBefore: formatDateKey(addedBefore.value) || undefined,
-    modifiedAfter: formatDateKey(modifiedAfter.value) || undefined,
-    modifiedBefore: formatDateKey(modifiedBefore.value) || undefined,
-    sort: sort.value || undefined,
+    addedAfter: filterState.addedAfter || undefined,
+    addedBefore: filterState.addedBefore || undefined,
+    modifiedAfter: filterState.modifiedAfter || undefined,
+    modifiedBefore: filterState.modifiedBefore || undefined,
+    sort: isFilterDenied('sort') ? undefined : sort.value || undefined,
     limit: 100,
   }
   if (filterState.uncategorized) params.uncategorized = true
@@ -1601,6 +1679,9 @@ function assetParams(): api.AssetListParams {
 
   if (filterState.untagged) params.untagged = true
   if (filterState.tags.length) params.tagIds = [...filterState.tags]
+  if (Object.keys(filterState.attributes).length) {
+    params.attributes = { ...filterState.attributes }
+  }
   return params
 }
 
@@ -2098,6 +2179,7 @@ function onSubjectChanged(): void {
 }
 
 function openEditor(asset: Asset): void {
+  clearLoadMoreTimer()
   selectedIds.value = [asset.id]
   anchorId.value = asset.id
   editingAssetId.value = asset.id
@@ -2110,6 +2192,7 @@ function openEditorForSelection(): void {
 
 function closeEditor(): void {
   editingAssetId.value = null
+  void nextTick(scheduleLoadMore)
 }
 
 // The Back control and the global router guard both go through leaveEditor,
@@ -2154,6 +2237,9 @@ function onAssetSaved(asset: Asset): void {
 }
 
 watch(filterFingerprint, () => {
+  // Changing filters while the editor is open leaves it stranded over a grid
+  // it no longer belongs to. Close it unless there are unsaved edits.
+  if (editingAssetId.value && !editorDirty.value) closeEditor()
   for (const filter of OPTIONAL_FILTERS) {
     if (
       hasFilterValue(filter.key) &&
@@ -2289,7 +2375,9 @@ onBeforeUnmount(() => {
           class="pointer-events-none absolute inset-0 z-20"
         >
           <div
-            class="pointer-events-auto absolute bottom-10 left-10 z-20 flex max-w-[calc(100%-18rem)] flex-wrap items-center gap-1.5"
+            v-if="!isAttributesSidebar"
+            class="pointer-events-auto absolute left-10 z-20 flex max-w-[calc(100%-18rem)] flex-wrap items-center gap-1.5"
+            :class="embedPicker ? 'bottom-24' : 'bottom-10'"
           >
             <span
               class="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-sm text-slate-500 shadow-lg backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/80 dark:text-slate-400"
@@ -2344,10 +2432,12 @@ onBeforeUnmount(() => {
           </div>
 
           <div
-            class="pointer-events-auto absolute right-10 bottom-10 flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/80 p-1.5 shadow-lg backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/80"
+            v-if="!isAttributesSidebar"
+            class="pointer-events-auto absolute right-10 flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/80 p-1.5 shadow-lg backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/80"
+            :class="embedPicker ? 'bottom-24' : 'bottom-10'"
           >
             <button
-              v-if="embedCanUpload"
+              v-if="hasCapability('assets:upload')"
               type="button"
               class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
               title="Upload"
@@ -2456,6 +2546,7 @@ onBeforeUnmount(() => {
               <SlidersH :size="16" />
             </button>
             <button
+              v-if="canManage"
               type="button"
               class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
               title="Manage library"
@@ -2469,7 +2560,8 @@ onBeforeUnmount(() => {
           <button
             v-if="showBackToTop"
             type="button"
-            class="pointer-events-auto absolute bottom-24 left-10 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-500 shadow-lg backdrop-blur transition-colors hover:bg-white hover:text-brand-700 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-brand-400"
+            class="pointer-events-auto absolute left-10 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-500 shadow-lg backdrop-blur transition-colors hover:bg-white hover:text-brand-700 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-brand-400"
+            :class="embedPicker ? 'bottom-40' : 'bottom-24'"
             title="Back to top"
             aria-label="Back to top"
             @click="scrollGridToTop"
@@ -2477,7 +2569,38 @@ onBeforeUnmount(() => {
             <ChevronUp :size="16" />
           </button>
 
+          <div
+            v-if="embedPicker"
+            class="pointer-events-none absolute inset-x-10 bottom-10 z-30 flex items-end justify-between gap-3"
+          >
+            <span
+              class="pointer-events-auto inline-flex shrink-0 items-center rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-sm text-slate-600 shadow-lg backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/80 dark:text-slate-300"
+            >
+              {{ selectedIds.length }} selected
+            </span>
+            <div
+              class="pointer-events-auto flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/80 p-1.5 shadow-lg backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/80"
+            >
+              <button
+                type="button"
+                class="inline-flex h-9 items-center rounded-full px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+                @click="cancelEmbedSelection"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="inline-flex h-9 items-center rounded-full bg-brand-600 px-3 text-sm font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
+                :disabled="!selectedIds.length"
+                @click="confirmEmbedSelection"
+              >
+                Select
+              </button>
+            </div>
+          </div>
+
           <Popover
+            v-if="!isAttributesSidebar"
             ref="filtersPopover"
             :pt="{ content: { class: '!p-0' } }"
             :dismissable="!collectionFilterOpen && !tagFilterOpen"
@@ -2544,6 +2667,45 @@ onBeforeUnmount(() => {
                       </span>
                     </template>
                   </MultiSelect>
+                </div>
+
+                <div
+                  v-for="grant in activeAttributeGrants"
+                  :key="grant.key"
+                  class="rounded-md border border-slate-200 p-2 dark:border-slate-800"
+                >
+                  <div class="mb-1 flex items-center justify-between">
+                    <span
+                      class="text-[11px] font-semibold tracking-wide text-slate-400 uppercase"
+                    >
+                      {{ grant.key }}
+                    </span>
+                    <button
+                      v-if="filterState.attributes[grant.key]?.length"
+                      type="button"
+                      class="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
+                      title="Clear attribute filter"
+                      @click="clearAttributeFilter(grant.key)"
+                    >
+                      <Times :size="12" />
+                    </button>
+                  </div>
+                  <div class="flex flex-wrap gap-1">
+                    <button
+                      v-for="value in grant.values"
+                      :key="value"
+                      type="button"
+                      class="rounded-full border px-2 py-0.5 text-xs transition"
+                      :class="
+                        filterState.attributes[grant.key]?.includes(value)
+                          ? 'border-brand-300 bg-brand-50 text-brand-700 dark:border-brand-800 dark:bg-brand-950/50 dark:text-brand-300'
+                          : 'border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800'
+                      "
+                      @click="toggleAttribute(grant.key, value)"
+                    >
+                      {{ value }}
+                    </button>
+                  </div>
                 </div>
 
                 <div
@@ -2827,7 +2989,9 @@ onBeforeUnmount(() => {
             </div>
           </Popover>
 
-          <Popover ref="sortPopover">
+          <Popover
+            v-if="!isAttributesSidebar"
+            ref="sortPopover">
             <div class="w-56 space-y-3">
               <div>
                 <p
@@ -2982,6 +3146,24 @@ onBeforeUnmount(() => {
               </div>
 
               <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
+                <p
+                  class="mb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase"
+                >
+                  Sidebar style
+                </p>
+                <SelectButton
+                  v-model="sidebarMode"
+                  :options="SIDEBAR_MODE_OPTIONS"
+                  option-label="label"
+                  option-value="value"
+                  :allow-empty="false"
+                  size="small"
+                  fluid
+                  class="w-full"
+                />
+              </div>
+
+              <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
                 <div class="mb-2 flex items-center justify-between">
                   <p
                     class="text-xs font-semibold tracking-wide text-slate-400 uppercase"
@@ -3130,7 +3312,9 @@ onBeforeUnmount(() => {
             </div>
           </Popover>
 
-          <Popover ref="managePopover">
+          <Popover
+            v-if="!isAttributesSidebar"
+            ref="managePopover">
             <div class="w-60">
               <p
                 class="px-2 py-1 text-xs font-semibold tracking-wide text-slate-400 uppercase"
@@ -3138,6 +3322,7 @@ onBeforeUnmount(() => {
                 Manage
               </p>
               <button
+                v-if="hasCapability('settings:presets')"
                 type="button"
                 class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
                 @click="openManage(openPresetsDialog)"
@@ -3146,6 +3331,7 @@ onBeforeUnmount(() => {
                 <span>Presets</span>
               </button>
               <button
+                v-if="hasCapability('library:update')"
                 type="button"
                 class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
                 @click="openManage(openTagsDialog)"
@@ -3154,6 +3340,7 @@ onBeforeUnmount(() => {
                 <span>Tags</span>
               </button>
               <button
+                v-if="hasCapability('library:update')"
                 type="button"
                 class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
                 @click="openManage(openCollectionsDialog)"
@@ -3163,6 +3350,7 @@ onBeforeUnmount(() => {
               </button>
               <div class="my-1 border-t border-slate-100 dark:border-slate-800" />
               <button
+                v-if="hasCapability('settings:upload')"
                 type="button"
                 class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
                 @click="openManage(openUploadSettings)"
@@ -3171,6 +3359,7 @@ onBeforeUnmount(() => {
                 <span>Upload settings</span>
               </button>
               <button
+                v-if="hasCapability('settings:storage')"
                 type="button"
                 class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
                 @click="openManage(openBackupSettings)"
@@ -3336,6 +3525,9 @@ onBeforeUnmount(() => {
       </div>
 
       <div
+        v-if="
+          !isAttributesSidebar || singleAsset || selectedAssets.length > 1
+        "
         class="relative h-full shrink-0 transition-[width] duration-200 ease-in-out"
         :class="panels.rightCollapsed ? '' : 'px-4'"
         :style="{ width: panels.rightCollapsed ? '0px' : '22rem' }"
@@ -3391,30 +3583,6 @@ onBeforeUnmount(() => {
           <ChevronRight v-else :size="12" />
         </button>
       </div>
-    </div>
-
-    <div
-      v-if="embedPicker"
-      class="flex shrink-0 items-center gap-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 py-3"
-    >
-      <span class="text-sm text-slate-500 dark:text-slate-400">
-        {{
-          embedSingle ? 'Choose one asset' : 'Choose one or more assets'
-        }}
-      </span>
-      <span class="ml-auto text-sm text-slate-500 dark:text-slate-400">
-        {{ selectedIds.length }} selected
-      </span>
-      <Button
-        label="Cancel"
-        severity="secondary"
-        @click="cancelEmbedSelection"
-      />
-      <Button
-        label="Use selected"
-        :disabled="!selectedIds.length"
-        @click="confirmEmbedSelection"
-      />
     </div>
 
     <ContextMenu ref="contextMenu" :model="menuItems">

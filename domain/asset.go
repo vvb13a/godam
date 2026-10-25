@@ -8,23 +8,24 @@ const (
 )
 
 type Asset struct {
-	ID             string       `json:"id"`
-	UploadedByName string       `json:"uploaded_by_name,omitempty"`
-	Filename       string       `json:"filename"`
-	Title          string       `json:"title,omitempty"`
-	Note           string       `json:"note,omitempty"`
-	StorageDriver  string       `json:"storage_driver"`
-	StorageKey     string       `json:"storage_key"`
-	MimeType       string       `json:"mime_type"`
-	ByteSize       int64        `json:"byte_size"`
-	Role           string       `json:"role,omitempty"`
-	ImageOf        string       `json:"image_of,omitempty"`
-	Metadata       Metadata     `json:"metadata"`
-	Colors         []AssetColor `json:"colors,omitempty"`
-	Tags           []Tag        `json:"tags,omitempty"`
-	Collections    []Collection `json:"collections,omitempty"`
-	CreatedAt      time.Time    `json:"created_at"`
-	UpdatedAt      time.Time    `json:"updated_at"`
+	ID             string           `json:"id"`
+	UploadedByName string           `json:"uploaded_by_name,omitempty"`
+	Filename       string           `json:"filename"`
+	Title          string           `json:"title,omitempty"`
+	Note           string           `json:"note,omitempty"`
+	StorageDriver  string           `json:"storage_driver"`
+	StorageKey     string           `json:"storage_key"`
+	MimeType       string           `json:"mime_type"`
+	ByteSize       int64            `json:"byte_size"`
+	Role           string           `json:"role,omitempty"`
+	ImageOf        string           `json:"image_of,omitempty"`
+	Metadata       Metadata         `json:"metadata"`
+	Attributes     []AssetAttribute `json:"attributes,omitempty"`
+	Colors         []AssetColor     `json:"colors,omitempty"`
+	Tags           []Tag            `json:"tags,omitempty"`
+	Collections    []Collection     `json:"collections,omitempty"`
+	CreatedAt      time.Time        `json:"created_at"`
+	UpdatedAt      time.Time        `json:"updated_at"`
 }
 
 // AssetColor is one extracted palette entry.
@@ -42,34 +43,34 @@ type AssetColor struct {
 // position.
 
 type AssetFilter struct {
-	CollectionIDs    []string
-	TagIDs           []string
-	PresetID         string
-	PresetExclude    bool
-	Uncategorized    bool
-	Untagged         bool
-	Search           string
-	Types            []string
-	Colors           []string
-	MimeTypes        []string
-	AllowedMimeTypes []string
-	MinDuration      *float64
-	MaxDuration      *float64
-	MinPages         *int
-	MaxPages         *int
-	MinWidth         *int
-	MaxWidth         *int
-	MinHeight        *int
-	MaxHeight        *int
-	MinSize          *int64
-	MaxSize          *int64
-	AddedAfter       *time.Time
-	AddedBefore      *time.Time
-	ModifiedAfter    *time.Time
-	ModifiedBefore   *time.Time
-	Sort             string
-	Cursor           string
-	Limit            int
+	CollectionIDs  []string
+	TagIDs         []string
+	PresetID       string
+	PresetExclude  bool
+	Uncategorized  bool
+	Untagged       bool
+	Search         string
+	Types          []string
+	Colors         []string
+	MimeTypes      []string
+	Attributes     map[string][]string
+	MinDuration    *float64
+	MaxDuration    *float64
+	MinPages       *int
+	MaxPages       *int
+	MinWidth       *int
+	MaxWidth       *int
+	MinHeight      *int
+	MaxHeight      *int
+	MinSize        *int64
+	MaxSize        *int64
+	AddedAfter     *time.Time
+	AddedBefore    *time.Time
+	ModifiedAfter  *time.Time
+	ModifiedBefore *time.Time
+	Sort           string
+	Cursor         string
+	Limit          int
 }
 
 // AssetPage is one cursor-paginated slice of assets. Total is capped at 1000

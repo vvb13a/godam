@@ -2,52 +2,125 @@ package domain
 
 import "context"
 
-// ScopeFilters is the filter set a JWT may apply to a library listing. The JSON
-// names match the embed URL query parameters so a token can be mapped onto the
-// picker without a translation layer. CollectionIDs and TagIDs accept both the
-// short embed names ("collection"/"tag") and the API names via the verifier.
-type ScopeFilters struct {
-	CollectionIDs []string `json:"collection,omitempty"`
-	TagIDs        []string `json:"tag,omitempty"`
-	Types         []string `json:"type,omitempty"`
-	MimeTypes     []string `json:"mime,omitempty"`
-	Uncategorized bool     `json:"uncategorized,omitempty"`
-	Untagged      bool     `json:"untagged,omitempty"`
-	Search        string   `json:"search,omitempty"`
-	Sort          string   `json:"sort,omitempty"`
+// ScopeMode controls whether a token-scoped filter or attribute is a default
+// value, an enforced value, or an enforced value hidden from the embed UI.
+type ScopeMode string
+
+const (
+	// ScopeModeAllowed makes the filter available with no default.
+	ScopeModeAllowed ScopeMode = "allowed"
+	// ScopeModeActive applies the values as the initial filter state. The client
+	// may change or clear them.
+	ScopeModeActive ScopeMode = "active"
+	// ScopeModeLocked applies the values and the client cannot change them.
+	ScopeModeLocked ScopeMode = "locked"
+	// ScopeModeHidden applies the values without exposing them to the client.
+	ScopeModeHidden ScopeMode = "hidden"
+	// ScopeModeDenied hides the filter and rejects it when supplied.
+	ScopeModeDenied ScopeMode = "denied"
+)
+
+// FilterNames is the canonical set of listing filters that a token can grant or
+// deny. Attribute filters are scoped separately.
+var FilterNames = []string{
+	"collection",
+	"tag",
+	"type",
+	"mime",
+	"search",
+	"sort",
+	"uncategorized",
+	"untagged",
+	"color",
+	"size",
+	"duration",
+	"pages",
+	"dimensions",
+	"added",
+	"modified",
+}
+
+// FilterGrant is the token's scope for one listing filter. Values are defaults
+// or enforced values depending on Mode; they never restrict which options the
+// picker offers.
+type FilterGrant struct {
+	Values []string  `json:"values,omitempty"`
+	Mode   ScopeMode `json:"mode"`
+}
+
+// UploadSetting narrows the formats and size limits available to a token. The
+// settings are applied on top of the library's own upload policy and can only
+// make it stricter.
+type UploadSetting struct {
+	Format    string   `json:"format,omitempty"`
+	MimeTypes []string `json:"mime_types,omitempty"`
+	MaxBytes  int64    `json:"max_bytes,omitempty"`
 }
 
 // Scope is the authorization envelope of a JWT-backed embed session. It is
 // always enforced server-side; the frontend also reads it to render the
-// matching locked controls.
+// matching controls.
 type Scope struct {
-	Username         string       `json:"username,omitempty"`
-	DefaultFilters   ScopeFilters `json:"default_filters"`
-	LockedFilters    []string     `json:"locked_filters,omitempty"`
-	AllowedMimeTypes []string     `json:"allowed_mime_types,omitempty"`
-	CanUpload        bool         `json:"can_upload"`
+	Username         string                 `json:"username,omitempty"`
+	Filters          map[string]FilterGrant `json:"filters,omitempty"`
+	AllFilters       bool                   `json:"all_filters,omitempty"`
+	Attributes       []AttributeGrant       `json:"attributes,omitempty"`
+	AllAttributes    bool                   `json:"-"`
+	UploadAttributes []AssetAttribute       `json:"-"`
+	UploadSettings   []UploadSetting        `json:"upload_settings,omitempty"`
 }
 
-// Locked reports whether a filter name is fixed by the token. Names use the
-// embed query vocabulary ("collection", "tag", "type", "mime", "search",
-// "sort").
+// Filter returns the grant for a filter name. Canonical names are collection,
+// tag, type, mime, search, sort, uncategorized, and untagged.
+func (s Scope) Filter(name string) (FilterGrant, bool) {
+	grant, ok := s.Filters[name]
+	return grant, ok
+}
+
+// Locked reports whether a filter is fixed by the token for the client.
 func (s Scope) Locked(name string) bool {
-	for _, locked := range s.LockedFilters {
-		if locked == name {
-			return true
-		}
+	grant, ok := s.Filters[name]
+	return ok && (grant.Mode == ScopeModeLocked || grant.Mode == ScopeModeHidden)
+}
+
+// Hidden reports whether a filter is enforced but omitted from the embed UI.
+func (s Scope) Hidden(name string) bool {
+	grant, ok := s.Filters[name]
+	return ok && grant.Mode == ScopeModeHidden
+}
+
+// FilterDenied reports whether the token forbids a filter. Filters without a
+// grant are denied unless the token has the wildcard grant.
+func (s Scope) FilterDenied(name string) bool {
+	if grant, ok := s.Filters[name]; ok {
+		return grant.Mode == ScopeModeDenied
 	}
-	return false
+	return !s.AllFilters
+}
+
+// FilterVisible reports whether the embed UI should show an editable filter
+// control. Locked, hidden, and denied filters are not editable.
+func (s Scope) FilterVisible(name string) bool {
+	if grant, ok := s.Filters[name]; ok {
+		return grant.Mode == ScopeModeAllowed || grant.Mode == ScopeModeActive
+	}
+	return s.AllFilters
 }
 
 // Actor is the authenticated caller for a request. Direct actors have an id
 // and no scope; JWT actors carry a token-backed scope and a synthetic identity
 // whose id comes from the token subject.
 type Actor struct {
-	ID    string
-	Name  string
-	Token bool
-	Scope Scope
+	ID           string
+	Name         string
+	Token        bool
+	Scope        Scope
+	Capabilities []string
+}
+
+// Can reports whether the actor is allowed to perform a capability.
+func (a *Actor) Can(capability string) bool {
+	return a != nil && Can(a.Capabilities, capability)
 }
 
 type actorContextKey struct{}

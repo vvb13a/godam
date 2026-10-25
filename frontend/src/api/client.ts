@@ -1,5 +1,6 @@
 import type {
   Asset,
+  AttributeFacet,
   Collection,
   Conversion,
   ImgProxyCatalog,
@@ -194,6 +195,7 @@ export interface AssetListParams {
   types?: string[]
   colors?: string[]
   mimeTypes?: string[]
+  attributes?: Record<string, string[]>
   minDuration?: number | null
   maxDuration?: number | null
   minPages?: number | null
@@ -221,6 +223,12 @@ export interface AssetPage {
   total_capped: boolean
 }
 
+export function listAttributeFacets(): Promise<AttributeFacet[]> {
+  return requestJSON<{ attributes: AttributeFacet[] }>('/api/attributes').then(
+    (response) => response.attributes ?? [],
+  )
+}
+
 export function listAssets(params: AssetListParams): Promise<AssetPage> {
   const query = new URLSearchParams()
   if (params.collectionIds?.length) {
@@ -235,6 +243,9 @@ export function listAssets(params: AssetListParams): Promise<AssetPage> {
   if (params.types?.length) query.set('types', params.types.join(','))
   if (params.colors?.length) query.set('colors', params.colors.join(','))
   if (params.mimeTypes?.length) query.set('mime_types', params.mimeTypes.join(','))
+  if (params.attributes && Object.keys(params.attributes).length) {
+    query.set('attributes', JSON.stringify(params.attributes))
+  }
   setNumberParam(query, 'min_duration', params.minDuration)
   setNumberParam(query, 'max_duration', params.maxDuration)
   setNumberParam(query, 'min_pages', params.minPages)

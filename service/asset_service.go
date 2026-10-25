@@ -81,6 +81,7 @@ func (s *AssetService) GetByID(ctx context.Context, id string) (*domain.Asset, e
 		Preload("Colors", func(db *gorm.DB) *gorm.DB {
 			return db.Order("position ASC")
 		}).
+		Preload("Attributes").
 		First(&m, "id = ?", id).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, domain.ErrNotFound
@@ -207,13 +208,15 @@ func (s *AssetService) applyAssetFilters(query *gorm.DB, filter domain.AssetFilt
 			}
 		}
 		if len(colors) > 0 {
+			// Color metadata only exists for images. Leave other media types
+			// untouched so a color filter does not hide unrelated assets.
 			query = query.Where(
-				`assets.id IN (
+				`(assets.mime_type NOT LIKE 'image/%' OR assets.id IN (
 					SELECT asset_id FROM asset_colors
 					WHERE bucket IN ?
 					GROUP BY asset_id, bucket
 					HAVING SUM(percentage) >= ?
-				)`,
+				))`,
 				colors, minColorFilterPct,
 			)
 		}
@@ -222,49 +225,82 @@ func (s *AssetService) applyAssetFilters(query *gorm.DB, filter domain.AssetFilt
 	if len(filter.MimeTypes) > 0 {
 		query = query.Where("assets.mime_type IN ?", filter.MimeTypes)
 	}
-	if len(filter.AllowedMimeTypes) > 0 {
-		clauses := make([]string, 0, len(filter.AllowedMimeTypes))
-		args := make([]any, 0, len(filter.AllowedMimeTypes))
-		for _, pattern := range filter.AllowedMimeTypes {
-			pattern = strings.ToLower(strings.TrimSpace(pattern))
-			if pattern == "" {
-				continue
-			}
-			if strings.HasSuffix(pattern, "/*") {
-				clauses = append(clauses, "assets.mime_type LIKE ?")
-				args = append(args, strings.TrimSuffix(pattern, "*")+"%")
-				continue
-			}
-			clauses = append(clauses, "assets.mime_type = ?")
-			args = append(args, pattern)
+	for key, values := range filter.Attributes {
+		key = strings.TrimSpace(key)
+		if key == "" || len(values) == 0 {
+			continue
 		}
-		if len(clauses) > 0 {
-			query = query.Where("("+strings.Join(clauses, " OR ")+")", args...)
+		query = query.Where(
+			`EXISTS (SELECT 1 FROM asset_attributes aa
+			 WHERE aa.asset_id = assets.id AND aa.key = ? AND aa.value IN ?)`,
+			key, values,
+		)
+	}
+	// Duration only applies to audio/video. Other media types pass through so
+	// the filter narrows the relevant formats instead of hiding everything else.
+	if filter.MinDuration != nil || filter.MaxDuration != nil {
+		conditions := make([]string, 0, 2)
+		args := make([]any, 0, 2)
+		if filter.MinDuration != nil {
+			conditions = append(conditions, "assets.duration_sec >= ?")
+			args = append(args, *filter.MinDuration)
 		}
+		if filter.MaxDuration != nil {
+			conditions = append(conditions, "assets.duration_sec <= ?")
+			args = append(args, *filter.MaxDuration)
+		}
+		query = query.Where(
+			`((assets.mime_type NOT LIKE 'audio/%' AND assets.mime_type NOT LIKE 'video/%' AND assets.mime_type <> 'application/ogg') OR (`+
+				strings.Join(conditions, " AND ")+`))`,
+			args...,
+		)
 	}
-	if filter.MinDuration != nil {
-		query = query.Where("assets.duration_sec >= ?", *filter.MinDuration)
+
+	// Page counts only apply to PDFs.
+	if filter.MinPages != nil || filter.MaxPages != nil {
+		conditions := make([]string, 0, 2)
+		args := make([]any, 0, 2)
+		if filter.MinPages != nil {
+			conditions = append(conditions, "assets.page_count >= ?")
+			args = append(args, *filter.MinPages)
+		}
+		if filter.MaxPages != nil {
+			conditions = append(conditions, "assets.page_count <= ?")
+			args = append(args, *filter.MaxPages)
+		}
+		query = query.Where(
+			`((assets.mime_type <> 'application/pdf') OR (`+
+				strings.Join(conditions, " AND ")+`))`,
+			args...,
+		)
 	}
-	if filter.MaxDuration != nil {
-		query = query.Where("assets.duration_sec <= ?", *filter.MaxDuration)
-	}
-	if filter.MinPages != nil {
-		query = query.Where("assets.page_count >= ?", *filter.MinPages)
-	}
-	if filter.MaxPages != nil {
-		query = query.Where("assets.page_count <= ?", *filter.MaxPages)
-	}
-	if filter.MinWidth != nil {
-		query = query.Where("assets.width >= ?", *filter.MinWidth)
-	}
-	if filter.MaxWidth != nil {
-		query = query.Where("assets.width <= ?", *filter.MaxWidth)
-	}
-	if filter.MinHeight != nil {
-		query = query.Where("assets.height >= ?", *filter.MinHeight)
-	}
-	if filter.MaxHeight != nil {
-		query = query.Where("assets.height <= ?", *filter.MaxHeight)
+
+	// Width/height only apply to images and videos.
+	if filter.MinWidth != nil || filter.MaxWidth != nil ||
+		filter.MinHeight != nil || filter.MaxHeight != nil {
+		conditions := make([]string, 0, 4)
+		args := make([]any, 0, 4)
+		if filter.MinWidth != nil {
+			conditions = append(conditions, "assets.width >= ?")
+			args = append(args, *filter.MinWidth)
+		}
+		if filter.MaxWidth != nil {
+			conditions = append(conditions, "assets.width <= ?")
+			args = append(args, *filter.MaxWidth)
+		}
+		if filter.MinHeight != nil {
+			conditions = append(conditions, "assets.height >= ?")
+			args = append(args, *filter.MinHeight)
+		}
+		if filter.MaxHeight != nil {
+			conditions = append(conditions, "assets.height <= ?")
+			args = append(args, *filter.MaxHeight)
+		}
+		query = query.Where(
+			`((assets.mime_type NOT LIKE 'image/%' AND assets.mime_type NOT LIKE 'video/%') OR (`+
+				strings.Join(conditions, " AND ")+`))`,
+			args...,
+		)
 	}
 	if filter.MinSize != nil {
 		query = query.Where("assets.byte_size >= ?", *filter.MinSize)
@@ -408,6 +444,87 @@ func applyAssetCursor(query *gorm.DB, spec assetSortSpec, value string) (*gorm.D
 		)
 	}
 	return query, nil
+}
+
+// AttributeFacets returns the attribute keys and values currently in use for
+// the library, limited to what the current actor may filter on. Direct access
+// sees everything; JWT actors need an explicit active grant or the wildcard.
+func (s *AssetService) AttributeFacets(ctx context.Context) ([]domain.AttributeFacet, error) {
+	actor := domain.ActorFromContext(ctx)
+	wildcard := true
+	allowed := make(map[string]bool)
+	blocked := make(map[string]bool)
+	enforced := make(map[string][]string)
+	if actor != nil && actor.Token {
+		wildcard = actor.Scope.AllAttributes
+		for _, grant := range actor.Scope.Attributes {
+			switch grant.Mode {
+			case domain.AttributeModeActive:
+				allowed[grant.Key] = true
+			case domain.AttributeModeLocked, domain.AttributeModeHidden:
+				blocked[grant.Key] = true
+				if len(grant.Values) > 0 {
+					enforced[grant.Key] = grant.Values
+				}
+			}
+		}
+		if !wildcard && len(allowed) == 0 {
+			return []domain.AttributeFacet{}, nil
+		}
+	}
+
+	type facetRow struct {
+		Key   string
+		Value string
+		Count int64
+	}
+	query := s.db.WithContext(ctx).
+		Table("asset_attributes AS aa").
+		Select("aa.key AS key, aa.value AS value, COUNT(DISTINCT aa.asset_id) AS count").
+		Joins("JOIN assets ON assets.id = aa.asset_id").
+		Where("assets.role = ?", domain.AssetRoleOriginal)
+	for key, values := range enforced {
+		query = query.Where(
+			`EXISTS (SELECT 1 FROM asset_attributes enforced
+			 WHERE enforced.asset_id = assets.id AND enforced.key = ? AND enforced.value IN ?)`,
+			key, values,
+		)
+	}
+	if wildcard {
+		if len(blocked) > 0 {
+			keys := make([]string, 0, len(blocked))
+			for key := range blocked {
+				keys = append(keys, key)
+			}
+			query = query.Where("aa.key NOT IN ?", keys)
+		}
+	} else {
+		keys := make([]string, 0, len(allowed))
+		for key := range allowed {
+			keys = append(keys, key)
+		}
+		query = query.Where("aa.key IN ?", keys)
+	}
+
+	var rows []facetRow
+	if err := query.
+		Group("aa.key, aa.value").
+		Order("aa.key ASC, count DESC, aa.value ASC").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	facets := make([]domain.AttributeFacet, 0)
+	for _, row := range rows {
+		if len(facets) == 0 || facets[len(facets)-1].Key != row.Key {
+			facets = append(facets, domain.AttributeFacet{Key: row.Key})
+		}
+		last := &facets[len(facets)-1]
+		last.Values = append(last.Values, domain.AttributeFacetValue{
+			Value: row.Value,
+			Count: row.Count,
+		})
+	}
+	return facets, nil
 }
 
 func (s *AssetService) List(ctx context.Context, filter domain.AssetFilter) (*domain.AssetPage, error) {
@@ -712,14 +829,17 @@ func (s *AssetService) storeUploadFile(ctx context.Context, driverName, filename
 	}
 
 	uploaderName := ""
+	var attributes []domain.AssetAttribute
 	if actor := domain.ActorFromContext(ctx); actor != nil {
 		uploaderName = actor.Name
+		attributes = actor.Scope.UploadAttributes
 	}
 
 	now := time.Now().UTC()
 	asset := &domain.Asset{
 		ID:             id,
 		UploadedByName: uploaderName,
+		Attributes:     attributes,
 		Filename:       filename,
 		StorageDriver:  driverName,
 		StorageKey:     storageKey,
@@ -732,6 +852,11 @@ func (s *AssetService) storeUploadFile(ctx context.Context, driverName, filename
 	}
 
 	if err := s.db.WithContext(ctx).Create(store.AssetModel(asset)).Error; err != nil {
+		_ = driver.Delete(ctx, storageKey)
+		return nil, err
+	}
+	if err := store.ReplaceAssetAttributes(s.db.WithContext(ctx), id, attributes); err != nil {
+		_ = s.db.WithContext(ctx).Delete(&store.Asset{}, "id = ?", id).Error
 		_ = driver.Delete(ctx, storageKey)
 		return nil, err
 	}

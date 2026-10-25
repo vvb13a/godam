@@ -34,6 +34,8 @@ type Asset struct {
 	Collections []Collection `gorm:"many2many:asset_collections;"`
 
 	Colors []AssetColor `gorm:"foreignKey:AssetID"`
+
+	Attributes []AssetAttribute `gorm:"foreignKey:AssetID"`
 }
 
 func (Asset) TableName() string { return "assets" }
@@ -102,6 +104,10 @@ func (m *Asset) ToDomain() *domain.Asset {
 	for i := range m.Colors {
 		colors = append(colors, m.Colors[i].ToDomain())
 	}
+	attributes := make([]domain.AssetAttribute, 0, len(m.Attributes))
+	for i := range m.Attributes {
+		attributes = append(attributes, m.Attributes[i].ToDomain())
+	}
 	var imageOf string
 	if m.ImageOf != nil {
 		imageOf = *m.ImageOf
@@ -129,6 +135,7 @@ func (m *Asset) ToDomain() *domain.Asset {
 			PageCount:   m.PageCount,
 			RawJSON:     m.RawMetadata,
 		},
+		Attributes:  attributes,
 		Colors:      colors,
 		Tags:        tags,
 		Collections: collections,

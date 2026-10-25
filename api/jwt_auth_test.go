@@ -26,7 +26,7 @@ func signAPITestJWT(t *testing.T, secret string, claims map[string]any) string {
 		base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
-func TestJWTAuthMeReturnsScope(t *testing.T) {
+func TestJWTAuthMeReturnsPublicScope(t *testing.T) {
 	server := httptest.NewServer(NewServer(Deps{JWTSecret: "test-secret"}))
 	defer server.Close()
 
@@ -35,9 +35,14 @@ func TestJWTAuthMeReturnsScope(t *testing.T) {
 		"username": "Grace Hopper",
 		"exp":      time.Now().Add(time.Hour).Unix(),
 		"scope": map[string]any{
-			"default_filters":    map[string]any{"type": "image"},
-			"locked_filters":     []string{"type"},
-			"allowed_mime_types": []string{"image/*"},
+			"filters": map[string]any{
+				"type":   map[string]any{"values": "image", "mode": "locked"},
+				"search": map[string]any{"values": "secret", "mode": "hidden"},
+			},
+			"upload_settings": []map[string]any{
+				{"format": "image", "max_bytes": 1048576},
+			},
+			"capabilities": []string{"assets:read", "assets:upload"},
 		},
 	})
 
@@ -52,15 +57,18 @@ func TestJWTAuthMeReturnsScope(t *testing.T) {
 		t.Fatalf("status = %d", res.StatusCode)
 	}
 	var body struct {
-		ID    string `json:"id"`
-		Name  string `json:"name"`
-		Scope struct {
-			DefaultFilters struct {
-				Types []string `json:"type"`
-			} `json:"default_filters"`
-			LockedFilters    []string `json:"locked_filters"`
-			AllowedMimeTypes []string `json:"allowed_mime_types"`
-			CanUpload        bool     `json:"can_upload"`
+		ID           string   `json:"id"`
+		Name         string   `json:"name"`
+		Capabilities []string `json:"capabilities"`
+		Scope        struct {
+			Filters map[string]struct {
+				Values []string `json:"values"`
+				Mode   string   `json:"mode"`
+			} `json:"filters"`
+			UploadSettings []struct {
+				Format   string `json:"format"`
+				MaxBytes int64  `json:"max_bytes"`
+			} `json:"upload_settings"`
 		} `json:"scope"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
@@ -69,11 +77,17 @@ func TestJWTAuthMeReturnsScope(t *testing.T) {
 	if body.ID != "cms-1" || body.Name != "Grace Hopper" {
 		t.Fatalf("unexpected user: %+v", body)
 	}
-	if len(body.Scope.DefaultFilters.Types) != 1 || body.Scope.DefaultFilters.Types[0] != "image" {
-		t.Fatalf("scope defaults missing: %+v", body.Scope)
+	if len(body.Scope.Filters) != 2 || body.Scope.Filters["type"].Mode != "locked" {
+		t.Fatalf("visible filters = %+v", body.Scope.Filters)
 	}
-	if !body.Scope.CanUpload {
-		t.Fatal("can_upload should default to true")
+	if search, ok := body.Scope.Filters["search"]; !ok || search.Mode != "hidden" || len(search.Values) != 0 {
+		t.Fatalf("hidden filter leaked values: %+v", search)
+	}
+	if len(body.Scope.UploadSettings) != 1 || body.Scope.UploadSettings[0].MaxBytes != 1048576 {
+		t.Fatalf("upload settings = %+v", body.Scope.UploadSettings)
+	}
+	if len(body.Capabilities) != 2 {
+		t.Fatalf("capabilities = %v", body.Capabilities)
 	}
 
 	req, _ = http.NewRequest(http.MethodGet, server.URL+"/api/auth/me", nil)

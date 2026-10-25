@@ -55,10 +55,28 @@ func (s *StatsService) conversionStats(ctx context.Context) (storage.ConversionS
 }
 
 func (s *StatsService) Get(ctx context.Context) (*domain.Stats, error) {
+	return s.GetScoped(ctx, nil)
+}
+
+// GetScoped aggregates only assets matching the enforced attribute set. Locked
+// and hidden token attributes should be passed here so tenant counts do not
+// include other tenants.
+func (s *StatsService) GetScoped(ctx context.Context, attributes map[string][]string) (*domain.Stats, error) {
 	db := s.db.WithContext(ctx)
 
 	originals := func() *gorm.DB {
-		return db.Model(&store.Asset{}).Where("role = ?", domain.AssetRoleOriginal)
+		query := db.Model(&store.Asset{}).Where("role = ?", domain.AssetRoleOriginal)
+		for key, values := range attributes {
+			if key == "" || len(values) == 0 {
+				continue
+			}
+			query = query.Where(
+				`EXISTS (SELECT 1 FROM asset_attributes aa
+				 WHERE aa.asset_id = assets.id AND aa.key = ? AND aa.value IN ?)`,
+				key, values,
+			)
+		}
+		return query
 	}
 
 	var assets, collections, tags int64

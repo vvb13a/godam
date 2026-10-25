@@ -27,6 +27,7 @@ import * as api from '../api/client'
 import { openBackupSettings } from '../lib/backupSettings'
 import { notifyConversionCacheChanged } from '../lib/conversionCache'
 import { openCollectionsDialog } from '../lib/collectionsDialog'
+import { hasCapability } from '../lib/capabilities'
 import { commandMenu } from '../lib/command'
 import {
   applyCollectionFilter,
@@ -225,8 +226,8 @@ const groups = computed<PaletteGroup[]>(() => {
       },
     })
   }
-  commands.push(
-    {
+  if (hasCapability('assets:upload')) {
+    commands.push({
       label: 'Upload assets',
       icon: Upload,
       keywords: ['upload', 'add', 'import', 'files', 'assets'],
@@ -234,8 +235,10 @@ const groups = computed<PaletteGroup[]>(() => {
         close()
         openUpload([], currentCollectionId(), currentTagId())
       },
-    },
-    {
+    })
+  }
+  if (hasCapability('library:update')) {
+    commands.push({
       label: 'Manage collections',
       icon: Folder,
       keywords: ['collections', 'folders', 'manage', 'select'],
@@ -243,8 +246,8 @@ const groups = computed<PaletteGroup[]>(() => {
         close()
         openCollectionsDialog()
       },
-    },
-    {
+    })
+    commands.push({
       label: 'Manage tags',
       icon: Tag,
       keywords: ['tags', 'manage', 'create tag'],
@@ -252,8 +255,10 @@ const groups = computed<PaletteGroup[]>(() => {
         close()
         openTagsDialog()
       },
-    },
-    {
+    })
+  }
+  if (hasCapability('settings:presets')) {
+    commands.push({
       label: 'Manage image presets',
       icon: Images,
       keywords: ['presets', 'imgproxy', 'conversions', 'image', 'manipulations'],
@@ -261,8 +266,10 @@ const groups = computed<PaletteGroup[]>(() => {
         close()
         openPresetsDialog()
       },
-    },
-    {
+    })
+  }
+  if (hasCapability('conversions:purge')) {
+    commands.push({
       label: 'Purge conversion cache',
       icon: Trash,
       keywords: ['cache', 'purge', 'conversions', 'clean', 'delete'],
@@ -280,8 +287,10 @@ const groups = computed<PaletteGroup[]>(() => {
           accept: () => void purgeCache(),
         })
       },
-    },
-    {
+    })
+  }
+  if (hasCapability('settings:upload')) {
+    commands.push({
       label: 'Open upload settings',
       icon: Cog,
       keywords: ['upload', 'settings', 'mime', 'size'],
@@ -289,8 +298,10 @@ const groups = computed<PaletteGroup[]>(() => {
         close()
         openUploadSettings()
       },
-    },
-    {
+    })
+  }
+  if (hasCapability('settings:storage')) {
+    commands.push({
       label: 'Open storage & backup settings',
       icon: CloudUpload,
       keywords: ['backup', 'storage', 'sftp', 'settings'],
@@ -298,7 +309,9 @@ const groups = computed<PaletteGroup[]>(() => {
         close()
         openBackupSettings()
       },
-    },
+    })
+  }
+  commands.push(
     ...SIDEBAR_TOGGLES.map((toggle) => ({
       label: `${sidebarPrefs[toggle.key] ? 'Hide' : 'Show'} ${toggle.label}`,
       icon: SlidersH,

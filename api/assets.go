@@ -2,6 +2,7 @@ package api
 
 import (
 	"archive/zip"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -65,8 +66,27 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 	filter.Uncategorized = q.Get("uncategorized") == "true"
 	filter.Untagged = q.Get("untagged") == "true"
 
+	if raw := q.Get("attributes"); raw != "" {
+		attributes, err := parseAttributeFilters(raw)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid attributes filter"})
+			return
+		}
+		filter.Attributes = attributes
+	}
+
 	if scope, ok := requestScope(r); ok {
-		applyScopeToAssetFilter(&filter, scope, q)
+		if denied := deniedFilterName(scope, q); denied != "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "filter not allowed: " + denied,
+			})
+			return
+		}
+		applyScopeToAssetFilter(&filter, scope)
+		if err := applyAttributeScope(&filter, scope); err != nil {
+			writeError(w, err)
+			return
+		}
 	}
 
 	page, err := s.deps.Assets.List(r.Context(), filter)
@@ -75,16 +95,6 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
-}
-
-// allowUpload enforces the token's can_upload flag. Session actors always pass;
-// JWT scopes can disable uploading for a read-only picker.
-func allowUpload(w http.ResponseWriter, r *http.Request) bool {
-	if scope, ok := requestScope(r); ok && !scope.CanUpload {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "uploads are not allowed for this token"})
-		return false
-	}
-	return true
 }
 
 func parseCSV(raw string) []string {
@@ -134,66 +144,187 @@ func parseInt64Ptr(raw string) *int64 {
 }
 
 func parseDatePtr(raw string, endOfDay bool) *time.Time {
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil
 	}
-	value, err := time.Parse("2006-01-02", raw)
-	if err != nil {
-		return nil
+	layouts := []string{
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04",
+		"2006-01-02 15:04",
+		"2006-01-02",
 	}
-	if endOfDay {
-		value = value.Add(24 * time.Hour)
+	for _, layout := range layouts {
+		value, err := time.Parse(layout, raw)
+		if err != nil {
+			continue
+		}
+		if endOfDay && layout == "2006-01-02" {
+			value = value.Add(24 * time.Hour)
+		}
+		return &value
 	}
-	return &value
+	return nil
 }
 
-// applyScopeToAssetFilter narrows a listing to the JWT scope. Locked filters
-// always win over the request; unlocked defaults only fill in filters the
-// caller did not supply. Allowed MIME types are an additional, independent
-// restriction so a picker cannot reveal file types outside its scope.
-func applyScopeToAssetFilter(filter *domain.AssetFilter, scope domain.Scope, q url.Values) {
-	defaults := scope.DefaultFilters
+// filterRequested reports whether a request supplies a canonical filter.
+func filterRequested(name string, q url.Values) bool {
+	switch name {
+	case "collection":
+		return q.Get("collection_ids") != "" || q.Get("collection_id") != ""
+	case "tag":
+		return q.Get("tag_ids") != "" || q.Get("tag_id") != ""
+	case "type":
+		return q.Get("types") != "" || q.Get("type") != ""
+	case "mime":
+		return q.Get("mime_types") != "" || q.Get("mime") != ""
+	case "search":
+		return strings.TrimSpace(q.Get("search")) != ""
+	case "sort":
+		return strings.TrimSpace(q.Get("sort")) != ""
+	case "uncategorized":
+		return q.Get("uncategorized") == "true"
+	case "untagged":
+		return q.Get("untagged") == "true"
+	case "color":
+		return q.Get("colors") != "" || q.Get("color") != ""
+	case "size":
+		return q.Get("min_size") != "" || q.Get("max_size") != ""
+	case "duration":
+		return q.Get("min_duration") != "" || q.Get("max_duration") != ""
+	case "pages":
+		return q.Get("min_pages") != "" || q.Get("max_pages") != ""
+	case "dimensions":
+		return q.Get("min_width") != "" || q.Get("max_width") != "" ||
+			q.Get("min_height") != "" || q.Get("max_height") != ""
+	case "added":
+		return q.Get("added_after") != "" || q.Get("added_before") != ""
+	case "modified":
+		return q.Get("modified_after") != "" || q.Get("modified_before") != ""
+	}
+	return false
+}
 
-	collectionProvided := q.Get("collection_ids") != "" ||
-		q.Get("collection_id") != "" ||
-		q.Get("uncategorized") == "true"
-	if scope.Locked("collection") {
-		filter.CollectionIDs = defaults.CollectionIDs
-		filter.Uncategorized = defaults.Uncategorized
-	} else if !collectionProvided {
-		filter.CollectionIDs = defaults.CollectionIDs
-		filter.Uncategorized = defaults.Uncategorized
+func deniedFilterName(scope domain.Scope, q url.Values) string {
+	for _, name := range domain.FilterNames {
+		if scope.FilterDenied(name) && filterRequested(name, q) {
+			return name
+		}
+	}
+	return ""
+}
+
+// applyScopeToAssetFilter applies the JWT scope to a listing. Only locked and
+// hidden filters are enforced server-side. Active values are defaults for the
+// embed UI, so the client can clear them without the server restoring them.
+func applyScopeToAssetFilter(filter *domain.AssetFilter, scope domain.Scope) {
+	if collection, _ := scope.Filter("collection"); scope.Locked("collection") {
+		filter.CollectionIDs = append([]string{}, collection.Values...)
+		// A locked collection must not be broadened by uncategorized.
+		filter.Uncategorized = false
 	}
 
-	tagProvided := q.Get("tag_ids") != "" ||
-		q.Get("tag_id") != "" ||
-		q.Get("untagged") == "true"
-	if scope.Locked("tag") {
-		filter.TagIDs = defaults.TagIDs
-		filter.Untagged = defaults.Untagged
-	} else if !tagProvided {
-		filter.TagIDs = defaults.TagIDs
-		filter.Untagged = defaults.Untagged
+	if tag, _ := scope.Filter("tag"); scope.Locked("tag") {
+		filter.TagIDs = append([]string{}, tag.Values...)
+		filter.Untagged = false
 	}
 
-	typeProvided := q.Get("types") != "" || q.Get("type") != ""
-	if scope.Locked("type") || !typeProvided {
-		filter.Types = defaults.Types
+	if typeFilter, _ := scope.Filter("type"); scope.Locked("type") {
+		filter.Types = append([]string{}, typeFilter.Values...)
 	}
 
-	mimeProvided := q.Get("mime_types") != "" || q.Get("mime") != ""
-	if scope.Locked("mime") || !mimeProvided {
-		filter.MimeTypes = defaults.MimeTypes
+	if mimeFilter, _ := scope.Filter("mime"); scope.Locked("mime") {
+		filter.MimeTypes = append([]string{}, mimeFilter.Values...)
 	}
 
-	if scope.Locked("search") || q.Get("search") == "" {
-		filter.Search = defaults.Search
+	if search, ok := scope.Filter("search"); scope.Locked("search") && ok && len(search.Values) > 0 {
+		filter.Search = strings.TrimSpace(search.Values[0])
 	}
-	if scope.Locked("sort") || q.Get("sort") == "" {
-		filter.Sort = defaults.Sort
+	if sortFilter, ok := scope.Filter("sort"); scope.Locked("sort") && ok && len(sortFilter.Values) > 0 {
+		filter.Sort = strings.TrimSpace(sortFilter.Values[0])
 	}
+	if uncategorized, ok := scope.Filter("uncategorized"); scope.Locked("uncategorized") && ok {
+		filter.Uncategorized = filterGrantTrue(uncategorized)
+	}
+	if untagged, ok := scope.Filter("untagged"); scope.Locked("untagged") && ok {
+		filter.Untagged = filterGrantTrue(untagged)
+	}
+}
 
-	filter.AllowedMimeTypes = scope.AllowedMimeTypes
+func filterGrantTrue(grant domain.FilterGrant) bool {
+	for _, value := range grant.Values {
+		if strings.EqualFold(strings.TrimSpace(value), "true") {
+			return true
+		}
+	}
+	return false
+}
+
+func parseAttributeFilters(raw string) (map[string][]string, error) {
+	var values map[string][]string
+	if err := json.Unmarshal([]byte(raw), &values); err != nil {
+		return nil, err
+	}
+	out := make(map[string][]string, len(values))
+	for key, list := range values {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		seen := make(map[string]bool, len(list))
+		cleaned := make([]string, 0, len(list))
+		for _, value := range list {
+			value = strings.TrimSpace(value)
+			if value == "" || seen[value] {
+				continue
+			}
+			seen[value] = true
+			cleaned = append(cleaned, value)
+		}
+		if len(cleaned) > 0 {
+			out[key] = cleaned
+		}
+	}
+	return out, nil
+}
+
+// applyAttributeScope applies token attributes. Only locked and hidden
+// attributes are enforced server-side. Active values are defaults for the embed
+// UI, so the client can clear them without the server restoring them. Attribute
+// keys not present in the token are dropped.
+func applyAttributeScope(filter *domain.AssetFilter, scope domain.Scope) error {
+	if filter.Attributes == nil {
+		filter.Attributes = make(map[string][]string)
+	}
+	grants := make(map[string]domain.AttributeGrant, len(scope.Attributes))
+	for _, grant := range scope.Attributes {
+		grants[grant.Key] = grant
+	}
+	if !scope.AllAttributes {
+		for key := range filter.Attributes {
+			if _, ok := grants[key]; !ok {
+				delete(filter.Attributes, key)
+			}
+		}
+	}
+	for _, grant := range scope.Attributes {
+		if grant.Mode == domain.AttributeModeLocked || grant.Mode == domain.AttributeModeHidden {
+			filter.Attributes[grant.Key] = append([]string{}, grant.Values...)
+		}
+	}
+	return nil
+}
+
+// handleListAttributes returns the attribute facets available to the current
+// actor for filtering.
+func (s *Server) handleListAttributes(w http.ResponseWriter, r *http.Request) {
+	facets, err := s.deps.Assets.AttributeFacets(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"attributes": facets})
 }
 
 func (s *Server) handleGetAsset(w http.ResponseWriter, r *http.Request) {
@@ -207,9 +338,6 @@ func (s *Server) handleGetAsset(w http.ResponseWriter, r *http.Request) {
 // handleUploadAsset accepts a multipart form with a single "file" field and an
 // optional "driver" field, storing the file through the asset service.
 func (s *Server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
-	if !allowUpload(w, r) {
-		return
-	}
 	if limit := s.deps.Assets.UploadStreamLimit(r.Context()); limit > 0 {
 		r.Body = http.MaxBytesReader(w, r.Body, limit+(1<<20))
 	}
@@ -252,9 +380,6 @@ type startUploadRequest struct {
 // client sends sequential chunks to the returned session id and then completes
 // the upload.
 func (s *Server) handleStartUpload(w http.ResponseWriter, r *http.Request) {
-	if !allowUpload(w, r) {
-		return
-	}
 	var req startUploadRequest
 	if !decodeJSON(w, r, &req) {
 		return
@@ -276,9 +401,6 @@ func (s *Server) handleStartUpload(w http.ResponseWriter, r *http.Request) {
 
 // handleUploadChunk appends one raw chunk at the given byte offset.
 func (s *Server) handleUploadChunk(w http.ResponseWriter, r *http.Request) {
-	if !allowUpload(w, r) {
-		return
-	}
 	offset, err := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 64)
 	if err != nil || offset < 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid chunk offset"})
@@ -310,9 +432,6 @@ func (s *Server) handleUploadChunk(w http.ResponseWriter, r *http.Request) {
 
 // handleCompleteUpload validates the assembled file and creates the asset.
 func (s *Server) handleCompleteUpload(w http.ResponseWriter, r *http.Request) {
-	if !allowUpload(w, r) {
-		return
-	}
 	asset, err := s.deps.Assets.CompleteUpload(r.Context(), r.PathValue("id"), currentActor(r).ID)
 	if err != nil {
 		writeError(w, err)

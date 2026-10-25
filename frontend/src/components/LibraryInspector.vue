@@ -3,12 +3,14 @@ import Message from 'primevue/message'
 import { Image, Times } from '@primeicons/vue'
 import { computed, ref } from 'vue'
 import * as api from '../api/client'
+import { hasCapability } from '../lib/capabilities'
 import { formatSize } from '../lib/format'
 import { currentLibrary, library, loadLibraries } from '../lib/library'
 
 const busy = ref(false)
 const error = ref<string | null>(null)
 const previewFailed = ref(false)
+const canUpdateLibrary = computed(() => hasCapability('library:update'))
 
 const stats = computed(() => library.stats)
 const coverAssetId = computed(() => currentLibrary()?.cover_asset_id ?? '')
@@ -33,7 +35,7 @@ async function removeCover(): Promise<void> {
   <div class="flex h-full flex-col">
     <div class="flex items-center justify-end px-3 py-2">
       <button
-        v-if="coverAssetId"
+        v-if="coverAssetId && canUpdateLibrary"
         class="inline-flex shrink-0 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
         title="Remove cover"
         :disabled="busy"

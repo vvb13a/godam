@@ -80,37 +80,195 @@ is an HS256 JWT signed with the same secret. godam validates the signature,
   "iat": 1740000000,
   "exp": 1740000900,
   "scope": {
-    "default_filters": {
-      "collection": ["collection-id"],
-      "tag": ["tag-id"],
-      "type": ["image"],
-      "mime": ["image/png", "image/webp"],
-      "search": "brand",
-      "sort": "date-desc"
+    "filters": {
+      "collection": { "values": ["collection-id"], "mode": "locked" },
+      "tag": { "values": ["tag-id"], "mode": "active" },
+      "type": { "values": ["image"], "mode": "active" },
+      "mime": { "values": ["image/png", "image/webp"], "mode": "active" },
+      "search": { "values": ["brand"], "mode": "active" },
+      "sort": { "values": ["date-desc"], "mode": "active" }
     },
-    "locked_filters": ["collection", "type", "search", "sort"],
-    "allowed_mime_types": ["image/*"],
-    "can_upload": true
+    "attributes": {
+      "tenant": {
+        "values": ["acme"],
+        "mode": "hidden",
+        "upload_values": ["acme"]
+      },
+      "entity": {
+        "values": ["news", "press"],
+        "mode": "active"
+      }
+    },
+    "upload_settings": [
+      {
+        "format": "image",
+        "mime_types": ["image/jpeg", "image/png", "image/webp"],
+        "max_bytes": 10485760
+      },
+      { "format": "video", "max_bytes": 104857600 }
+    ],
+    "capabilities": ["assets:read", "assets:upload"]
   }
 }
 ```
 
 - `sub` identifies the token actor (for example, the upload-session owner).
 - `username` becomes `uploaded_by_name` for uploads made with this token.
-- `scope.default_filters` are applied when the URL/request does not supply that
-  filter.
-- `scope.locked_filters` forces the corresponding default even if the client
-  tries to change it. Supported names: `collection`, `tag`, `type`, `mime`,
-  `search`, `sort`.
-- `scope.allowed_mime_types` is intersected with the library's own upload
-  allow-list and also narrows what the picker lists. Exact types and `type/*`
-  wildcards are supported.
-- `scope.can_upload` defaults to `true`. Set it to `false` for a read-only
-  picker.
 
-`collection` and `tag` accept a string or an array. The special values
-`uncategorized` and `untagged` are also understood. `allowed_mime_types` and
-`locked_filters` accept a string or an array.
+### Filters
+
+`scope.filters` controls which listing filters are available, plus their default
+and enforcement behaviour. Supported keys are `collection`, `tag`, `type`,
+`mime`, `search`, `sort`, `uncategorized`, `untagged`, `color`, `size`,
+`duration`, `pages`, `dimensions`, `added`, and `modified`.
+
+Each entry has an optional `values` (string or array) and a `mode`:
+
+- `allowed` shows the filter with no default. The client may use or clear it.
+- `active` (default) shows the filter and applies `values` as the embed UI's
+  initial state. The API does not enforce active values, so the client may
+  change or clear them. Values are not an allow-list.
+- `locked` applies `values` server-side. The editable control is hidden.
+- `hidden` applies `values` server-side without sending the values to the
+  client.
+- `denied` hides the filter and rejects requests that supply it.
+
+A filter without a grant is denied. Use the wildcard to allow every filter and
+then override only the ones that need a different mode:
+
+```json
+"filters": {
+  "*": { "mode": "allowed" },
+  "type": { "values": ["image"], "mode": "locked" },
+  "search": { "mode": "denied" },
+  "sort": { "mode": "active", "values": "name-asc" }
+}
+```
+
+`"filters": "*"` is shorthand for allowing every filter with no defaults.
+`allowed` and `denied` do not accept `values`; use `active`, `locked`, or
+`hidden` when supplying values. `collection` and `tag` values are IDs.
+`uncategorized` and `untagged` may omit `values`; their presence means `true`.
+
+### Host-owned attributes
+
+Assets may carry host-defined attributes such as `tenant`, `entity`, or `kind`.
+Add them under `scope.attributes`:
+
+```json
+"attributes": {
+  "tenant": {
+    "values": ["acme"],
+    "mode": "hidden",
+    "upload_values": ["acme"]
+  },
+  "entity": {
+    "values": ["news", "press"],
+    "mode": "active"
+  },
+  "kind": {
+    "values": ["logo", "icon"],
+    "mode": "locked",
+    "upload_values": "*"
+  }
+}
+```
+
+- `values` follow the same `active`, `locked`, and `hidden` modes as filters.
+  Active values are only initial UI filters and are not enforced by the API.
+  None of the modes restrict which options the UI may show.
+- `upload_values` are stamped onto uploads made with the token, regardless of
+  mode. When omitted, nothing is stamped. `"*"` expands to the attribute's
+  declared `values`.
+- `locked` and `hidden` attributes are enforced for listing, counts, and
+  asset-by-ID access; `active` attributes are only filters.
+
+Attribute filters are sent as a JSON object in the `attributes` query parameter,
+for example `attributes={"entity":["news"],"kind":["logo"]}`. With an explicit
+scope, keys not present in the token are ignored; locked and hidden values cannot
+be overridden.
+
+A full-library token can allow every attribute in use with the wildcard:
+
+```json
+"attributes": "*"
+```
+
+or the equivalent object form:
+
+```json
+"attributes": { "*": { "mode": "active" } }
+```
+
+The wildcard only supports `active` mode and cannot define values or
+`upload_values`. Use it only when the token is allowed to browse the whole
+library; picker tokens with tenant isolation should keep explicit keys.
+
+`GET /api/attributes` lists the attribute keys and values available for
+filtering. The result is already scoped: tokens without attribute access get an
+empty list, explicit scopes return only their active keys, wildcard tokens see
+all keys, and locked/hidden attributes are excluded and enforced.
+
+### Upload settings
+
+`scope.upload_settings` narrows uploads only; it does not hide assets from the
+picker. It accepts one object or an array:
+
+```json
+"upload_settings": [
+  { "format": "image", "mime_types": ["image/png", "image/webp"], "max_bytes": 5242880 },
+  { "format": "pdf" },
+  { "format": "*", "max_bytes": 104857600 }
+]
+```
+
+- `format` is `image`, `audio`, `video`, `pdf`, or `*`/omitted for all formats.
+- `mime_types` restricts the accepted types. When omitted, every type of that
+  format is accepted.
+- `max_bytes` overrides the size limit for that format. When omitted, the
+  library's limit applies.
+- Settings are always intersected with the library's allow-list and size limits.
+  A token can make uploads stricter, never broader.
+
+### Capabilities
+
+Management and configuration routes require explicit capabilities in
+`scope.capabilities`:
+
+```json
+{
+  "scope": {
+    "capabilities": [
+      "assets:read",
+      "assets:upload",
+      "assets:update",
+      "assets:delete",
+      "settings:presets",
+      "settings:upload"
+    ]
+  }
+}
+```
+
+| Capability | Purpose |
+| --- | --- |
+| `assets:read` | List, view, preview, download assets |
+| `assets:upload` | Upload files and use upload sessions |
+| `assets:update` | Edit assets, tags, collections, previews |
+| `assets:delete` | Delete assets |
+| `settings:storage` | Read/change storage and backup settings |
+| `settings:presets` | Read/change presets and preset previews |
+| `settings:upload` | Change library upload settings |
+| `conversions:warm` | Warm conversions |
+| `conversions:purge` | Purge the conversion cache |
+| `library:update` | Rename the library, set cover/watermark, manage tags and collections |
+
+`assets:*` grants all `assets:*` capabilities, and `*` grants everything.
+Tokens without a `capabilities` claim default to `assets:read` only. Add
+`assets:upload` to allow uploads. Direct network-trusted access receives all
+capabilities.
+
+Filter `values`, `mime_types`, and `upload_values` accept a string or an array.
 
 Token authentication works on every API route, including `/api/auth/me`, asset
 listing, uploads, previews, and content. Browser elements that cannot send an
@@ -226,10 +384,10 @@ claims = {
   "iat":      now,
   "exp":      now + 900,
   "scope": {
-    "default_filters":    {...},
-    "locked_filters":     [...],
-    "allowed_mime_types": [...],
-    "can_upload":         true
+    "filters":         {...},
+    "attributes":      {...},
+    "upload_settings": [...],
+    "capabilities":    ["assets:read", "assets:upload"]
   }
 }
 
@@ -243,14 +401,20 @@ A scoped example for a "brand images only" picker:
 
 ```json
 {
-  "default_filters": {
-    "collection": ["brand-collection-id"],
-    "type": ["image"],
-    "sort": "date-desc"
-  },
-  "locked_filters": ["collection", "type", "sort"],
-  "allowed_mime_types": ["image/*"],
-  "can_upload": false
+  "sub": "user-42",
+  "username": "Ada Lovelace",
+  "exp": 1740000900,
+  "scope": {
+    "filters": {
+      "collection": { "values": ["brand-collection-id"], "mode": "locked" },
+      "type": { "values": ["image"], "mode": "locked" },
+      "sort": { "values": ["date-desc"], "mode": "locked" }
+    },
+    "upload_settings": [
+      { "format": "image", "mime_types": ["image/*"] }
+    ],
+    "capabilities": ["assets:read"]
+  }
 }
 ```
 
@@ -350,11 +514,11 @@ Then open the embed URL directly in a browser and confirm:
   headers where possible.
 - If the host application uses a Content-Security-Policy, allow the godam origin
   in `frame-src`.
-- The token scope covers listing/upload defaults, locked filters, allowed MIME
-  types, and `can_upload`. It does not yet implement per-asset visibility:
-  `/img` and `/src` remain public UUID routes.
-- `can_upload` is the only explicit capability flag in this iteration. Library
-  management routes remain available to any valid token; split tokens by
-  audience/issuer if you need a harder separation today.
+- Locked and hidden attributes are enforced for API listing, counts, and
+  asset-by-ID operations. `/img`, `/src`, and `/convert` are still public
+  UUID routes, so private delivery requires signed or authenticated URLs before
+  relying on hidden attributes for tenant isolation.
+- Management and configuration routes require explicit capabilities. Grant only
+  what the consuming application needs and use `*` sparingly.
 - Filter scope is enforced in both the API and the picker UI. A manipulated URL
   cannot escape locked defaults.

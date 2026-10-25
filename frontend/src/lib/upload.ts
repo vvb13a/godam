@@ -2,7 +2,7 @@ import { reactive } from 'vue'
 import * as api from '../api/client'
 import { formatSize } from './format'
 import { library } from './library'
-import type { Asset, UploadLimits } from '../types'
+import type { Asset, UploadLimits, UploadSetting } from '../types'
 
 // Files above this size use the chunked transport. The server streams direct
 // uploads to disk too, but chunking keeps each request small and gives large
@@ -121,6 +121,102 @@ export function uploadLimitFor(mime: string): number {
   else if (clean.startsWith('video/')) key = 'video_bytes'
   else if (clean === 'application/pdf') key = 'pdf_bytes'
   return key ? (library.upload_limits?.[key] ?? 0) : 0
+}
+
+const LIMIT_KEYS: (keyof UploadLimits)[] = [
+  'image_bytes',
+  'audio_bytes',
+  'video_bytes',
+  'pdf_bytes',
+]
+
+function formatPatterns(format?: string): string[] {
+  switch ((format ?? '*').toLowerCase()) {
+    case 'image':
+      return ['image/*']
+    case 'audio':
+      return ['audio/*']
+    case 'video':
+      return ['video/*']
+    case 'pdf':
+      return ['application/pdf']
+    default:
+      return ['*/*']
+  }
+}
+
+function formatLimitKeys(format?: string): (keyof UploadLimits)[] {
+  switch ((format ?? '*').toLowerCase()) {
+    case 'image':
+      return ['image_bytes']
+    case 'audio':
+      return ['audio_bytes']
+    case 'video':
+      return ['video_bytes']
+    case 'pdf':
+      return ['pdf_bytes']
+    default:
+      return LIMIT_KEYS
+  }
+}
+
+function mimePatternsIntersect(a: string, b: string): boolean {
+  a = a.trim().toLowerCase()
+  b = b.trim().toLowerCase()
+  if (!a || !b) return false
+  if (a === '*' || a === '*/*' || b === '*' || b === '*/*') return true
+  if (a === b) return true
+  if (a.endsWith('/*')) return b.startsWith(a.slice(0, -1))
+  if (b.endsWith('/*')) return a.startsWith(b.slice(0, -1))
+  return false
+}
+
+function lowerLimit(base: number, token: number): number {
+  if (token <= 0) return base
+  if (base <= 0 || token < base) return token
+  return base
+}
+
+// applyUploadSettings narrows the library's upload UI to the token's
+// upload_settings. It mirrors the server: settings can only make uploads
+// stricter, never broader.
+export function applyUploadSettings(settings?: UploadSetting[]): void {
+  if (!settings?.length) return
+
+  const tokenPatterns = new Set<string>()
+  const tokenLimits: UploadLimits = {}
+  for (const setting of settings) {
+    const patterns = setting.mime_types?.length
+      ? setting.mime_types
+      : formatPatterns(setting.format)
+    for (const pattern of patterns) {
+      if (pattern.trim()) tokenPatterns.add(pattern.trim().toLowerCase())
+    }
+    if ((setting.max_bytes ?? 0) > 0) {
+      for (const key of formatLimitKeys(setting.format)) {
+        tokenLimits[key] = lowerLimit(
+          tokenLimits[key] ?? 0,
+          setting.max_bytes ?? 0,
+        )
+      }
+    }
+  }
+
+  if (!tokenPatterns.has('*/*') && !tokenPatterns.has('*')) {
+    const base = library.allowed_mime_types ?? []
+    library.allowed_mime_types = base.length
+      ? base.filter((pattern) =>
+          [...tokenPatterns].some((token) => mimePatternsIntersect(pattern, token)),
+        )
+      : [...tokenPatterns]
+  }
+
+  const limits: UploadLimits = { ...(library.upload_limits ?? {}) }
+  for (const key of LIMIT_KEYS) {
+    const token = tokenLimits[key] ?? 0
+    if (token > 0) limits[key] = lowerLimit(limits[key] ?? 0, token)
+  }
+  library.upload_limits = limits
 }
 
 export function hasCategoryUploadLimits(): boolean {

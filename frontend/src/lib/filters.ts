@@ -44,6 +44,7 @@ export const filterState = reactive({
   presetExclude: false,
   search: '',
   sort: 'date-desc',
+  attributes: {} as Record<string, string[]>,
   minSize: null as number | null,
   maxSize: null as number | null,
   minDuration: null as number | null,
@@ -60,21 +61,78 @@ export const filterState = reactive({
   modifiedBefore: null as string | null,
 })
 
-const collectionLocked = (): boolean => embed.active && embed.collectionLocked
-const tagLocked = (): boolean => embed.active && embed.tagLocked
-const typeLocked = (): boolean => embed.active && embed.typeLocked
-const mimeLocked = (): boolean => embed.active && embed.mimeLocked
-const searchLocked = (): boolean => embed.active && embed.searchLocked
+const collectionLocked = (): boolean =>
+  (embed.active && embed.collectionLocked) || filterLocked('collection')
+const tagLocked = (): boolean =>
+  (embed.active && embed.tagLocked) || filterLocked('tag')
+const typeLocked = (): boolean =>
+  (embed.active && embed.typeLocked) || filterLocked('type')
+const mimeLocked = (): boolean =>
+  (embed.active && embed.mimeLocked) || filterLocked('mime')
+const searchLocked = (): boolean =>
+  (embed.active && embed.searchLocked) || filterLocked('search')
+
+function enforcedAttributes(): Record<string, string[]> {
+  const attributes: Record<string, string[]> = {}
+  for (const grant of embed.scope?.attributes ?? []) {
+    if (grant.mode === 'locked' || grant.mode === 'hidden') {
+      attributes[grant.key] = [...grant.values]
+    }
+  }
+  return attributes
+}
+
+function scopeFilter(name: string) {
+  return embed.scope?.filters?.[name]
+}
+
+function filterValues(name: string): string[] {
+  return scopeFilter(name)?.values ?? []
+}
+
+function filterTrue(name: string): boolean {
+  return filterValues(name).some((value) => value.toLowerCase() === 'true')
+}
+
+function filterLocked(name: string): boolean {
+  const mode = scopeFilter(name)?.mode
+  return mode === 'locked' || mode === 'hidden'
+}
+
+// isFilterLocked reports whether the embed token fixes a filter. It is used by
+// the sidebar to mark filter chips as locked and to guard the clear actions.
+export function isFilterLocked(name: string): boolean {
+  return filterLocked(name)
+}
+
+// isFilterDenied reports whether the token forbids a filter. Filters without a
+// grant are denied unless the token has the wildcard grant.
+export function isFilterDenied(name: string): boolean {
+  if (!embed.scope) return false
+  const grant = scopeFilter(name)
+  if (grant) return grant.mode === 'denied'
+  return !embed.scope.all_filters
+}
+
+// isFilterVisible reports whether the sidebar should show an editable control
+// for a filter. Locked, hidden, and denied filters are not editable.
+export function isFilterVisible(name: string): boolean {
+  if (!embed.scope) return true
+  const grant = scopeFilter(name)
+  if (grant) return grant.mode === 'allowed' || grant.mode === 'active'
+  return embed.scope.all_filters === true
+}
 
 function clearFacetFilters(): void {
+  filterState.attributes = enforcedAttributes()
   if (!collectionLocked()) filterState.collections = []
   if (!tagLocked()) filterState.tags = []
   if (!typeLocked()) filterState.types = []
   if (!mimeLocked()) filterState.mimeTypes = []
   if (!searchLocked()) filterState.search = ''
   filterState.colors = []
-  filterState.uncategorized = false
-  filterState.untagged = false
+  if (!filterLocked('uncategorized')) filterState.uncategorized = false
+  if (!filterLocked('untagged')) filterState.untagged = false
   filterState.preset = ''
   filterState.presetExclude = false
   filterState.minSize = null
@@ -110,6 +168,63 @@ export function clearTagFilter(id: string): void {
   if (tagLocked()) return
   clearSmartSelection()
   filterState.tags = filterState.tags.filter((item) => item !== id)
+}
+
+export function isAttributeLocked(key: string): boolean {
+  const grant = embed.scope?.attributes?.find((item) => item.key === key)
+  return grant?.mode === 'locked' || grant?.mode === 'hidden'
+}
+
+export function toggleAttribute(key: string, value: string): void {
+  if (isAttributeLocked(key)) return
+  clearSmartSelection()
+  const current = filterState.attributes[key] ?? []
+  const next = current.includes(value)
+    ? current.filter((item) => item !== value)
+    : [...current, value]
+  if (next.length) filterState.attributes[key] = next
+  else delete filterState.attributes[key]
+}
+
+export function toggleType(value: string): void {
+  if (typeLocked()) return
+  clearSmartSelection()
+  const current = filterState.types
+  const next = current.includes(value)
+    ? current.filter((item) => item !== value)
+    : [...current, value]
+  filterState.types = next
+}
+
+export function toggleColor(value: string): void {
+  clearSmartSelection()
+  const current = filterState.colors
+  const next = current.includes(value)
+    ? current.filter((item) => item !== value)
+    : [...current, value]
+  filterState.colors = next
+}
+
+export function clearTypeValue(value: string): void {
+  if (typeLocked()) return
+  clearSmartSelection()
+  filterState.types = filterState.types.filter((item) => item !== value)
+}
+
+export function clearAttributeFilter(key: string): void {
+  if (isAttributeLocked(key)) return
+  clearSmartSelection()
+  delete filterState.attributes[key]
+}
+
+export function clearAttributeValue(key: string, value: string): void {
+  if (isAttributeLocked(key)) return
+  clearSmartSelection()
+  const next = (filterState.attributes[key] ?? []).filter(
+    (item) => item !== value,
+  )
+  if (next.length) filterState.attributes[key] = next
+  else delete filterState.attributes[key]
 }
 
 export function toggleCollection(id: string): void {
@@ -160,7 +275,7 @@ export function applyTagFilter(id: string): void {
 }
 
 export function toggleUncategorized(): void {
-  if (collectionLocked()) return
+  if (collectionLocked() || filterLocked('uncategorized')) return
   clearSmartSelection()
   if (filterState.uncategorized) {
     filterState.uncategorized = false
@@ -172,7 +287,7 @@ export function toggleUncategorized(): void {
 }
 
 export function toggleUntagged(): void {
-  if (tagLocked()) return
+  if (tagLocked() || filterLocked('untagged')) return
   clearSmartSelection()
   if (filterState.untagged) {
     filterState.untagged = false
@@ -184,7 +299,7 @@ export function toggleUntagged(): void {
 }
 
 export function resetSort(): void {
-  if (embed.active && embed.sortLocked) return
+  if ((embed.active && embed.sortLocked) || isFilterLocked('sort')) return
   filterState.sort = 'date-desc'
 }
 
@@ -195,42 +310,54 @@ export function initFilterState(scope?: EmbedScope): void {
   initialized = true
   if (!embed.active) return
 
-  const defaults = scope?.default_filters ?? {}
-  const locked = new Set(scope?.locked_filters ?? [])
+  // Token attributes are applied as the initial filter state. Active attributes
+  // remain editable; locked and hidden attributes are immutable, with hidden
+  // ones only omitted from the UI.
+  for (const grant of scope?.attributes ?? []) {
+    if (grant.values.length) {
+      filterState.attributes[grant.key] = [...grant.values]
+    }
+  }
 
   if (embed.collectionId) filterState.collections = [embed.collectionId]
   if (embed.tag) filterState.tags = [embed.tag]
 
-  if (defaults.collection?.length) {
-    if (locked.has('collection') || filterState.collections.length === 0) {
-      filterState.collections = [...defaults.collection]
+  const collection = filterValues('collection')
+  if (collection.length) {
+    if (filterLocked('collection') || filterState.collections.length === 0) {
+      filterState.collections = [...collection]
     }
   }
-  if (defaults.tag?.length) {
-    if (locked.has('tag') || filterState.tags.length === 0) {
-      filterState.tags = [...defaults.tag]
+  const tag = filterValues('tag')
+  if (tag.length) {
+    if (filterLocked('tag') || filterState.tags.length === 0) {
+      filterState.tags = [...tag]
     }
   }
-  if (defaults.type?.length) {
-    if (locked.has('type') || filterState.types.length === 0) {
-      filterState.types = [...defaults.type]
+  const type = filterValues('type')
+  if (type.length) {
+    if (filterLocked('type') || filterState.types.length === 0) {
+      filterState.types = [...type]
     }
   }
-  if (defaults.mime?.length) {
-    if (locked.has('mime') || filterState.mimeTypes.length === 0) {
-      filterState.mimeTypes = [...defaults.mime]
+  const mimeTypes = filterValues('mime')
+  if (mimeTypes.length) {
+    if (filterLocked('mime') || filterState.mimeTypes.length === 0) {
+      filterState.mimeTypes = [...mimeTypes]
     }
   }
-  if (defaults.uncategorized) filterState.uncategorized = true
-  if (defaults.untagged) filterState.untagged = true
-  if (defaults.search) {
-    if (locked.has('search') || !filterState.search) {
-      filterState.search = defaults.search
+  if (filterTrue('uncategorized')) filterState.uncategorized = true
+  if (filterTrue('untagged')) filterState.untagged = true
+  const search = filterValues('search')[0]
+  if (search) {
+    if (filterLocked('search') || !filterState.search) {
+      filterState.search = search
     }
   }
-  if (defaults.sort) {
-    if (locked.has('sort') || filterState.sort === 'date-desc') {
-      filterState.sort = defaults.sort
+  const sort = filterValues('sort')[0]
+  if (sort) {
+    if (filterLocked('sort') || filterState.sort === 'date-desc') {
+      filterState.sort = sort
     }
   }
 }
@@ -240,6 +367,7 @@ export function hasActiveFilterState(): boolean {
     filterState.collections.length > 0 ||
     filterState.tags.length > 0 ||
     filterState.types.length > 0 ||
+    Object.keys(filterState.attributes).length > 0 ||
     filterState.colors.length > 0 ||
     filterState.mimeTypes.length > 0 ||
     filterState.uncategorized ||

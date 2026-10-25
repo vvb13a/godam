@@ -25,7 +25,7 @@ func sniffMime(provided string, data []byte) string {
 // mimeAllowed reports whether mime is permitted by an allow-set of exact types
 // and "type/*" wildcards.
 func mimeAllowed(mime string, allowed map[string]bool) bool {
-	if allowed[mime] {
+	if allowed[mime] || allowed["*/*"] || allowed["*"] {
 		return true
 	}
 	if i := strings.IndexByte(mime, '/'); i > 0 {
@@ -118,10 +118,107 @@ func (s *AssetService) uploadPolicy(ctx context.Context) uploadPolicy {
 			}
 		}
 	}
-	if actor := domain.ActorFromContext(ctx); actor != nil && actor.Token && len(actor.Scope.AllowedMimeTypes) > 0 {
-		policy.allowed = narrowAllowedMimeTypes(policy.allowed, actor.Scope.AllowedMimeTypes)
+	if actor := domain.ActorFromContext(ctx); actor != nil && actor.Token && len(actor.Scope.UploadSettings) > 0 {
+		policy.allowed = narrowAllowedMimeTypes(
+			policy.allowed,
+			uploadSettingMimePatterns(actor.Scope.UploadSettings),
+		)
+		policy.limits = narrowUploadLimits(policy.limits, actor.Scope.UploadSettings)
 	}
 	return policy
+}
+
+// uploadSettingMimePatterns expands token upload settings into MIME patterns.
+// An empty format or "*" covers every library format.
+func uploadSettingMimePatterns(settings []domain.UploadSetting) []string {
+	patterns := make([]string, 0, len(settings))
+	for _, setting := range settings {
+		if len(setting.MimeTypes) > 0 {
+			patterns = append(patterns, setting.MimeTypes...)
+			continue
+		}
+		switch setting.Format {
+		case "image":
+			patterns = append(patterns, "image/*")
+		case "audio":
+			patterns = append(patterns, "audio/*")
+		case "video":
+			patterns = append(patterns, "video/*")
+		case "pdf":
+			patterns = append(patterns, "application/pdf")
+		default:
+			patterns = append(patterns, "*/*")
+		}
+	}
+	return patterns
+}
+
+// narrowUploadLimits applies token size limits on top of the library limits.
+// A token can only lower a limit; a zero token limit inherits the library.
+func narrowUploadLimits(base domain.UploadLimits, settings []domain.UploadSetting) domain.UploadLimits {
+	var token domain.UploadLimits
+	for _, setting := range settings {
+		if setting.MaxBytes <= 0 {
+			continue
+		}
+		for _, category := range uploadSettingCategories(setting) {
+			switch category {
+			case "image":
+				token.ImageBytes = lowerLimit(token.ImageBytes, setting.MaxBytes)
+			case "audio":
+				token.AudioBytes = lowerLimit(token.AudioBytes, setting.MaxBytes)
+			case "video":
+				token.VideoBytes = lowerLimit(token.VideoBytes, setting.MaxBytes)
+			case "pdf":
+				token.PDFBytes = lowerLimit(token.PDFBytes, setting.MaxBytes)
+			}
+		}
+	}
+	return domain.UploadLimits{
+		ImageBytes: lowerLimit(base.ImageBytes, token.ImageBytes),
+		AudioBytes: lowerLimit(base.AudioBytes, token.AudioBytes),
+		VideoBytes: lowerLimit(base.VideoBytes, token.VideoBytes),
+		PDFBytes:   lowerLimit(base.PDFBytes, token.PDFBytes),
+	}
+}
+
+// uploadSettingCategories returns the upload categories a token setting
+// applies to. Explicit MIME types take precedence over the format shorthand.
+func uploadSettingCategories(setting domain.UploadSetting) []string {
+	if len(setting.MimeTypes) > 0 {
+		seen := make(map[string]bool, 4)
+		categories := make([]string, 0, 4)
+		for _, mimeType := range setting.MimeTypes {
+			if mimeType == "*" || mimeType == "*/*" {
+				return []string{"image", "audio", "video", "pdf"}
+			}
+			category := uploadCategory(mimeType)
+			if category == "" || seen[category] {
+				continue
+			}
+			seen[category] = true
+			categories = append(categories, category)
+		}
+		if len(categories) > 0 {
+			return categories
+		}
+	}
+	switch setting.Format {
+	case "image", "audio", "video", "pdf":
+		return []string{setting.Format}
+	}
+	return []string{"image", "audio", "video", "pdf"}
+}
+
+// lowerLimit returns the stricter of two limits. Zero means unlimited.
+func lowerLimit(base, token int64) int64 {
+	if token <= 0 {
+		return base
+	}
+	if base <= 0 || token < base {
+		return token
+	}
+	return base
 }
 
 // narrowAllowedMimeTypes intersects the library allow-list with the token's
@@ -145,6 +242,9 @@ func mimePatternsIntersect(a, b string) bool {
 	b = strings.ToLower(strings.TrimSpace(b))
 	if a == "" || b == "" {
 		return false
+	}
+	if a == "*" || a == "*/*" || b == "*" || b == "*/*" {
+		return true
 	}
 	if a == b {
 		return true

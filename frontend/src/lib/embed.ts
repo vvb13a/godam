@@ -18,7 +18,6 @@ export const embed = reactive({
   mimeLocked: false,
   searchLocked: false,
   sortLocked: false,
-  canUpload: true,
   preselectedIds: [] as string[],
   selectedIds: [] as string[],
   selectionInitialized: false,
@@ -60,14 +59,17 @@ export function configureEmbed(query: Record<string, unknown>): void {
 export function applyEmbedScope(scope: EmbedScope): void {
   if (!embed.active) return
   embed.scope = scope
-  const locked = new Set(scope.locked_filters ?? [])
-  embed.collectionLocked = embed.collectionLocked || locked.has('collection')
-  embed.tagLocked = embed.tagLocked || locked.has('tag')
-  embed.typeLocked = locked.has('type')
-  embed.mimeLocked = locked.has('mime')
-  embed.searchLocked = locked.has('search')
-  embed.sortLocked = locked.has('sort')
-  embed.canUpload = scope.can_upload !== false
+  const filters = scope.filters ?? {}
+  const locked = (name: string): boolean => {
+    const mode = filters[name]?.mode
+    return mode === 'locked' || mode === 'hidden'
+  }
+  embed.collectionLocked = embed.collectionLocked || locked('collection')
+  embed.tagLocked = embed.tagLocked || locked('tag')
+  embed.typeLocked = locked('type')
+  embed.mimeLocked = locked('mime')
+  embed.searchLocked = locked('search')
+  embed.sortLocked = locked('sort')
 }
 
 export function embedQuery(): Record<string, string> {

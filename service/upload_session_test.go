@@ -92,6 +92,13 @@ func TestChunkedUploadPersistsTokenUploaderName(t *testing.T) {
 		ID:    "cms-user-42",
 		Name:  "Ada Lovelace",
 		Token: true,
+		Scope: domain.Scope{
+			UploadAttributes: []domain.AssetAttribute{
+				{Key: "tenant", Value: "acme"},
+				{Key: "entity", Value: "news"},
+				{Key: "kind", Value: "logo"},
+			},
+		},
 	})
 	content := testPNG(t)
 
@@ -108,6 +115,20 @@ func TestChunkedUploadPersistsTokenUploaderName(t *testing.T) {
 	}
 	if asset.UploadedByName != "Ada Lovelace" {
 		t.Fatalf("uploader name not persisted: %+v", asset)
+	}
+	attributes := make(map[string]string)
+	for _, attr := range asset.Attributes {
+		attributes[attr.Key] = attr.Value
+	}
+	if attributes["tenant"] != "acme" || attributes["entity"] != "news" || attributes["kind"] != "logo" {
+		t.Fatalf("attributes not persisted: %+v", asset.Attributes)
+	}
+	loaded, err := assets.GetByID(ctx, asset.ID)
+	if err != nil {
+		t.Fatalf("reload asset: %v", err)
+	}
+	if len(loaded.Attributes) != 3 {
+		t.Fatalf("attributes not preloaded: %+v", loaded.Attributes)
 	}
 }
 

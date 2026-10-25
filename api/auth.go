@@ -66,7 +66,10 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx := domain.WithActor(r.Context(), &domain.Actor{ID: adminActorID})
+		ctx := domain.WithActor(r.Context(), &domain.Actor{
+			ID:           adminActorID,
+			Capabilities: append([]string{}, domain.AllCapabilities...),
+		})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -95,17 +98,48 @@ func requestScope(r *http.Request) (domain.Scope, bool) {
 }
 
 type meResponse struct {
-	ID    string        `json:"id"`
-	Name  string        `json:"name,omitempty"`
-	Scope *domain.Scope `json:"scope,omitempty"`
+	ID           string        `json:"id"`
+	Name         string        `json:"name,omitempty"`
+	Capabilities []string      `json:"capabilities,omitempty"`
+	Scope        *domain.Scope `json:"scope,omitempty"`
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	actor := currentActor(r)
-	response := meResponse{ID: actor.ID, Name: actor.Name}
+	response := meResponse{
+		ID:           actor.ID,
+		Name:         actor.Name,
+		Capabilities: append([]string{}, actor.Capabilities...),
+	}
 	if actor.Token {
-		scope := actor.Scope
+		scope := publicScope(actor.Scope)
 		response.Scope = &scope
 	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+// publicScope removes hidden filters and attributes before a scope is sent to
+// the embed client. Hidden values are enforced server-side only.
+func publicScope(scope domain.Scope) domain.Scope {
+	public := domain.Scope{
+		Username:       scope.Username,
+		AllFilters:     scope.AllFilters,
+		UploadSettings: append([]domain.UploadSetting{}, scope.UploadSettings...),
+	}
+	for name, grant := range scope.Filters {
+		if public.Filters == nil {
+			public.Filters = make(map[string]domain.FilterGrant, len(scope.Filters))
+		}
+		if grant.Mode == domain.ScopeModeHidden {
+			grant.Values = nil
+		}
+		public.Filters[name] = grant
+	}
+	for _, grant := range scope.Attributes {
+		if grant.Mode == domain.AttributeModeHidden {
+			grant.Values = []string{}
+		}
+		public.Attributes = append(public.Attributes, grant)
+	}
+	return public
 }

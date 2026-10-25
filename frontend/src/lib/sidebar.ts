@@ -9,12 +9,15 @@ export type SidebarToggleKey =
   | 'smartCollections'
   | 'tags'
 
+export type SidebarMode = 'classic' | 'attributes'
+
 export interface SidebarPrefs {
   quicklinks: boolean
   collections: boolean
   smartCollections: boolean
   tags: boolean
   order: SidebarToggleKey[]
+  mode: SidebarMode
 }
 
 const SIDEBAR_STORAGE_KEY = 'godam:sidebar'
@@ -31,6 +34,7 @@ const DEFAULT_PREFS: SidebarPrefs = {
   smartCollections: true,
   tags: true,
   order: [...SIDEBAR_KEYS],
+  mode: 'classic',
 }
 
 function normalizeOrder(value: unknown): SidebarToggleKey[] {
@@ -54,6 +58,7 @@ function loadPrefs(): SidebarPrefs {
       ...DEFAULT_PREFS,
       ...parsed,
       order: normalizeOrder(parsed.order),
+      mode: parsed.mode === 'attributes' ? 'attributes' : 'classic',
     }
   } catch {
     return { ...DEFAULT_PREFS, order: [...SIDEBAR_KEYS] }

@@ -43,6 +43,9 @@ app.use(PrimeVue, {
     },
   },
   license: 'eyJpZCI6IjgxODMxNzVhLWI0NjUtNDQzYi1hMjgwLWU2ZTQzZjQ2NTE3NiIsInByb2R1Y3QiOiJwcmltZXVpIiwidGllciI6ImNvbW11bml0eSIsInR5cGUiOiJkZXYiLCJpYXQiOjE3OTA4NzUyMjQsImV4cCI6MTgyMjQxMTIyNH0.1RtAOl9Ww3-aE0yEH5e5r9qh7GVP-t1-eEaCcSpPRZUYbgszfwmC4gR5Om7J7Qd362yctgPQEgfTcLNnd6QPCA',
+  locale: {
+    firstDayOfWeek: 1,
+  },
 })
 
 app.use(router)

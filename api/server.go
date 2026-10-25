@@ -76,7 +76,7 @@ func (s *Server) routes() {
 	// imgproxy and is never proxied to the public site.
 	s.mux.HandleFunc("GET /convert/{id}/{spec}", s.handleConversion)
 	s.mux.HandleFunc("GET /internal/source/{id}", s.handleConversionSource)
-	s.mux.HandleFunc("POST /api/conversions/purge", s.handlePurgeConversions)
+	s.mux.HandleFunc("POST /api/conversions/purge", s.withCapability(domain.CapabilityConversionsPurge, s.handlePurgeConversions))
 
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/system/info", s.handleSystemInfo)
@@ -84,71 +84,72 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /api/auth/me", s.handleMe)
 
-	s.mux.HandleFunc("GET /api/stats", s.handleStats)
+	s.mux.HandleFunc("GET /api/stats", s.withCapability(domain.CapabilityAssetsRead, s.handleStats))
 
-	s.mux.HandleFunc("GET /api/presets", s.handleListPresets)
-	s.mux.HandleFunc("GET /api/presets/catalog", s.handlePresetCatalog)
-	s.mux.HandleFunc("POST /api/presets", s.handleCreatePreset)
-	s.mux.HandleFunc("PUT /api/presets/{id}", s.handleUpdatePreset)
-	s.mux.HandleFunc("DELETE /api/presets/{id}", s.handleDeletePreset)
-	s.mux.HandleFunc("POST /api/imgproxy/sign", s.handleSignImgproxy)
-	s.mux.HandleFunc("POST /api/assets/{id}/preset-preview", s.handlePresetPreview)
-	s.mux.HandleFunc("POST /api/assets/presets/warm", s.handleWarmPresets)
+	s.mux.HandleFunc("GET /api/presets", s.withCapability(domain.CapabilityAssetsRead, s.handleListPresets))
+	s.mux.HandleFunc("GET /api/presets/catalog", s.withCapability(domain.CapabilitySettingsPresets, s.handlePresetCatalog))
+	s.mux.HandleFunc("POST /api/presets", s.withCapability(domain.CapabilitySettingsPresets, s.handleCreatePreset))
+	s.mux.HandleFunc("PUT /api/presets/{id}", s.withCapability(domain.CapabilitySettingsPresets, s.handleUpdatePreset))
+	s.mux.HandleFunc("DELETE /api/presets/{id}", s.withCapability(domain.CapabilitySettingsPresets, s.handleDeletePreset))
+	s.mux.HandleFunc("POST /api/imgproxy/sign", s.withCapability(domain.CapabilitySettingsPresets, s.handleSignImgproxy))
+	s.mux.HandleFunc("POST /api/assets/{id}/preset-preview", s.withCapability(domain.CapabilitySettingsPresets, s.handlePresetPreview))
+	s.mux.HandleFunc("POST /api/assets/presets/warm", s.withCapability(domain.CapabilityConversionsWarm, s.handleWarmPresets))
 
-	s.mux.HandleFunc("GET /api/instance", s.handleGetInstance)
-	s.mux.HandleFunc("PUT /api/instance", s.handleUpdateInstance)
-	s.mux.HandleFunc("PUT /api/instance/cover", s.handleSetInstanceCover)
-	s.mux.HandleFunc("PUT /api/instance/watermark", s.handleSetInstanceWatermark)
-	s.mux.HandleFunc("PUT /api/instance/upload-settings", s.handleSetInstanceUploadSettings)
-	s.mux.HandleFunc("GET /api/instance/backup", s.handleGetBackup)
-	s.mux.HandleFunc("PUT /api/instance/backup", s.handleSetBackup)
-	s.mux.HandleFunc("POST /api/instance/backup/test", s.handleTestBackup)
-	s.mux.HandleFunc("POST /api/instance/backup/run", s.handleRunBackup)
-	s.mux.HandleFunc("GET /api/instance/backup/status", s.handleBackupStatus)
+	s.mux.HandleFunc("GET /api/instance", s.withCapability(domain.CapabilityAssetsRead, s.handleGetInstance))
+	s.mux.HandleFunc("PUT /api/instance", s.withCapability(domain.CapabilityLibraryUpdate, s.handleUpdateInstance))
+	s.mux.HandleFunc("PUT /api/instance/cover", s.withCapability(domain.CapabilityLibraryUpdate, s.handleSetInstanceCover))
+	s.mux.HandleFunc("PUT /api/instance/watermark", s.withCapability(domain.CapabilityLibraryUpdate, s.handleSetInstanceWatermark))
+	s.mux.HandleFunc("PUT /api/instance/upload-settings", s.withCapability(domain.CapabilitySettingsUpload, s.handleSetInstanceUploadSettings))
+	s.mux.HandleFunc("GET /api/instance/backup", s.withCapability(domain.CapabilitySettingsStorage, s.handleGetBackup))
+	s.mux.HandleFunc("PUT /api/instance/backup", s.withCapability(domain.CapabilitySettingsStorage, s.handleSetBackup))
+	s.mux.HandleFunc("POST /api/instance/backup/test", s.withCapability(domain.CapabilitySettingsStorage, s.handleTestBackup))
+	s.mux.HandleFunc("POST /api/instance/backup/run", s.withCapability(domain.CapabilitySettingsStorage, s.handleRunBackup))
+	s.mux.HandleFunc("GET /api/instance/backup/status", s.withCapability(domain.CapabilitySettingsStorage, s.handleBackupStatus))
 
-	s.mux.HandleFunc("GET /api/assets", s.handleListAssets)
-	s.mux.HandleFunc("POST /api/assets/upload", s.handleUploadAsset)
-	s.mux.HandleFunc("POST /api/assets/uploads", s.handleStartUpload)
-	s.mux.HandleFunc("PUT /api/assets/uploads/{id}/chunks", s.handleUploadChunk)
-	s.mux.HandleFunc("POST /api/assets/uploads/{id}/complete", s.handleCompleteUpload)
-	s.mux.HandleFunc("DELETE /api/assets/uploads/{id}", s.handleCancelUpload)
-	s.mux.HandleFunc("POST /api/assets/collections", s.handleAddAssetsToCollection)
-	s.mux.HandleFunc("POST /api/assets/tags", s.handleApplyAssetsTags)
-	s.mux.HandleFunc("GET /api/assets/zip", s.handleDownloadAssetsZip)
-	s.mux.HandleFunc("GET /api/assets/{id}", s.handleGetAsset)
-	s.mux.HandleFunc("PUT /api/assets/{id}", s.handleUpdateAsset)
-	s.mux.HandleFunc("DELETE /api/assets/{id}", s.handleDeleteAsset)
-	s.mux.HandleFunc("GET /api/assets/{id}/content", s.handleAssetContent)
-	s.mux.HandleFunc("GET /api/assets/{id}/conversions", s.handleListConversions)
-	s.mux.HandleFunc("PUT /api/assets/{id}/content", s.handleReplaceAssetContent)
-	s.mux.HandleFunc("GET /api/assets/{id}/preview", s.handleAssetPreview)
-	s.mux.HandleFunc("POST /api/assets/{id}/preview", s.handleRegeneratePreview)
-	s.mux.HandleFunc("POST /api/assets/{id}/tags", s.handleAddTag)
-	s.mux.HandleFunc("DELETE /api/assets/{id}/tags/{tagId}", s.handleRemoveTag)
-	s.mux.HandleFunc("POST /api/assets/{id}/collections", s.handleAddToCollection)
-	s.mux.HandleFunc("DELETE /api/assets/{id}/collections/{collectionId}", s.handleRemoveFromCollection)
+	s.mux.HandleFunc("GET /api/assets", s.withCapability(domain.CapabilityAssetsRead, s.handleListAssets))
+	s.mux.HandleFunc("GET /api/attributes", s.withCapability(domain.CapabilityAssetsRead, s.handleListAttributes))
+	s.mux.HandleFunc("POST /api/assets/upload", s.withCapability(domain.CapabilityAssetsUpload, s.handleUploadAsset))
+	s.mux.HandleFunc("POST /api/assets/uploads", s.withCapability(domain.CapabilityAssetsUpload, s.handleStartUpload))
+	s.mux.HandleFunc("PUT /api/assets/uploads/{id}/chunks", s.withCapability(domain.CapabilityAssetsUpload, s.handleUploadChunk))
+	s.mux.HandleFunc("POST /api/assets/uploads/{id}/complete", s.withCapability(domain.CapabilityAssetsUpload, s.handleCompleteUpload))
+	s.mux.HandleFunc("DELETE /api/assets/uploads/{id}", s.withCapability(domain.CapabilityAssetsUpload, s.handleCancelUpload))
+	s.mux.HandleFunc("POST /api/assets/collections", s.withCapability(domain.CapabilityAssetsUpdate, s.handleAddAssetsToCollection))
+	s.mux.HandleFunc("POST /api/assets/tags", s.withCapability(domain.CapabilityAssetsUpdate, s.handleApplyAssetsTags))
+	s.mux.HandleFunc("GET /api/assets/zip", s.withCapability(domain.CapabilityAssetsRead, s.handleDownloadAssetsZip))
+	s.mux.HandleFunc("GET /api/assets/{id}", s.withCapability(domain.CapabilityAssetsRead, s.handleGetAsset))
+	s.mux.HandleFunc("PUT /api/assets/{id}", s.withCapability(domain.CapabilityAssetsUpdate, s.handleUpdateAsset))
+	s.mux.HandleFunc("DELETE /api/assets/{id}", s.withCapability(domain.CapabilityAssetsDelete, s.handleDeleteAsset))
+	s.mux.HandleFunc("GET /api/assets/{id}/content", s.withCapability(domain.CapabilityAssetsRead, s.handleAssetContent))
+	s.mux.HandleFunc("GET /api/assets/{id}/conversions", s.withCapability(domain.CapabilityAssetsRead, s.handleListConversions))
+	s.mux.HandleFunc("PUT /api/assets/{id}/content", s.withCapability(domain.CapabilityAssetsUpdate, s.handleReplaceAssetContent))
+	s.mux.HandleFunc("GET /api/assets/{id}/preview", s.withCapability(domain.CapabilityAssetsRead, s.handleAssetPreview))
+	s.mux.HandleFunc("POST /api/assets/{id}/preview", s.withCapability(domain.CapabilityAssetsUpdate, s.handleRegeneratePreview))
+	s.mux.HandleFunc("POST /api/assets/{id}/tags", s.withCapability(domain.CapabilityAssetsUpdate, s.handleAddTag))
+	s.mux.HandleFunc("DELETE /api/assets/{id}/tags/{tagId}", s.withCapability(domain.CapabilityAssetsUpdate, s.handleRemoveTag))
+	s.mux.HandleFunc("POST /api/assets/{id}/collections", s.withCapability(domain.CapabilityAssetsUpdate, s.handleAddToCollection))
+	s.mux.HandleFunc("DELETE /api/assets/{id}/collections/{collectionId}", s.withCapability(domain.CapabilityAssetsUpdate, s.handleRemoveFromCollection))
 
-	s.mux.HandleFunc("GET /api/collections", s.handleListCollections)
-	s.mux.HandleFunc("POST /api/collections", s.handleCreateCollection)
-	s.mux.HandleFunc("PUT /api/collections/{id}", s.handleUpdateCollection)
-	s.mux.HandleFunc("PUT /api/collections/{id}/move", s.handleMoveCollection)
-	s.mux.HandleFunc("DELETE /api/collections/{id}", s.handleDeleteCollection)
+	s.mux.HandleFunc("GET /api/collections", s.withCapability(domain.CapabilityAssetsRead, s.handleListCollections))
+	s.mux.HandleFunc("POST /api/collections", s.withCapability(domain.CapabilityLibraryUpdate, s.handleCreateCollection))
+	s.mux.HandleFunc("PUT /api/collections/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleUpdateCollection))
+	s.mux.HandleFunc("PUT /api/collections/{id}/move", s.withCapability(domain.CapabilityLibraryUpdate, s.handleMoveCollection))
+	s.mux.HandleFunc("DELETE /api/collections/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleDeleteCollection))
 
-	s.mux.HandleFunc("GET /api/smart-collections", s.handleListSmartCollections)
-	s.mux.HandleFunc("POST /api/smart-collections", s.handleCreateSmartCollection)
-	s.mux.HandleFunc("PUT /api/smart-collections/sort", s.handleReorderSmartCollections)
-	s.mux.HandleFunc("PUT /api/smart-collections/{id}", s.handleUpdateSmartCollection)
-	s.mux.HandleFunc("DELETE /api/smart-collections/{id}", s.handleDeleteSmartCollection)
+	s.mux.HandleFunc("GET /api/smart-collections", s.withCapability(domain.CapabilityAssetsRead, s.handleListSmartCollections))
+	s.mux.HandleFunc("POST /api/smart-collections", s.withCapability(domain.CapabilityLibraryUpdate, s.handleCreateSmartCollection))
+	s.mux.HandleFunc("PUT /api/smart-collections/sort", s.withCapability(domain.CapabilityLibraryUpdate, s.handleReorderSmartCollections))
+	s.mux.HandleFunc("PUT /api/smart-collections/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleUpdateSmartCollection))
+	s.mux.HandleFunc("DELETE /api/smart-collections/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleDeleteSmartCollection))
 
-	s.mux.HandleFunc("GET /api/tags", s.handleListTags)
-	s.mux.HandleFunc("POST /api/tags", s.handleCreateTag)
-	s.mux.HandleFunc("PUT /api/tags/{id}", s.handleUpdateTag)
-	s.mux.HandleFunc("DELETE /api/tags/{id}", s.handleDeleteTag)
+	s.mux.HandleFunc("GET /api/tags", s.withCapability(domain.CapabilityAssetsRead, s.handleListTags))
+	s.mux.HandleFunc("POST /api/tags", s.withCapability(domain.CapabilityLibraryUpdate, s.handleCreateTag))
+	s.mux.HandleFunc("PUT /api/tags/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleUpdateTag))
+	s.mux.HandleFunc("DELETE /api/tags/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleDeleteTag))
 
-	s.mux.HandleFunc("GET /api/tag-groups", s.handleListTagGroups)
-	s.mux.HandleFunc("POST /api/tag-groups", s.handleCreateTagGroup)
-	s.mux.HandleFunc("PUT /api/tag-groups/{id}", s.handleUpdateTagGroup)
-	s.mux.HandleFunc("DELETE /api/tag-groups/{id}", s.handleDeleteTagGroup)
+	s.mux.HandleFunc("GET /api/tag-groups", s.withCapability(domain.CapabilityAssetsRead, s.handleListTagGroups))
+	s.mux.HandleFunc("POST /api/tag-groups", s.withCapability(domain.CapabilityLibraryUpdate, s.handleCreateTagGroup))
+	s.mux.HandleFunc("PUT /api/tag-groups/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleUpdateTagGroup))
+	s.mux.HandleFunc("DELETE /api/tag-groups/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleDeleteTagGroup))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -212,6 +213,28 @@ func currentActor(r *http.Request) *domain.Actor {
 	return actor
 }
 
+// requireCapability enforces a token capability. Direct access carries all
+// capabilities; JWT actors must include the capability or a matching wildcard.
+func (s *Server) requireCapability(w http.ResponseWriter, r *http.Request, capability string) bool {
+	actor := domain.ActorFromContext(r.Context())
+	if actor.Can(capability) {
+		return true
+	}
+	writeJSON(w, http.StatusForbidden, map[string]string{
+		"error": "missing capability: " + capability,
+	})
+	return false
+}
+
+func (s *Server) withCapability(capability string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.requireCapability(w, r, capability) {
+			return
+		}
+		next(w, r)
+	}
+}
+
 // The owned* helpers resolve a resource by id.
 
 func (s *Server) ownedAsset(w http.ResponseWriter, r *http.Request, id string) (*domain.Asset, bool) {
@@ -220,7 +243,43 @@ func (s *Server) ownedAsset(w http.ResponseWriter, r *http.Request, id string) (
 		writeError(w, err)
 		return nil, false
 	}
+	if actor := domain.ActorFromContext(r.Context()); !assetVisibleToActor(asset, actor) {
+		writeError(w, domain.ErrNotFound)
+		return nil, false
+	}
 	return asset, true
+}
+
+// assetVisibleToActor enforces locked and hidden token attributes. Active
+// attributes are filters, not access restrictions.
+func assetVisibleToActor(asset *domain.Asset, actor *domain.Actor) bool {
+	if actor == nil || !actor.Token {
+		return true
+	}
+	for _, grant := range actor.Scope.Attributes {
+		if grant.Mode == domain.AttributeModeActive {
+			continue
+		}
+		found := false
+		for _, attr := range asset.Attributes {
+			if attr.Key != grant.Key {
+				continue
+			}
+			for _, value := range grant.Values {
+				if attr.Value == value {
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) ownedTag(w http.ResponseWriter, r *http.Request, id string) (*domain.Tag, bool) {

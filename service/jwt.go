@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -110,11 +111,22 @@ func (v *JWTVerifier) Verify(token string) (*domain.Actor, error) {
 		return nil, ErrInvalidToken
 	}
 
+	scope, err := claims.Scope.toDomain(username)
+	if err != nil {
+		return nil, ErrInvalidToken
+	}
+
+	capabilities := domain.NormalizeCapabilities(claims.Scope.Capabilities)
+	if len(capabilities) == 0 {
+		capabilities = []string{domain.CapabilityAssetsRead}
+	}
+
 	return &domain.Actor{
-		ID:    subject,
-		Name:  username,
-		Token: true,
-		Scope: claims.Scope.toDomain(username),
+		ID:           subject,
+		Name:         username,
+		Token:        true,
+		Scope:        scope,
+		Capabilities: capabilities,
 	}, nil
 }
 
@@ -130,74 +142,340 @@ type jwtClaims struct {
 }
 
 type jwtScope struct {
-	Username         string          `json:"username"`
-	DefaultFilters   jwtScopeFilters `json:"default_filters"`
-	LockedFilters    stringList      `json:"locked_filters"`
-	AllowedMimeTypes stringList      `json:"allowed_mime_types"`
-	CanUpload        *bool           `json:"can_upload"`
+	Username       string            `json:"username"`
+	Filters        jwtFilters        `json:"filters"`
+	Attributes     jwtAttributes     `json:"attributes"`
+	UploadSettings jwtUploadSettings `json:"upload_settings"`
+	Capabilities   stringList        `json:"capabilities"`
 }
 
-type jwtScopeFilters struct {
-	Collection    stringList `json:"collection"`
-	CollectionIDs stringList `json:"collection_ids"`
-	Tag           stringList `json:"tag"`
-	TagIDs        stringList `json:"tag_ids"`
-	Type          stringList `json:"type"`
-	Types         stringList `json:"types"`
-	Mime          stringList `json:"mime"`
-	MimeTypes     stringList `json:"mime_types"`
-	Uncategorized bool       `json:"uncategorized"`
-	Untagged      bool       `json:"untagged"`
-	Search        string     `json:"search"`
-	Sort          string     `json:"sort"`
+type jwtFilters struct {
+	All   bool
+	Items map[string]jwtFilter
 }
 
-func (s jwtScope) toDomain(username string) domain.Scope {
-	collections := firstList(s.DefaultFilters.Collection, s.DefaultFilters.CollectionIDs)
-	tags := firstList(s.DefaultFilters.Tag, s.DefaultFilters.TagIDs)
-	types := firstList(s.DefaultFilters.Type, s.DefaultFilters.Types)
-	mimes := firstList(s.DefaultFilters.Mime, s.DefaultFilters.MimeTypes)
-
-	collections, uncategorized := splitSpecial(collections, "uncategorized")
-	tags, untagged := splitSpecial(tags, "untagged")
-
-	canUpload := true
-	if s.CanUpload != nil {
-		canUpload = *s.CanUpload
+// UnmarshalJSON accepts a map of filter grants, the wildcard string
+// "filters": "*", or the object form with a "*" key.
+func (f *jwtFilters) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		return nil
 	}
-
-	return domain.Scope{
-		Username: username,
-		DefaultFilters: domain.ScopeFilters{
-			CollectionIDs: collections,
-			TagIDs:        tags,
-			Types:         types,
-			MimeTypes:     mimes,
-			Uncategorized: s.DefaultFilters.Uncategorized || uncategorized,
-			Untagged:      s.DefaultFilters.Untagged || untagged,
-			Search:        strings.TrimSpace(s.DefaultFilters.Search),
-			Sort:          strings.TrimSpace(s.DefaultFilters.Sort),
-		},
-		LockedFilters:    normalizeLockedFilters(s.LockedFilters),
-		AllowedMimeTypes: normalizeMimeTypes(s.AllowedMimeTypes),
-		CanUpload:        canUpload,
+	var marker string
+	if err := json.Unmarshal(data, &marker); err == nil {
+		if strings.TrimSpace(marker) != "*" {
+			return fmt.Errorf("invalid filters")
+		}
+		f.All = true
+		return nil
 	}
-}
-
-func normalizeLockedFilters(values []string) []string {
-	seen := make(map[string]bool, len(values))
-	locked := make([]string, 0, len(values))
-	for _, value := range values {
-		switch normalizeFilterName(value) {
-		case "collection", "tag", "type", "mime", "search", "sort":
-			name := normalizeFilterName(value)
-			if !seen[name] {
-				seen[name] = true
-				locked = append(locked, name)
+	var items map[string]jwtFilter
+	if err := json.Unmarshal(data, &items); err != nil {
+		return fmt.Errorf("invalid filters: %w", err)
+	}
+	if star, ok := items["*"]; ok {
+		mode := domain.ScopeModeAllowed
+		if strings.TrimSpace(star.Mode) != "" {
+			var err error
+			mode, err = normalizeScopeMode(star.Mode)
+			if err != nil {
+				return err
 			}
 		}
+		if mode != domain.ScopeModeAllowed || len(star.Values) > 0 {
+			return fmt.Errorf("wildcard filters only support allowed mode without values")
+		}
+		f.All = true
+		delete(items, "*")
 	}
-	return locked
+	f.Items = items
+	return nil
+}
+
+type jwtFilter struct {
+	Values stringList `json:"values"`
+	Mode   string     `json:"mode"`
+}
+
+type jwtAttributes struct {
+	All   bool
+	Items map[string]jwtAttribute
+}
+
+// UnmarshalJSON accepts either a map of attribute grants or the wildcard forms
+// "attributes": "*" and "attributes": {"*": {"mode":"active"}}.
+func (a *jwtAttributes) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		return nil
+	}
+	var marker string
+	if err := json.Unmarshal(data, &marker); err == nil {
+		if strings.TrimSpace(marker) != "*" {
+			return fmt.Errorf("invalid attributes")
+		}
+		a.All = true
+		return nil
+	}
+	var items map[string]jwtAttribute
+	if err := json.Unmarshal(data, &items); err != nil {
+		return fmt.Errorf("invalid attributes: %w", err)
+	}
+	if star, ok := items["*"]; ok {
+		mode, err := normalizeAttributeMode(star.Mode)
+		if err != nil {
+			return err
+		}
+		if mode != domain.AttributeModeActive || len(star.Values) > 0 || len(star.UploadValues) > 0 {
+			return fmt.Errorf("wildcard attributes only support active mode without values")
+		}
+		a.All = true
+		delete(items, "*")
+	}
+	a.Items = items
+	return nil
+}
+
+type jwtAttribute struct {
+	Values       stringList `json:"values"`
+	Mode         string     `json:"mode"`
+	UploadValues stringList `json:"upload_values"`
+}
+
+// UnmarshalJSON accepts either {values:[...],mode:"..."} or a bare string /
+// array of strings (which defaults to active mode).
+func (a *jwtAttribute) UnmarshalJSON(data []byte) error {
+	var object struct {
+		Values       stringList `json:"values"`
+		Mode         string     `json:"mode"`
+		UploadValues stringList `json:"upload_values"`
+	}
+	if err := json.Unmarshal(data, &object); err == nil {
+		a.Values = object.Values
+		a.Mode = object.Mode
+		a.UploadValues = object.UploadValues
+		return nil
+	}
+	var list stringList
+	if err := json.Unmarshal(data, &list); err != nil {
+		return err
+	}
+	a.Values = list
+	return nil
+}
+
+type jwtUploadSetting struct {
+	Format    string     `json:"format"`
+	MimeTypes stringList `json:"mime_types"`
+	Types     stringList `json:"types"`
+	MaxBytes  int64      `json:"max_bytes"`
+}
+
+// jwtUploadSettings accepts either a single object or an array of objects.
+type jwtUploadSettings []jwtUploadSetting
+
+func (s *jwtUploadSettings) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*s = nil
+		return nil
+	}
+	var many []jwtUploadSetting
+	if err := json.Unmarshal(data, &many); err == nil {
+		*s = many
+		return nil
+	}
+	var one jwtUploadSetting
+	if err := json.Unmarshal(data, &one); err != nil {
+		return fmt.Errorf("expected upload setting object or array: %w", err)
+	}
+	*s = []jwtUploadSetting{one}
+	return nil
+}
+
+// toDomain converts the token scope into the server-side authorization
+// envelope. It rejects unknown filter names, modes and upload formats.
+func (s jwtScope) toDomain(username string) (domain.Scope, error) {
+	scope := domain.Scope{
+		Username:       username,
+		Filters:        make(map[string]domain.FilterGrant, len(s.Filters.Items)),
+		AllFilters:     s.Filters.All,
+		AllAttributes:  s.Attributes.All,
+		UploadSettings: make([]domain.UploadSetting, 0, len(s.UploadSettings)),
+	}
+
+	for rawName, filter := range s.Filters.Items {
+		name := normalizeFilterName(rawName)
+		if name == "" {
+			return domain.Scope{}, fmt.Errorf("invalid filter %q", rawName)
+		}
+		if _, exists := scope.Filters[name]; exists {
+			return domain.Scope{}, fmt.Errorf("duplicate filter %q", name)
+		}
+		mode, err := normalizeScopeMode(filter.Mode)
+		if err != nil {
+			return domain.Scope{}, err
+		}
+		values := normalizeAttributeValues(filter.Values)
+		if name == "uncategorized" || name == "untagged" {
+			values = normalizeBoolFilterValues(values)
+		}
+		if name == "type" || name == "mime" {
+			values = normalizeMimeTypes(values)
+		}
+		if hasWildcard(values) {
+			values = nil
+		}
+		if (mode == domain.ScopeModeAllowed || mode == domain.ScopeModeDenied) && len(values) > 0 {
+			return domain.Scope{}, fmt.Errorf("mode %q does not accept values", mode)
+		}
+		scope.Filters[name] = domain.FilterGrant{Values: values, Mode: mode}
+	}
+
+	uploadKeys := make(map[string]bool)
+	for rawKey, attr := range s.Attributes.Items {
+		key := strings.TrimSpace(rawKey)
+		if key == "" {
+			return domain.Scope{}, fmt.Errorf("invalid attribute key")
+		}
+		mode, err := normalizeAttributeMode(attr.Mode)
+		if err != nil {
+			return domain.Scope{}, err
+		}
+		values := normalizeAttributeValues(attr.Values)
+		wildcard := hasWildcard(values)
+		if wildcard {
+			values = nil
+		}
+		if len(values) > 0 {
+			scope.Attributes = append(scope.Attributes, domain.AttributeGrant{
+				Key:    key,
+				Values: values,
+				Mode:   mode,
+			})
+		}
+		uploadValues := normalizeAttributeValues(attr.UploadValues)
+		if hasWildcard(uploadValues) {
+			uploadValues = values
+		}
+		for _, value := range uploadValues {
+			token := key + "\x00" + value
+			if uploadKeys[token] {
+				continue
+			}
+			uploadKeys[token] = true
+			scope.UploadAttributes = append(scope.UploadAttributes, domain.AssetAttribute{
+				Key:   key,
+				Value: value,
+			})
+		}
+	}
+	sort.Slice(scope.Attributes, func(i, j int) bool {
+		return scope.Attributes[i].Key < scope.Attributes[j].Key
+	})
+
+	for _, setting := range s.UploadSettings {
+		normalized, err := normalizeUploadSetting(setting)
+		if err != nil {
+			return domain.Scope{}, err
+		}
+		scope.UploadSettings = append(scope.UploadSettings, normalized)
+	}
+
+	return scope, nil
+}
+
+func normalizeScopeMode(raw string) (domain.ScopeMode, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "active":
+		return domain.ScopeModeActive, nil
+	case "allowed":
+		return domain.ScopeModeAllowed, nil
+	case "locked":
+		return domain.ScopeModeLocked, nil
+	case "hidden":
+		return domain.ScopeModeHidden, nil
+	case "denied":
+		return domain.ScopeModeDenied, nil
+	}
+	return "", fmt.Errorf("invalid scope mode %q", raw)
+}
+
+func normalizeAttributeMode(raw string) (domain.AttributeMode, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "active":
+		return domain.AttributeModeActive, nil
+	case "locked":
+		return domain.AttributeModeLocked, nil
+	case "hidden":
+		return domain.AttributeModeHidden, nil
+	}
+	return "", fmt.Errorf("invalid attribute mode %q", raw)
+}
+
+func normalizeUploadSetting(setting jwtUploadSetting) (domain.UploadSetting, error) {
+	format := strings.ToLower(strings.TrimSpace(setting.Format))
+	if format == "" {
+		format = "*"
+	}
+	switch format {
+	case "*", "image", "audio", "video", "pdf":
+	default:
+		return domain.UploadSetting{}, fmt.Errorf("invalid upload format %q", setting.Format)
+	}
+	if setting.MaxBytes < 0 {
+		return domain.UploadSetting{}, fmt.Errorf("invalid upload size")
+	}
+	mimeTypes := append(append(stringList{}, setting.MimeTypes...), setting.Types...)
+	normalizedTypes := normalizeMimeTypes(mimeTypes)
+	for _, mimeType := range normalizedTypes {
+		if format == "*" || mimeType == "*" || mimeType == "*/*" {
+			continue
+		}
+		if uploadFormatForMimeType(mimeType) != format {
+			return domain.UploadSetting{}, fmt.Errorf(
+				"upload type %q does not match format %q", mimeType, format,
+			)
+		}
+	}
+	return domain.UploadSetting{
+		Format:    format,
+		MimeTypes: normalizedTypes,
+		MaxBytes:  setting.MaxBytes,
+	}, nil
+}
+
+func uploadFormatForMimeType(mimeType string) string {
+	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
+	switch {
+	case mimeType == "application/pdf":
+		return "pdf"
+	case strings.HasPrefix(mimeType, "image/"):
+		return "image"
+	case strings.HasPrefix(mimeType, "audio/"):
+		return "audio"
+	case strings.HasPrefix(mimeType, "video/"):
+		return "video"
+	}
+	return ""
+}
+
+func normalizeBoolFilterValues(values []string) []string {
+	if len(values) == 0 {
+		return []string{"true"}
+	}
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), "true") {
+			return []string{"true"}
+		}
+	}
+	return nil
+}
+
+func hasWildcard(values []string) bool {
+	for _, value := range values {
+		if value == "*" || value == "*/*" {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeFilterName(value string) string {
@@ -214,8 +492,26 @@ func normalizeFilterName(value string) string {
 		return "search"
 	case "sort", "order", "sorting":
 		return "sort"
+	case "uncategorized":
+		return "uncategorized"
+	case "untagged":
+		return "untagged"
 	}
 	return ""
+}
+
+func normalizeAttributeValues(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
 }
 
 func normalizeMimeTypes(values []string) []string {
@@ -232,19 +528,6 @@ func normalizeMimeTypes(values []string) []string {
 	return out
 }
 
-func splitSpecial(values []string, special string) ([]string, bool) {
-	kept := make([]string, 0, len(values))
-	found := false
-	for _, value := range values {
-		if strings.EqualFold(strings.TrimSpace(value), special) {
-			found = true
-			continue
-		}
-		kept = append(kept, strings.TrimSpace(value))
-	}
-	return kept, found
-}
-
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if value = strings.TrimSpace(value); value != "" {
@@ -252,23 +535,6 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func firstList(values ...[]string) []string {
-	for _, value := range values {
-		if len(value) > 0 {
-			out := make([]string, 0, len(value))
-			for _, item := range value {
-				if item = strings.TrimSpace(item); item != "" {
-					out = append(out, item)
-				}
-			}
-			if len(out) > 0 {
-				return out
-			}
-		}
-	}
-	return nil
 }
 
 func containsString(values []string, want string) bool {

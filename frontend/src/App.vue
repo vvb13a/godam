@@ -7,6 +7,7 @@ import { CloudUpload } from '@primeicons/vue'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterView } from 'vue-router'
 import AppSidebar from './components/AppSidebar.vue'
+import AppSidebarAttributes from './components/AppSidebarAttributes.vue'
 import CollectionsDialog from './components/CollectionsDialog.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import LibraryBackupDialog from './components/LibraryBackupDialog.vue'
@@ -16,12 +17,14 @@ import TagsDialog from './components/TagsDialog.vue'
 import WarmPresetsProgress from './components/WarmPresetsProgress.vue'
 import UploadDialog from './components/UploadDialog.vue'
 import { auth } from './lib/auth'
+import { hasCapability } from './lib/capabilities'
 import { commandMenu } from './lib/command'
 import { editorDirty, setLeaveConfirm } from './lib/editorState'
 import { filterState } from './lib/filters'
-import { startEmbedBridge } from './lib/embed'
+import { sidebarPrefs } from './lib/sidebar'
+import { embed, startEmbedBridge } from './lib/embed'
 import { initLibrary, library, resetLibrary } from './lib/library'
-import { openUpload, upload } from './lib/upload'
+import { applyUploadSettings, openUpload, upload } from './lib/upload'
 
 const confirm = useConfirm()
 const dragging = ref(false)
@@ -108,6 +111,7 @@ function onDragLeave(event: DragEvent): void {
 function onDrop(event: DragEvent): void {
   if (upload.visible) return
   if (!hasFiles(event)) return
+  if (!hasCapability('assets:upload')) return
   event.preventDefault()
   dragDepth = 0
   dragging.value = false
@@ -169,6 +173,17 @@ onMounted(() => {
 
 startEmbedBridge()
 
+// The picker is rendered inside a host-owned modal. Keep the iframe canvas
+// transparent so the consuming application's backdrop and rounded container
+// show through instead of a godam-coloured rectangle.
+watch(
+  () => embed.active && embed.mode !== 'library',
+  (picker) => {
+    document.documentElement.classList.toggle('embed-picker', picker)
+  },
+  { immediate: true },
+)
+
 watch(
   () => upload.visible,
   (visible) => {
@@ -183,10 +198,7 @@ watch(
   (user) => {
     if (user) {
       void initLibrary().then(() => {
-        const allowed = user.scope?.allowed_mime_types
-        if (allowed?.length) {
-          library.allowed_mime_types = allowed
-        }
+        applyUploadSettings(user.scope?.upload_settings)
       })
     } else {
       resetLibrary()
@@ -206,7 +218,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100">
+  <div
+    class="flex h-screen text-slate-800 dark:text-slate-100"
+    :class="
+      embed.active && embed.mode !== 'library'
+        ? 'bg-transparent'
+        : 'bg-slate-50 dark:bg-[#0b1220]'
+    "
+  >
     <div
       v-if="!library.loaded"
       class="flex h-full w-full items-center justify-center text-sm text-slate-400"
@@ -223,7 +242,8 @@ onBeforeUnmount(() => {
 
     <template v-else>
       <div class="flex min-h-0 min-w-0 flex-1 py-4">
-        <AppSidebar />
+        <AppSidebarAttributes v-if="sidebarPrefs.mode === 'attributes'" />
+        <AppSidebar v-else />
         <main class="min-h-0 flex-1 overflow-hidden">
           <RouterView />
         </main>

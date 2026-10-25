@@ -480,14 +480,16 @@ func TestAssetListMultiValueAndRangeFilters(t *testing.T) {
 
 	minSize, maxSize := int64(150), int64(250)
 	expect(domain.AssetFilter{MinSize: &minSize, MaxSize: &maxSize}, "a2")
+	// Duration applies only to audio/video, pages only to PDFs, and dimensions
+	// only to images/videos. Other media types pass through unchanged.
 	minDuration := 15.0
-	expect(domain.AssetFilter{MinDuration: &minDuration}, "a2")
+	expect(domain.AssetFilter{MinDuration: &minDuration}, "a1", "a2", "a3")
 	minPages, maxPages := 5, 5
-	expect(domain.AssetFilter{MinPages: &minPages, MaxPages: &maxPages}, "a2")
+	expect(domain.AssetFilter{MinPages: &minPages, MaxPages: &maxPages}, "a1", "a2", "a3")
 	minWidth, maxWidth := 150, 250
-	expect(domain.AssetFilter{MinWidth: &minWidth, MaxWidth: &maxWidth}, "a2")
+	expect(domain.AssetFilter{MinWidth: &minWidth, MaxWidth: &maxWidth}, "a2", "a3")
 	maxHeight := 100
-	expect(domain.AssetFilter{MaxHeight: &maxHeight}, "a1", "a2")
+	expect(domain.AssetFilter{MaxHeight: &maxHeight}, "a1", "a2", "a3")
 
 	addedAfter := base.Add(24 * time.Hour)
 	expect(domain.AssetFilter{AddedAfter: &addedAfter}, "a2", "a3")
@@ -495,6 +497,77 @@ func TestAssetListMultiValueAndRangeFilters(t *testing.T) {
 	expect(domain.AssetFilter{AddedBefore: &addedBefore}, "a1", "a2")
 	modifiedAfter := base.Add(24 * time.Hour)
 	expect(domain.AssetFilter{ModifiedAfter: &modifiedAfter}, "a2", "a3")
+}
+
+func TestAssetListScopedTypeFilters(t *testing.T) {
+	db := newTestDB(t)
+	assets := &AssetService{db: db}
+	ctx := context.Background()
+	now := time.Now().UTC()
+	d5, d30, d60 := 5.0, 30.0, 60.0
+	p10 := 10
+	w100, w320, w800 := 100, 320, 800
+	h100, h240, h600 := 100, 240, 600
+
+	rows := []store.Asset{
+		{ID: "img", Filename: "img.png", MimeType: "image/png", ByteSize: 1, Width: &w100, Height: &h100, CreatedAt: now, UpdatedAt: now},
+		{ID: "vid-long", Filename: "vid-long.mp4", MimeType: "video/mp4", ByteSize: 1, Width: &w800, Height: &h600, DurationSec: &d30, CreatedAt: now, UpdatedAt: now},
+		{ID: "vid-short", Filename: "vid-short.mp4", MimeType: "video/mp4", ByteSize: 1, Width: &w320, Height: &h240, DurationSec: &d5, CreatedAt: now, UpdatedAt: now},
+		{ID: "audio", Filename: "audio.mp3", MimeType: "audio/mpeg", ByteSize: 1, DurationSec: &d60, CreatedAt: now, UpdatedAt: now},
+		{ID: "pdf", Filename: "doc.pdf", MimeType: "application/pdf", ByteSize: 1, PageCount: &p10, CreatedAt: now, UpdatedAt: now},
+		{ID: "text", Filename: "doc.txt", MimeType: "text/plain", ByteSize: 1, CreatedAt: now, UpdatedAt: now},
+	}
+	for i := range rows {
+		rows[i].StorageDriver = "local"
+		rows[i].StorageKey = rows[i].ID
+		if err := db.Create(&rows[i]).Error; err != nil {
+			t.Fatalf("create %s: %v", rows[i].ID, err)
+		}
+	}
+	assets.saveColors(ctx, "img", []domain.AssetColor{
+		{Hex: "#ff0000", Bucket: "red", Percentage: 100},
+	})
+
+	ids := func(filter domain.AssetFilter) map[string]bool {
+		t.Helper()
+		page, err := assets.List(ctx, filter)
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		found := make(map[string]bool, len(page.Items))
+		for _, asset := range page.Items {
+			found[asset.ID] = true
+		}
+		return found
+	}
+	expect := func(filter domain.AssetFilter, want ...string) {
+		t.Helper()
+		got := ids(filter)
+		if len(got) != len(want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+		for _, id := range want {
+			if !got[id] {
+				t.Fatalf("got %v, want %v", got, want)
+			}
+		}
+	}
+
+	// Color only narrows images; every other type passes through.
+	expect(domain.AssetFilter{Colors: []string{"red"}}, "img", "vid-long", "vid-short", "audio", "pdf", "text")
+
+	// Duration only narrows audio/video.
+	expect(domain.AssetFilter{MinDuration: &d30}, "img", "vid-long", "audio", "pdf", "text")
+
+	// Pages only narrows PDFs.
+	eleven := 11
+	expect(domain.AssetFilter{MinPages: &eleven}, "img", "vid-long", "vid-short", "audio", "text")
+
+	// Dimensions only narrow images/videos.
+	minWidth := 500
+	expect(domain.AssetFilter{MinWidth: &minWidth}, "vid-long", "audio", "pdf", "text")
+	maxHeight := 300
+	expect(domain.AssetFilter{MaxHeight: &maxHeight}, "img", "vid-short", "audio", "pdf", "text")
 }
 
 func TestAssetListPresetFilter(t *testing.T) {

@@ -76,6 +76,7 @@ func (s *AssetService) upsertVisualAsset(ctx context.Context, parent *domain.Ass
 		visual := &domain.Asset{
 			ID:             id,
 			UploadedByName: parent.UploadedByName,
+			Attributes:     parent.Attributes,
 			Filename:       visualFilename(parent.Filename, ext),
 			StorageDriver:  "local",
 			StorageKey:     key,
@@ -88,6 +89,10 @@ func (s *AssetService) upsertVisualAsset(ctx context.Context, parent *domain.Ass
 			UpdatedAt:      now,
 		}
 		if err := s.db.WithContext(ctx).Create(store.AssetModel(visual)).Error; err != nil {
+			_ = s.local.Delete(ctx, key)
+			return err
+		}
+		if err := store.ReplaceAssetAttributes(s.db.WithContext(ctx), visual.ID, visual.Attributes); err != nil {
 			_ = s.local.Delete(ctx, key)
 			return err
 		}
@@ -104,6 +109,9 @@ func (s *AssetService) upsertVisualAsset(ctx context.Context, parent *domain.Ass
 	}
 	if oldKey != key {
 		_ = s.local.Delete(ctx, oldKey)
+	}
+	if err := store.ReplaceAssetAttributes(s.db.WithContext(ctx), existing.ID, parent.Attributes); err != nil {
+		return err
 	}
 	return s.db.WithContext(ctx).
 		Model(&store.Asset{}).
