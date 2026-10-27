@@ -38,12 +38,14 @@ func (s *InstanceService) Ensure(ctx context.Context, name string) (*domain.Inst
 	now := time.Now().UTC()
 	uploadLimits, _ := json.Marshal(domain.DefaultUploadLimits())
 	model := &store.Instance{
-		ID:           uuid.New().String(),
-		Name:         name,
-		Color:        "f97316",
-		UploadLimits: string(uploadLimits),
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:                    uuid.New().String(),
+		Name:                  name,
+		Color:                 "f97316",
+		UploadLimits:          string(uploadLimits),
+		UploadAttributeKeys:   true,
+		UploadAttributeValues: true,
+		CreatedAt:             now,
+		UpdatedAt:             now,
 	}
 	err = s.db.WithContext(ctx).Create(model).Error
 	if err != nil {
@@ -124,6 +126,29 @@ func (s *InstanceService) SetUploadSettings(ctx context.Context, allowed []strin
 			"allowed_mime_types": encoded,
 			"upload_limits":      string(encodedLimits),
 			"updated_at":         time.Now().UTC(),
+		}).Error; err != nil {
+		return nil, err
+	}
+	return s.Get(ctx)
+}
+
+// SetAttributeStamping controls whether upload stamping may introduce new
+// attribute keys or values. These settings apply only to uploads.
+func (s *InstanceService) SetAttributeStamping(
+	ctx context.Context,
+	keys, values bool,
+) (*domain.Instance, error) {
+	inst, err := s.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.db.WithContext(ctx).
+		Model(&store.Instance{}).
+		Where("id = ?", inst.ID).
+		Updates(map[string]any{
+			"upload_attribute_keys":   keys,
+			"upload_attribute_values": values,
+			"updated_at":              time.Now().UTC(),
 		}).Error; err != nil {
 		return nil, err
 	}

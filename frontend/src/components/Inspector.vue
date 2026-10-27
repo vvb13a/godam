@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import Message from 'primevue/message'
-import { Bolt, Plus, Refresh, Times } from '@primeicons/vue'
+import MultiSelect from 'primevue/multiselect'
+import Popover from 'primevue/popover'
+import Select from 'primevue/select'
+import { Bolt, ListCheck, Plus, Refresh, Times } from '@primeicons/vue'
 import { computed, ref, watch } from 'vue'
 import * as api from '../api/client'
 import { auth } from '../lib/auth'
+import { catalogFacet, loadAttributeCatalog } from '../lib/attributeCatalog'
+import { notifyAttributesChanged } from '../lib/attributesDialog'
+import { effectiveAttributeSort, sortAttributeValues } from '../lib/attributeSort'
 import { hasCapability } from '../lib/capabilities'
 import { conversionCacheVersion } from '../lib/conversionCache'
 import { formatDateTime, formatDuration, formatRelative, formatSize } from '../lib/format'
@@ -14,7 +20,8 @@ import { openAssetCollections } from '../lib/collectionsDialog'
 import { openPresetsDialog } from '../lib/presetsDialog'
 import { openAssetTags } from '../lib/tagsDialog'
 import { warmPresets, warmProgress } from '../lib/warmPresets'
-import type { Asset, Conversion, Tag } from '../types'
+import { ATTRIBUTE_UNASSIGNED } from '../types'
+import type { Asset, AttributeFacetValue, Conversion, Tag } from '../types'
 import FileTypePreview from './FileTypePreview.vue'
 import TagBadge from './TagBadge.vue'
 
@@ -49,6 +56,135 @@ const visibleAttributes = computed(() => {
     (attribute) => grants.get(attribute.key)?.mode !== 'hidden',
   )
 })
+
+const canSelectAttributes = computed(() =>
+  hasCapability('attributes:select'),
+)
+
+const attributePopover = ref<InstanceType<typeof Popover> | null>(null)
+const editingAttributeKey = ref<string | null>(null)
+const editingAttributeValues = ref<string[]>([])
+const attributeSaving = ref(false)
+
+interface AttributeGroup {
+  key: string
+  label: string
+  description?: string
+  color?: string
+  position: number
+  values: string[]
+}
+
+function attributeKeyLabel(key: string): string {
+  return catalogFacet(key)?.label || key
+}
+
+function attributeValueLabel(key: string, value: string): string {
+  const facet = catalogFacet(key)
+  return facet?.values.find((item) => item.value === value)?.label || value
+}
+
+function attributeValueDescription(key: string, value: string): string {
+  const facet = catalogFacet(key)
+  return facet?.values.find((item) => item.value === value)?.description ?? ''
+}
+
+function attributeValueColor(key: string, value: string): string {
+  const facet = catalogFacet(key)
+  const color =
+    facet?.values.find((item) => item.value === value)?.color || facet?.color
+  return libraryColorHex(color ?? '')
+}
+
+const groupedAttributes = computed<AttributeGroup[]>(() => {
+  const groups = new Map<string, AttributeGroup>()
+  for (const attribute of visibleAttributes.value) {
+    const facet = catalogFacet(attribute.key)
+    const group = groups.get(attribute.key) ?? {
+      key: attribute.key,
+      label: attributeKeyLabel(attribute.key),
+      description: facet?.description,
+      color: facet?.color,
+      position: facet?.position ?? 0,
+      values: [],
+    }
+    if (!group.values.includes(attribute.value)) {
+      group.values.push(attribute.value)
+    }
+    groups.set(attribute.key, group)
+  }
+  return [...groups.values()].sort(
+    (a, b) =>
+      a.position - b.position || a.label.localeCompare(b.label),
+  )
+})
+
+function canEditAttribute(key: string): boolean {
+  if (!canSelectAttributes.value) return false
+  const scope = auth.user?.scope
+  if (!scope) return true
+  const grant = scope.attributes?.find((item) => item.key === key)
+  if (grant) return grant.mode === 'active'
+  return Boolean(scope.all_attributes)
+}
+
+function attributeMulti(key: string): boolean {
+  return catalogFacet(key)?.multi ?? true
+}
+
+function attributeOptions(key: string): AttributeFacetValue[] {
+  const facet = catalogFacet(key)
+  const options = facet
+    ? facet.values.filter((item) => item.value !== ATTRIBUTE_UNASSIGNED)
+    : []
+  const known = new Set(options.map((item) => item.value))
+  const group = groupedAttributes.value.find((item) => item.key === key)
+  for (const value of group?.values ?? []) {
+    if (!known.has(value)) {
+      options.push({ value, label: value, position: 0, count: 0 })
+      known.add(value)
+    }
+  }
+  return sortAttributeValues(
+    options,
+    effectiveAttributeSort(key, facet?.sort),
+  )
+}
+
+const editingAttributeLabel = computed(() =>
+  editingAttributeKey.value
+    ? attributeKeyLabel(editingAttributeKey.value)
+    : '',
+)
+
+function openAttributeEditor(event: Event, key: string): void {
+  editingAttributeKey.value = key
+  const group = groupedAttributes.value.find((item) => item.key === key)
+  editingAttributeValues.value = [...(group?.values ?? [])]
+  attributePopover.value?.toggle(event)
+}
+
+async function saveAttributeValues(key: string, values: string[]): Promise<void> {
+  if (!key) return
+  attributeSaving.value = true
+  error.value = null
+  try {
+    const updated = await api.setAssetAttributeValues(
+      props.asset.id,
+      key,
+      values,
+    )
+    editingAttributeValues.value = [...values]
+    emit('changed', updated)
+    notifyAttributesChanged()
+  } catch (e) {
+    error.value = toMessage(e)
+  } finally {
+    attributeSaving.value = false
+  }
+}
+
+void loadAttributeCatalog()
 
 interface PropertyRow {
   label: string
@@ -306,18 +442,101 @@ function removeCollection(collectionId: string): void {
         <p v-if="saving" class="text-xs text-slate-400">Saving…</p>
       </section>
 
-      <section v-if="visibleAttributes.length">
+      <section v-if="groupedAttributes.length">
         <h3 class="mb-2 text-sm font-semibold">Attributes</h3>
         <dl class="space-y-1 text-xs">
           <div
-            v-for="attribute in visibleAttributes"
-            :key="`${attribute.key}:${attribute.value}`"
-            class="flex gap-2"
+            v-for="group in groupedAttributes"
+            :key="group.key"
+            class="flex items-start gap-2"
           >
-            <dt class="w-24 shrink-0 text-slate-400">{{ attribute.key }}</dt>
-            <dd class="min-w-0 break-words">{{ attribute.value }}</dd>
+            <dt
+              class="flex w-24 shrink-0 items-center gap-1.5 text-slate-400"
+              v-tooltip="{ value: group.description || '' }"
+            >
+              <span
+                class="h-2 w-2 shrink-0 rounded-full"
+                :style="{ backgroundColor: libraryColorHex(group.color ?? '') }"
+              />
+              <span class="truncate">{{ group.label }}</span>
+            </dt>
+            <dd class="min-w-0 flex-1 break-words">
+              <template v-for="(value, index) in group.values" :key="value">
+                <span class="inline-flex items-center gap-1">
+                  <span
+                    class="h-1.5 w-1.5 shrink-0 rounded-full"
+                    :style="{
+                      backgroundColor: attributeValueColor(group.key, value),
+                    }"
+                  />
+                  <span
+                    v-tooltip="{
+                      value: attributeValueDescription(group.key, value),
+                    }"
+                  >
+                    {{ attributeValueLabel(group.key, value) }}
+                  </span>
+                </span>
+                <span v-if="index < group.values.length - 1">, </span>
+              </template>
+            </dd>
+            <button
+              v-if="canEditAttribute(group.key)"
+              type="button"
+              class="inline-flex shrink-0 text-slate-400 transition hover:text-brand-700 dark:hover:text-brand-400"
+              title="Select attribute values"
+              @click="openAttributeEditor($event, group.key)"
+            >
+              <ListCheck :size="14" />
+            </button>
           </div>
         </dl>
+
+        <Popover ref="attributePopover" :pt="{ content: { class: '!p-3' } }">
+          <div class="w-64 space-y-2">
+            <p
+              class="text-[10px] font-semibold tracking-wide text-slate-400 uppercase"
+            >
+              {{ editingAttributeLabel }}
+            </p>
+            <Select
+              v-if="!attributeMulti(editingAttributeKey ?? '')"
+              :model-value="editingAttributeValues[0] ?? null"
+              :options="attributeOptions(editingAttributeKey ?? '')"
+              option-label="label"
+              option-value="value"
+              showClear
+              size="small"
+              class="w-full"
+              :disabled="attributeSaving"
+              @update:model-value="
+                saveAttributeValues(
+                  editingAttributeKey ?? '',
+                  $event ? [$event] : [],
+                )
+              "
+            />
+            <MultiSelect
+              v-else
+              :model-value="editingAttributeValues"
+              :options="attributeOptions(editingAttributeKey ?? '')"
+              option-label="label"
+              option-value="value"
+              display="chip"
+              :max-selected-labels="2"
+              showClear
+              size="small"
+              class="w-full"
+              :disabled="attributeSaving"
+              @update:model-value="
+                saveAttributeValues(editingAttributeKey ?? '', $event)
+              "
+            />
+            <p class="text-[11px] text-slate-400">
+              Changes apply to this asset only.
+            </p>
+          </div>
+        </Popover>
       </section>
 
       <section

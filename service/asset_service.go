@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -29,6 +30,7 @@ var (
 	ErrInvalidInput      = errors.New("invalid input")
 	ErrUnsupportedFormat = errors.New("file format not supported")
 	ErrFileTooLarge      = errors.New("file exceeds maximum allowed size")
+	ErrForbidden         = errors.New("forbidden")
 )
 
 // AssetService owns the asset lifecycle: upload, metadata extraction, preview
@@ -230,11 +232,34 @@ func (s *AssetService) applyAssetFilters(query *gorm.DB, filter domain.AssetFilt
 		if key == "" || len(values) == 0 {
 			continue
 		}
-		query = query.Where(
-			`EXISTS (SELECT 1 FROM asset_attributes aa
-			 WHERE aa.asset_id = assets.id AND aa.key = ? AND aa.value IN ?)`,
-			key, values,
-		)
+		clauses := make([]string, 0, 2)
+		args := make([]any, 0, 3)
+		valueArgs := make([]string, 0, len(values))
+		unassigned := false
+		for _, value := range values {
+			if value == domain.AttributeUnassigned {
+				unassigned = true
+				continue
+			}
+			valueArgs = append(valueArgs, value)
+		}
+		if len(valueArgs) > 0 {
+			clauses = append(clauses,
+				`EXISTS (SELECT 1 FROM asset_attributes aa
+				 WHERE aa.asset_id = assets.id AND aa.key = ? AND aa.value IN ?)`)
+			args = append(args, key, valueArgs)
+		}
+		if unassigned {
+			clauses = append(clauses,
+				`NOT EXISTS (SELECT 1 FROM asset_attributes aa
+				 WHERE aa.asset_id = assets.id AND aa.key = ?)`)
+			args = append(args, key)
+		}
+		if len(clauses) > 0 {
+			query = query.Where(
+				"("+strings.Join(clauses, " OR ")+")", args...,
+			)
+		}
 	}
 	// Duration only applies to audio/video. Other media types pass through so
 	// the filter narrows the relevant formats instead of hiding everything else.
@@ -325,14 +350,28 @@ func (s *AssetService) applyAssetFilters(query *gorm.DB, filter domain.AssetFilt
 		if utf8.RuneCountInString(term) >= 3 {
 			match := `"` + strings.ReplaceAll(term, `"`, `""`) + `"`
 			query = query.Where(
-				"assets.rowid IN (SELECT rowid FROM asset_search WHERE asset_search MATCH ?)",
-				match,
+				`(assets.rowid IN (SELECT rowid FROM asset_search WHERE asset_search MATCH ?)
+				  OR assets.id IN (
+				    SELECT asset_id FROM asset_attribute_search
+				    WHERE asset_attribute_search MATCH ?
+				      AND key IN (
+				        SELECT key FROM attributes_metadata
+				        WHERE value = '' AND searchable = 1
+				      )
+				  ))`,
+				match, match,
 			)
 		} else {
 			like := "%" + escapeLike(strings.ToLower(term)) + "%"
 			query = query.Where(
-				`(LOWER(assets.filename) LIKE ? ESCAPE '\' OR LOWER(assets.title) LIKE ? ESCAPE '\' OR LOWER(assets.note) LIKE ? ESCAPE '\')`,
-				like, like, like,
+				`(LOWER(assets.filename) LIKE ? ESCAPE '\' OR LOWER(assets.title) LIKE ? ESCAPE '\' OR LOWER(assets.note) LIKE ? ESCAPE '\'
+				  OR EXISTS (
+				    SELECT 1 FROM asset_attributes aa
+				    JOIN attributes_metadata m ON m.key = aa.key AND m.value = ''
+				    WHERE aa.asset_id = assets.id AND m.searchable = 1
+				      AND LOWER(aa.value) LIKE ? ESCAPE '\'
+				  ))`,
+				like, like, like, like,
 			)
 		}
 	}
@@ -450,6 +489,13 @@ func applyAssetCursor(query *gorm.DB, spec assetSortSpec, value string) (*gorm.D
 // the library, limited to what the current actor may filter on. Direct access
 // sees everything; JWT actors need an explicit active grant or the wildcard.
 func (s *AssetService) AttributeFacets(ctx context.Context) ([]domain.AttributeFacet, error) {
+	return s.attributeFacets(ctx, false)
+}
+
+func (s *AssetService) attributeFacets(
+	ctx context.Context,
+	includeAllUnassigned bool,
+) ([]domain.AttributeFacet, error) {
 	actor := domain.ActorFromContext(ctx)
 	wildcard := true
 	allowed := make(map[string]bool)
@@ -524,7 +570,1346 @@ func (s *AssetService) AttributeFacets(ctx context.Context) ([]domain.AttributeF
 			Count: row.Count,
 		})
 	}
+
+	metadata, err := store.ListAttributeMetadata(s.db.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	keyLabels := make(map[string]string)
+	keySorts := make(map[string]string)
+	keyRenders := make(map[string]string)
+	keySearchable := make(map[string]bool)
+	keyMulti := make(map[string]bool)
+	keyUnassigned := make(map[string]bool)
+	keyUnassignedLabels := make(map[string]string)
+	keyParents := make(map[string]string)
+	keyValuesLocked := make(map[string]bool)
+	keyValueSearch := make(map[string]bool)
+	keyDescriptions := make(map[string]string)
+	keyColors := make(map[string]string)
+	keyPositions := make(map[string]int)
+	valueLabels := make(map[string]string)
+	valueDescriptions := make(map[string]string)
+	valueColors := make(map[string]string)
+	valuePositions := make(map[string]int)
+	for _, item := range metadata {
+		if item.Value == "" {
+			if item.Label != "" {
+				keyLabels[item.Key] = item.Label
+			}
+			if item.Sort != "" {
+				keySorts[item.Key] = item.Sort
+			}
+			if item.Render != "" {
+				keyRenders[item.Key] = item.Render
+			}
+			keySearchable[item.Key] = item.Searchable
+			keyMulti[item.Key] = item.Multi
+			keyUnassigned[item.Key] = item.IncludeUnassigned
+			if item.UnassignedLabel != "" {
+				keyUnassignedLabels[item.Key] = item.UnassignedLabel
+			}
+			if item.ParentKey != "" {
+				keyParents[item.Key] = item.ParentKey
+			}
+			keyValuesLocked[item.Key] = item.ValuesLocked
+			keyValueSearch[item.Key] = item.ValueSearch
+			if item.Description != "" {
+				keyDescriptions[item.Key] = item.Description
+			}
+			if item.Color != "" {
+				keyColors[item.Key] = item.Color
+			}
+			keyPositions[item.Key] = item.Position
+			continue
+		}
+		valueKey := item.Key + "\x00" + item.Value
+		if item.Label != "" {
+			valueLabels[valueKey] = item.Label
+		}
+		if item.Description != "" {
+			valueDescriptions[valueKey] = item.Description
+		}
+		if item.Color != "" {
+			valueColors[valueKey] = item.Color
+		}
+		valuePositions[valueKey] = item.Position
+	}
+	for i := range facets {
+		facet := &facets[i]
+		facet.Label = keyLabels[facet.Key]
+		if facet.Label == "" {
+			facet.Label = facet.Key
+		}
+		facet.Sort = keySorts[facet.Key]
+		if !domain.ValidAttributeSort(facet.Sort) {
+			facet.Sort = domain.AttributeDefaultSort
+		}
+		facet.Render = keyRenders[facet.Key]
+		if !domain.ValidAttributeRender(facet.Render) {
+			facet.Render = domain.AttributeDefaultRender
+		}
+		facet.Searchable = keySearchable[facet.Key]
+		if multi, ok := keyMulti[facet.Key]; ok {
+			facet.Multi = multi
+		} else {
+			facet.Multi = true
+		}
+		facet.IncludeUnassigned = keyUnassigned[facet.Key]
+		facet.ParentKey = keyParents[facet.Key]
+		facet.ValuesLocked = keyValuesLocked[facet.Key]
+		facet.ValueSearch = keyValueSearch[facet.Key]
+		facet.Description = keyDescriptions[facet.Key]
+		facet.Color = keyColors[facet.Key]
+		facet.Position = keyPositions[facet.Key]
+		for j := range facet.Values {
+			value := &facet.Values[j]
+			valueKey := facet.Key + "\x00" + value.Value
+			value.Label = valueLabels[valueKey]
+			if value.Label == "" {
+				value.Label = value.Value
+			}
+			value.Description = valueDescriptions[valueKey]
+			value.Color = valueColors[valueKey]
+			value.Position = valuePositions[valueKey]
+		}
+		if facet.IncludeUnassigned || includeAllUnassigned {
+			countQuery := s.db.WithContext(ctx).
+				Model(&store.Asset{}).
+				Where("assets.role = ?", domain.AssetRoleOriginal).
+				Where(
+					`NOT EXISTS (SELECT 1 FROM asset_attributes aa
+					 WHERE aa.asset_id = assets.id AND aa.key = ?)`,
+					facet.Key,
+				)
+			for key, values := range enforced {
+				countQuery = countQuery.Where(
+					`EXISTS (SELECT 1 FROM asset_attributes enforced
+					 WHERE enforced.asset_id = assets.id AND enforced.key = ? AND enforced.value IN ?)`,
+					key, values,
+				)
+			}
+			var count int64
+			if err := countQuery.Count(&count).Error; err != nil {
+				return nil, err
+			}
+			label := keyUnassignedLabels[facet.Key]
+			if label == "" {
+				label = "Unassigned"
+			}
+			valueKey := facet.Key + "\x00" + domain.AttributeUnassigned
+			facet.Values = append(facet.Values, domain.AttributeFacetValue{
+				Value:       domain.AttributeUnassigned,
+				Label:       label,
+				Description: valueDescriptions[valueKey],
+				Color:       valueColors[valueKey],
+				Position:    valuePositions[valueKey],
+				Count:       count,
+			})
+		}
+	}
 	return facets, nil
+}
+
+// CreateAttribute creates a new key-level attribute definition.
+func (s *AssetService) CreateAttribute(ctx context.Context, key, label string) error {
+	key = strings.TrimSpace(key)
+	label = strings.TrimSpace(label)
+	if key == "" {
+		return fmt.Errorf("%w: attribute key is required", ErrInvalidInput)
+	}
+	if !canCreateAttributeKeys(ctx) {
+		return ErrForbidden
+	}
+	rules, err := s.attributeRules(ctx, key)
+	if err != nil {
+		return err
+	}
+	if rules.Exists {
+		return fmt.Errorf("%w: attribute key already exists", ErrInvalidInput)
+	}
+	return store.InsertAttributeKey(s.db.WithContext(ctx), key, label, time.Now().UTC())
+}
+
+// SetAttributeValuesLocked toggles creation of new values for a key.
+func (s *AssetService) SetAttributeValuesLocked(ctx context.Context, key string, locked bool) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return fmt.Errorf("%w: attribute key is required", ErrInvalidInput)
+	}
+	return store.UpsertAttributeValuesLocked(
+		s.db.WithContext(ctx), key, locked, time.Now().UTC(),
+	)
+}
+
+// SetAttributeLabel stores a display label for an attribute key (value == "")
+// or one of its values. The underlying key/value strings are not changed.
+func (s *AssetService) SetAttributeLabel(
+	ctx context.Context,
+	key, value, label string,
+) error {
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	label = strings.TrimSpace(label)
+	if key == "" {
+		return fmt.Errorf("%w: attribute key is required", ErrInvalidInput)
+	}
+	return store.UpsertAttributeLabel(
+		s.db.WithContext(ctx), key, value, label, time.Now().UTC(),
+	)
+}
+
+// SetAttributeSort stores the key-level ordering setting. "open" lets each user
+// choose an order without the settings:attributes capability.
+func (s *AssetService) SetAttributeSort(
+	ctx context.Context,
+	key, sort string,
+) error {
+	key = strings.TrimSpace(key)
+	sort = strings.TrimSpace(sort)
+	if key == "" {
+		return fmt.Errorf("%w: attribute key is required", ErrInvalidInput)
+	}
+	if !domain.ValidAttributeSort(sort) {
+		return fmt.Errorf("%w: invalid attribute sort", ErrInvalidInput)
+	}
+	return store.UpsertAttributeSort(
+		s.db.WithContext(ctx), key, sort, time.Now().UTC(),
+	)
+}
+
+// SetAttributeRender stores the key-level rendering setting. "open" lets each
+// user choose a renderer without the settings:attributes capability.
+func (s *AssetService) SetAttributeRender(
+	ctx context.Context,
+	key, render string,
+) error {
+	key = strings.TrimSpace(key)
+	render = strings.TrimSpace(render)
+	if key == "" {
+		return fmt.Errorf("%w: attribute key is required", ErrInvalidInput)
+	}
+	if !domain.ValidAttributeRender(render) {
+		return fmt.Errorf("%w: invalid attribute render", ErrInvalidInput)
+	}
+	return store.UpsertAttributeRender(
+		s.db.WithContext(ctx), key, render, time.Now().UTC(),
+	)
+}
+
+func sortAttributeFacets(facets []domain.AttributeFacet) {
+	sort.SliceStable(facets, func(i, j int) bool {
+		if facets[i].Position != facets[j].Position {
+			return facets[i].Position < facets[j].Position
+		}
+		left := facets[i].Label
+		if left == "" {
+			left = facets[i].Key
+		}
+		right := facets[j].Label
+		if right == "" {
+			right = facets[j].Key
+		}
+		return left < right
+	})
+}
+
+func attributeKeyVisible(actor *domain.Actor, key string) bool {
+	if actor == nil || !actor.Token {
+		return true
+	}
+	if actor.Can(domain.CapabilitySettingsAttributes) ||
+		actor.Can(domain.CapabilityAttributesCreateKeys) {
+		return true
+	}
+	for _, grant := range actor.Scope.Attributes {
+		if grant.Key == key {
+			return grant.Mode == domain.AttributeModeActive
+		}
+	}
+	return actor.Scope.AllAttributes
+}
+
+// AttributeCatalog returns the filter facets plus metadata-only values for
+// keys that are already in use. It is used by the management dialog and the
+// inspector so newly created vocabulary is selectable before any asset uses it.
+func (s *AssetService) AttributeCatalog(ctx context.Context) ([]domain.AttributeFacet, error) {
+	facets, err := s.attributeFacets(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	index := make(map[string]int, len(facets))
+	for i := range facets {
+		index[facets[i].Key] = i
+	}
+	metadata, err := store.ListAttributeMetadata(s.db.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	actor := domain.ActorFromContext(ctx)
+	for _, item := range metadata {
+		if item.Value == "" {
+			if _, ok := index[item.Key]; ok {
+				continue
+			}
+			if !attributeKeyVisible(actor, item.Key) {
+				continue
+			}
+			facet := domain.AttributeFacet{
+				Key:               item.Key,
+				Label:             item.Label,
+				Sort:              item.Sort,
+				Render:            item.Render,
+				Searchable:        item.Searchable,
+				Multi:             item.Multi,
+				IncludeUnassigned: item.IncludeUnassigned,
+				ValuesLocked:      item.ValuesLocked,
+				ValueSearch:       item.ValueSearch,
+				ParentKey:         item.ParentKey,
+				Description:       item.Description,
+				Color:             item.Color,
+				Position:          item.Position,
+			}
+			if facet.Label == "" {
+				facet.Label = facet.Key
+			}
+			if !domain.ValidAttributeSort(facet.Sort) {
+				facet.Sort = domain.AttributeDefaultSort
+			}
+			if !domain.ValidAttributeRender(facet.Render) {
+				facet.Render = domain.AttributeDefaultRender
+			}
+			index[item.Key] = len(facets)
+			facets = append(facets, facet)
+			continue
+		}
+		position, ok := index[item.Key]
+		if !ok {
+			continue
+		}
+		facet := &facets[position]
+		if item.Value == domain.AttributeUnassigned && !facet.IncludeUnassigned {
+			continue
+		}
+		exists := false
+		for _, value := range facet.Values {
+			if value.Value == item.Value {
+				exists = true
+				break
+			}
+		}
+		if exists {
+			continue
+		}
+		label := item.Label
+		if label == "" {
+			if item.Value == domain.AttributeUnassigned {
+				label = "Unassigned"
+			} else {
+				label = item.Value
+			}
+		}
+		facet.Values = append(facet.Values, domain.AttributeFacetValue{
+			Value:       item.Value,
+			Label:       label,
+			Description: item.Description,
+			Color:       item.Color,
+			Position:    item.Position,
+			Count:       0,
+		})
+	}
+	sortAttributeFacets(facets)
+	return facets, nil
+}
+
+// AddAttributeValues creates metadata-only values for an existing key. The
+// values become available for selection even before an asset uses them.
+func (s *AssetService) AddAttributeValues(
+	ctx context.Context,
+	key string,
+	values []string,
+) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return fmt.Errorf("%w: attribute key is required", ErrInvalidInput)
+	}
+	if containsAttributeUnassigned(values) {
+		return fmt.Errorf("%w: unassigned is not a real attribute value", ErrInvalidInput)
+	}
+	cleaned := cleanAttributeValues(values)
+	if len(cleaned) == 0 {
+		return fmt.Errorf("%w: at least one attribute value is required", ErrInvalidInput)
+	}
+	var exists int64
+	if err := s.db.WithContext(ctx).
+		Model(&store.AssetAttribute{}).
+		Where("key = ?", key).
+		Count(&exists).Error; err != nil {
+		return err
+	}
+	if exists == 0 {
+		var keyRows int64
+		if err := s.db.WithContext(ctx).
+			Model(&store.AttributeMetadata{}).
+			Where("key = ? AND value = ''", key).
+			Count(&keyRows).Error; err != nil {
+			return err
+		}
+		if keyRows == 0 {
+			return fmt.Errorf("%w: unknown attribute key", ErrInvalidInput)
+		}
+	}
+	if !canCreateAttributeValues(ctx) {
+		return ErrForbidden
+	}
+	rules, err := s.attributeRules(ctx, key)
+	if err != nil {
+		return err
+	}
+	if rules.Locked {
+		return fmt.Errorf("%w: attribute %q is locked", ErrForbidden, key)
+	}
+	return store.InsertAttributeValues(
+		s.db.WithContext(ctx), key, cleaned, time.Now().UTC(),
+	)
+}
+
+// SetAssetAttributeValues replaces the values for one attribute key on an
+// asset. An empty values slice removes the key from the asset.
+func (s *AssetService) SetAssetAttributeValues(
+	ctx context.Context,
+	assetID, key string,
+	values []string,
+) (*domain.Asset, error) {
+	assetID = strings.TrimSpace(assetID)
+	key = strings.TrimSpace(key)
+	if assetID == "" || key == "" {
+		return nil, fmt.Errorf("%w: asset id and attribute key are required", ErrInvalidInput)
+	}
+	if !actorCanWriteAttribute(ctx, key) {
+		return nil, ErrForbidden
+	}
+	if containsAttributeUnassigned(values) {
+		return nil, fmt.Errorf("%w: unassigned is not a real attribute value", ErrInvalidInput)
+	}
+	cleaned := cleanAttributeValues(values)
+	if err := s.validateAttributeAssignment(ctx, key, cleaned); err != nil {
+		return nil, err
+	}
+
+	var asset store.Asset
+	if err := s.db.WithContext(ctx).First(&asset, "id = ?", assetID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	tx := s.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := store.ReplaceAssetAttributeKey(tx, assetID, key, cleaned); err != nil {
+		return nil, err
+	}
+	if err := tx.Model(&store.Asset{}).
+		Where("id = ?", assetID).
+		Update("updated_at", now).Error; err != nil {
+		return nil, err
+	}
+
+	var visuals []string
+	if err := tx.Model(&store.Asset{}).
+		Where("image_of = ? AND role = ?", assetID, domain.AssetRoleVisual).
+		Pluck("id", &visuals).Error; err != nil {
+		return nil, err
+	}
+	for _, visualID := range visuals {
+		if err := store.ReplaceAssetAttributeKey(tx, visualID, key, cleaned); err != nil {
+			return nil, err
+		}
+		if err := tx.Model(&store.Asset{}).
+			Where("id = ?", visualID).
+			Update("updated_at", now).Error; err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit().Error; err != nil {
+		return nil, err
+	}
+	return s.GetByID(ctx, assetID)
+}
+
+func containsAttributeUnassigned(values []string) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value) == domain.AttributeUnassigned {
+			return true
+		}
+	}
+	return false
+}
+
+func cleanAttributeValues(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	cleaned := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		cleaned = append(cleaned, value)
+	}
+	return cleaned
+}
+
+type attributeRules struct {
+	Exists  bool
+	Locked  bool
+	Multi   bool
+	Allowed map[string]bool
+}
+
+func (s *AssetService) attributeRules(ctx context.Context, key string) (attributeRules, error) {
+	rules := attributeRules{Multi: true, Allowed: make(map[string]bool)}
+	var rows []store.AttributeMetadata
+	if err := s.db.WithContext(ctx).
+		Where("key = ?", key).
+		Find(&rows).Error; err != nil {
+		return rules, err
+	}
+	if len(rows) > 0 {
+		rules.Exists = true
+	}
+	for _, row := range rows {
+		if row.Value == "" {
+			rules.Locked = row.ValuesLocked
+			rules.Multi = row.Multi
+			continue
+		}
+		rules.Allowed[row.Value] = true
+	}
+	var used []string
+	if err := s.db.WithContext(ctx).
+		Model(&store.AssetAttribute{}).
+		Where("key = ?", key).
+		Distinct().
+		Pluck("value", &used).Error; err != nil {
+		return rules, err
+	}
+	if len(used) > 0 {
+		rules.Exists = true
+	}
+	for _, value := range used {
+		rules.Allowed[value] = true
+	}
+	return rules, nil
+}
+
+func canCreateAttributeKeys(ctx context.Context) bool {
+	actor := domain.ActorFromContext(ctx)
+	if actor == nil {
+		return true
+	}
+	return actor.Can(domain.CapabilitySettingsAttributes) ||
+		actor.Can(domain.CapabilityAttributesCreateKeys)
+}
+
+func canCreateAttributeValues(ctx context.Context) bool {
+	actor := domain.ActorFromContext(ctx)
+	if actor == nil {
+		return true
+	}
+	return actor.Can(domain.CapabilitySettingsAttributes) ||
+		actor.Can(domain.CapabilityAttributesCreateValues)
+}
+
+func (s *AssetService) uploadAttributePolicy(ctx context.Context) (bool, bool, error) {
+	var instance store.Instance
+	err := s.db.WithContext(ctx).Order("created_at ASC").First(&instance).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return true, true, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	return instance.UploadAttributeKeys, instance.UploadAttributeValues, nil
+}
+
+func (s *AssetService) validateUploadAttributes(
+	ctx context.Context,
+	attributes []domain.AssetAttribute,
+) error {
+	if len(attributes) == 0 {
+		return nil
+	}
+	allowKeys, allowValues, err := s.uploadAttributePolicy(ctx)
+	if err != nil {
+		return err
+	}
+	groups := make(map[string]map[string]bool)
+	for _, attribute := range attributes {
+		key := strings.TrimSpace(attribute.Key)
+		value := strings.TrimSpace(attribute.Value)
+		if key == "" || value == "" {
+			continue
+		}
+		if groups[key] == nil {
+			groups[key] = make(map[string]bool)
+		}
+		groups[key][value] = true
+	}
+	for key, valueSet := range groups {
+		rules, err := s.attributeRules(ctx, key)
+		if err != nil {
+			return err
+		}
+		if !rules.Exists && !allowKeys {
+			return fmt.Errorf("%w: new attribute keys are not allowed on upload", ErrForbidden)
+		}
+		if !rules.Multi && len(valueSet) > 1 {
+			return fmt.Errorf("%w: attribute %q is single-valued", ErrInvalidInput, key)
+		}
+		for value := range valueSet {
+			if rules.Allowed[value] {
+				continue
+			}
+			if rules.Locked {
+				return fmt.Errorf("%w: attribute %q is locked", ErrForbidden, key)
+			}
+			if !allowValues {
+				return fmt.Errorf("%w: new attribute values are not allowed on upload", ErrForbidden)
+			}
+		}
+	}
+	return nil
+}
+
+func (s *AssetService) validateAttributeAssignment(
+	ctx context.Context,
+	key string,
+	values []string,
+) error {
+	rules, err := s.attributeRules(ctx, key)
+	if err != nil {
+		return err
+	}
+	if !rules.Exists {
+		return fmt.Errorf("%w: unknown attribute key", ErrInvalidInput)
+	}
+	if !rules.Multi && len(values) > 1 {
+		return fmt.Errorf("%w: attribute %q is single-valued", ErrInvalidInput, key)
+	}
+	for _, value := range values {
+		if rules.Allowed[value] {
+			continue
+		}
+		if rules.Locked {
+			return fmt.Errorf("%w: attribute %q is locked", ErrForbidden, key)
+		}
+		if !canCreateAttributeValues(ctx) {
+			return ErrForbidden
+		}
+	}
+	return nil
+}
+
+func actorCanWriteAttribute(ctx context.Context, key string) bool {
+	actor := domain.ActorFromContext(ctx)
+	if actor == nil || !actor.Token {
+		return true
+	}
+	for _, grant := range actor.Scope.Attributes {
+		if grant.Key != key {
+			continue
+		}
+		if grant.Mode == domain.AttributeModeActive {
+			return true
+		}
+		return false
+	}
+	return actor.Scope.AllAttributes
+}
+
+// SetAttributeSearchable toggles whether the key participates in asset search.
+func (s *AssetService) SetAttributeSearchable(
+	ctx context.Context,
+	key string,
+	searchable bool,
+) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return fmt.Errorf("%w: attribute key is required", ErrInvalidInput)
+	}
+	return store.UpsertAttributeSearchable(
+		s.db.WithContext(ctx), key, searchable, time.Now().UTC(),
+	)
+}
+
+// SetAttributeMulti controls whether renderers add or replace values on click.
+func (s *AssetService) SetAttributeMulti(
+	ctx context.Context,
+	key string,
+	multi bool,
+) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return fmt.Errorf("%w: attribute key is required", ErrInvalidInput)
+	}
+	return store.UpsertAttributeMulti(
+		s.db.WithContext(ctx), key, multi, time.Now().UTC(),
+	)
+}
+
+// SetAttributeUnassigned controls whether renderers expose an Unassigned
+// option for assets with no values for the key.
+func (s *AssetService) SetAttributeUnassigned(
+	ctx context.Context,
+	key string,
+	include bool,
+) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return fmt.Errorf("%w: attribute key is required", ErrInvalidInput)
+	}
+	return store.UpsertAttributeUnassigned(
+		s.db.WithContext(ctx), key, include, time.Now().UTC(),
+	)
+}
+
+// SetAttributeUnassignedLabel overrides the synthetic Unassigned label.
+func (s *AssetService) SetAttributeUnassignedLabel(
+	ctx context.Context,
+	key, label string,
+) error {
+	key = strings.TrimSpace(key)
+	label = strings.TrimSpace(label)
+	if key == "" {
+		return fmt.Errorf("%w: attribute key is required", ErrInvalidInput)
+	}
+	return store.UpsertAttributeUnassignedLabel(
+		s.db.WithContext(ctx), key, label, time.Now().UTC(),
+	)
+}
+
+// SetAttributeDescription stores a key-level or value-level description.
+func (s *AssetService) SetAttributeDescription(
+	ctx context.Context,
+	key, value, description string,
+) error {
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if key == "" {
+		return fmt.Errorf("%w: attribute key is required", ErrInvalidInput)
+	}
+	return store.UpsertAttributeDescription(
+		s.db.WithContext(ctx), key, value, strings.TrimSpace(description), time.Now().UTC(),
+	)
+}
+
+// SetAttributeColor stores a key-level or value-level color.
+func (s *AssetService) SetAttributeColor(
+	ctx context.Context,
+	key, value, color string,
+) error {
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if key == "" {
+		return fmt.Errorf("%w: attribute key is required", ErrInvalidInput)
+	}
+	return store.UpsertAttributeColor(
+		s.db.WithContext(ctx), key, value, strings.TrimSpace(color), time.Now().UTC(),
+	)
+}
+
+// SetAttributeValueOrder stores the custom value order for a key.
+func (s *AssetService) SetAttributeValueOrder(
+	ctx context.Context,
+	key string,
+	values []string,
+) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return fmt.Errorf("%w: attribute key is required", ErrInvalidInput)
+	}
+	cleaned := cleanAttributeValues(values)
+	return store.SetAttributeValuePositions(
+		s.db.WithContext(ctx), key, cleaned, time.Now().UTC(),
+	)
+}
+
+// SetAttributeKeyOrder stores the display order of attribute keys.
+func (s *AssetService) SetAttributeKeyOrder(
+	ctx context.Context,
+	keys []string,
+) error {
+	cleaned := make([]string, 0, len(keys))
+	seen := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		cleaned = append(cleaned, key)
+	}
+	if len(cleaned) == 0 {
+		return fmt.Errorf("%w: at least one attribute key is required", ErrInvalidInput)
+	}
+	return store.SetAttributeKeyPositions(
+		s.db.WithContext(ctx), cleaned, time.Now().UTC(),
+	)
+}
+
+// SetAttributeValueSearch toggles the per-key sidebar value search box.
+func (s *AssetService) SetAttributeValueSearch(
+	ctx context.Context,
+	key string,
+	enabled bool,
+) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return fmt.Errorf("%w: attribute key is required", ErrInvalidInput)
+	}
+	return store.UpsertAttributeValueSearch(
+		s.db.WithContext(ctx), key, enabled, time.Now().UTC(),
+	)
+}
+
+// SetAttributeParent stores the key-level parent used by the sidebar tree.
+func (s *AssetService) SetAttributeParent(
+	ctx context.Context,
+	key, parent string,
+) error {
+	key = strings.TrimSpace(key)
+	parent = strings.TrimSpace(parent)
+	if key == "" {
+		return fmt.Errorf("%w: attribute key is required", ErrInvalidInput)
+	}
+	if key == parent {
+		return fmt.Errorf("%w: an attribute cannot be its own parent", ErrInvalidInput)
+	}
+	metadata, err := store.ListAttributeMetadata(s.db.WithContext(ctx))
+	if err != nil {
+		return err
+	}
+	exists := make(map[string]bool)
+	parents := make(map[string]string)
+	for _, item := range metadata {
+		exists[item.Key] = true
+		if item.Value == "" && item.ParentKey != "" {
+			parents[item.Key] = item.ParentKey
+		}
+	}
+	if parent != "" {
+		if !exists[parent] {
+			var count int64
+			if err := s.db.WithContext(ctx).
+				Model(&store.AssetAttribute{}).
+				Where("key = ?", parent).
+				Count(&count).Error; err != nil {
+				return err
+			}
+			if count == 0 {
+				return fmt.Errorf("%w: parent attribute does not exist", ErrInvalidInput)
+			}
+		}
+		seen := map[string]bool{key: true}
+		current := parent
+		for current != "" {
+			if seen[current] {
+				return fmt.Errorf("%w: attribute parent cycle", ErrInvalidInput)
+			}
+			seen[current] = true
+			current = parents[current]
+		}
+	}
+	return store.UpsertAttributeParent(
+		s.db.WithContext(ctx), key, parent, time.Now().UTC(),
+	)
+}
+
+// AttributeTree builds the nested sidebar trees from parent_key metadata.
+func (s *AssetService) AttributeTree(ctx context.Context) ([]domain.AttributeTree, error) {
+	facets, err := s.AttributeCatalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	byKey := make(map[string]*domain.AttributeFacet, len(facets))
+	for i := range facets {
+		byKey[facets[i].Key] = &facets[i]
+	}
+	children := make(map[string][]string)
+	keys := make([]string, 0, len(facets))
+	for i := range facets {
+		facet := &facets[i]
+		if facet.ParentKey != "" {
+			if _, ok := byKey[facet.ParentKey]; ok && facet.ParentKey != facet.Key {
+				children[facet.ParentKey] = append(children[facet.ParentKey], facet.Key)
+			}
+		}
+		keys = append(keys, facet.Key)
+	}
+	sort.SliceStable(keys, func(i, j int) bool {
+		if byKey[keys[i]].Position != byKey[keys[j]].Position {
+			return byKey[keys[i]].Position < byKey[keys[j]].Position
+		}
+		return byKey[keys[i]].Label < byKey[keys[j]].Label
+	})
+	enforced := attributeEnforced(ctx)
+	trees := make([]domain.AttributeTree, 0, len(keys))
+	for _, key := range keys {
+		facet := byKey[key]
+		nodes := make([]domain.AttributeTreeNode, 0, len(facet.Values))
+		for _, value := range facet.Values {
+			if value.Value == domain.AttributeUnassigned && !facet.IncludeUnassigned {
+				continue
+			}
+			color := value.Color
+			if color == "" {
+				color = facet.Color
+			}
+			node := domain.AttributeTreeNode{
+				Key:         facet.Key,
+				Value:       value.Value,
+				Label:       value.Label,
+				Description: value.Description,
+				Color:       color,
+				Position:    value.Position,
+				Count:       value.Count,
+			}
+			node.Children = s.attributeTreeChildren(
+				ctx, facet.Key, value.Value, nil, byKey, children, enforced, map[string]bool{},
+			)
+			nodes = append(nodes, node)
+		}
+		sortAttributeTreeNodes(nodes, byKey)
+		trees = append(trees, domain.AttributeTree{
+			Key: facet.Key, Label: facet.Label, Values: nodes,
+		})
+	}
+	return trees, nil
+}
+
+func attributeEnforced(ctx context.Context) map[string][]string {
+	enforced := make(map[string][]string)
+	actor := domain.ActorFromContext(ctx)
+	if actor == nil || !actor.Token {
+		return enforced
+	}
+	for _, grant := range actor.Scope.Attributes {
+		if (grant.Mode == domain.AttributeModeLocked || grant.Mode == domain.AttributeModeHidden) &&
+			len(grant.Values) > 0 {
+			enforced[grant.Key] = grant.Values
+		}
+	}
+	return enforced
+}
+
+func (s *AssetService) attributeTreeChildren(
+	ctx context.Context,
+	parentKey, parentValue string,
+	constraints []domain.AssetAttribute,
+	byKey map[string]*domain.AttributeFacet,
+	children map[string][]string,
+	enforced map[string][]string,
+	visited map[string]bool,
+) []domain.AttributeTreeNode {
+	path := append(append([]domain.AssetAttribute{}, constraints...),
+		domain.AssetAttribute{Key: parentKey, Value: parentValue})
+	if parentValue == domain.AttributeUnassigned {
+		return nil
+	}
+	nodes := make([]domain.AttributeTreeNode, 0)
+	for _, childKey := range children[parentKey] {
+		if visited[childKey] {
+			continue
+		}
+		childFacet := byKey[childKey]
+		if childFacet == nil {
+			continue
+		}
+		nextVisited := make(map[string]bool, len(visited)+1)
+		for key := range visited {
+			nextVisited[key] = true
+		}
+		nextVisited[childKey] = true
+		labels := make(map[string]string, len(childFacet.Values))
+		descriptions := make(map[string]string, len(childFacet.Values))
+		colors := make(map[string]string, len(childFacet.Values))
+		positions := make(map[string]int, len(childFacet.Values))
+		for _, value := range childFacet.Values {
+			labels[value.Value] = value.Label
+			descriptions[value.Value] = value.Description
+			colors[value.Value] = value.Color
+			positions[value.Value] = value.Position
+		}
+		values, err := s.attributeTreeValues(ctx, childKey, path, enforced)
+		if err != nil {
+			return nodes
+		}
+		childNodes := make([]domain.AttributeTreeNode, 0, len(values)+1)
+		for _, value := range values {
+			if value.Value == domain.AttributeUnassigned {
+				continue
+			}
+			label := labels[value.Value]
+			if label == "" {
+				label = value.Value
+			}
+			color := colors[value.Value]
+			if color == "" {
+				color = childFacet.Color
+			}
+			node := domain.AttributeTreeNode{
+				Key:         childKey,
+				Value:       value.Value,
+				Label:       label,
+				Description: descriptions[value.Value],
+				Color:       color,
+				Position:    positions[value.Value],
+				Count:       value.Count,
+			}
+			node.Children = s.attributeTreeChildren(
+				ctx, childKey, value.Value, path, byKey, children, enforced, nextVisited,
+			)
+			childNodes = append(childNodes, node)
+		}
+		if childFacet.IncludeUnassigned {
+			count, err := s.attributeTreeUnassigned(ctx, childKey, path, enforced)
+			if err == nil {
+				label := "Unassigned"
+				description := ""
+				color := childFacet.Color
+				position := positions[domain.AttributeUnassigned]
+				for _, value := range childFacet.Values {
+					if value.Value == domain.AttributeUnassigned {
+						if value.Label != "" {
+							label = value.Label
+						}
+						description = value.Description
+						if value.Color != "" {
+							color = value.Color
+						}
+						position = value.Position
+					}
+				}
+				childNodes = append(childNodes, domain.AttributeTreeNode{
+					Key:         childKey,
+					Value:       domain.AttributeUnassigned,
+					Label:       label,
+					Description: description,
+					Color:       color,
+					Position:    position,
+					Count:       count,
+				})
+			}
+		}
+		sortAttributeTreeNodes(childNodes, byKey)
+		nodes = append(nodes, childNodes...)
+	}
+	return nodes
+}
+
+func (s *AssetService) attributeTreeValues(
+	ctx context.Context,
+	key string,
+	constraints []domain.AssetAttribute,
+	enforced map[string][]string,
+) ([]domain.AttributeFacetValue, error) {
+	type treeRow struct {
+		Value string
+		Count int64
+	}
+	var rows []treeRow
+	query := s.db.WithContext(ctx).
+		Table("asset_attributes AS aa").
+		Select("aa.value AS value, COUNT(DISTINCT aa.asset_id) AS count").
+		Joins("JOIN assets ON assets.id = aa.asset_id").
+		Where("assets.role = ? AND aa.key = ?", domain.AssetRoleOriginal, key)
+	for _, constraint := range constraints {
+		query = query.Where(
+			`EXISTS (SELECT 1 FROM asset_attributes anc
+			 WHERE anc.asset_id = assets.id AND anc.key = ? AND anc.value = ?)`,
+			constraint.Key, constraint.Value,
+		)
+	}
+	for enforcedKey, values := range enforced {
+		query = query.Where(
+			`EXISTS (SELECT 1 FROM asset_attributes enforced
+			 WHERE enforced.asset_id = assets.id AND enforced.key = ? AND enforced.value IN ?)`,
+			enforcedKey, values,
+		)
+	}
+	if err := query.Group("aa.value").
+		Order("count DESC, aa.value ASC").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	values := make([]domain.AttributeFacetValue, 0, len(rows))
+	for _, row := range rows {
+		if row.Value == "" {
+			continue
+		}
+		values = append(values, domain.AttributeFacetValue{Value: row.Value, Count: row.Count})
+	}
+	return values, nil
+}
+
+func (s *AssetService) attributeTreeUnassigned(
+	ctx context.Context,
+	key string,
+	constraints []domain.AssetAttribute,
+	enforced map[string][]string,
+) (int64, error) {
+	query := s.db.WithContext(ctx).
+		Model(&store.Asset{}).
+		Where("assets.role = ?", domain.AssetRoleOriginal).
+		Where(
+			`NOT EXISTS (SELECT 1 FROM asset_attributes aa
+			 WHERE aa.asset_id = assets.id AND aa.key = ?)`, key,
+		)
+	for _, constraint := range constraints {
+		query = query.Where(
+			`EXISTS (SELECT 1 FROM asset_attributes anc
+			 WHERE anc.asset_id = assets.id AND anc.key = ? AND anc.value = ?)`,
+			constraint.Key, constraint.Value,
+		)
+	}
+	for enforcedKey, values := range enforced {
+		query = query.Where(
+			`EXISTS (SELECT 1 FROM asset_attributes enforced
+			 WHERE enforced.asset_id = assets.id AND enforced.key = ? AND enforced.value IN ?)`,
+			enforcedKey, values,
+		)
+	}
+	var count int64
+	err := query.Count(&count).Error
+	return count, err
+}
+
+func sortAttributeTreeNodes(
+	nodes []domain.AttributeTreeNode,
+	byKey map[string]*domain.AttributeFacet,
+) {
+	if len(nodes) == 0 {
+		return
+	}
+	facet := byKey[nodes[0].Key]
+	sort.SliceStable(nodes, func(i, j int) bool {
+		if facet == nil {
+			return nodes[i].Label < nodes[j].Label
+		}
+		switch facet.Sort {
+		case domain.AttributeSortCountAsc:
+			if nodes[i].Count != nodes[j].Count {
+				return nodes[i].Count < nodes[j].Count
+			}
+		case domain.AttributeSortABCAsc:
+			return nodes[i].Label < nodes[j].Label
+		case domain.AttributeSortABCDesc:
+			return nodes[i].Label > nodes[j].Label
+		case domain.AttributeSortCustom:
+			if nodes[i].Position != nodes[j].Position {
+				return nodes[i].Position < nodes[j].Position
+			}
+		default:
+			if nodes[i].Count != nodes[j].Count {
+				return nodes[i].Count > nodes[j].Count
+			}
+		}
+		return nodes[i].Label < nodes[j].Label
+	})
+	for i := range nodes {
+		sortAttributeTreeNodes(nodes[i].Children, byKey)
+	}
+}
+
+// DeleteAttributeValue removes a value from metadata and from every asset.
+func (s *AssetService) DeleteAttributeValue(
+	ctx context.Context,
+	key, value string,
+) error {
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if key == "" || value == "" || value == domain.AttributeUnassigned {
+		return fmt.Errorf("%w: attribute key and value are required", ErrInvalidInput)
+	}
+	now := time.Now().UTC()
+	tx := s.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var ids []string
+	if err := tx.Model(&store.AssetAttribute{}).
+		Where("key = ? AND value = ?", key, value).
+		Pluck("asset_id", &ids).Error; err != nil {
+		return err
+	}
+	if err := store.DeleteAttributeValue(tx, key, value); err != nil {
+		return err
+	}
+	if len(ids) > 0 {
+		if err := tx.Model(&store.Asset{}).
+			Where("id IN ?", ids).
+			Update("updated_at", now).Error; err != nil {
+			return err
+		}
+	}
+	return tx.Commit().Error
+}
+
+// DeleteAttributeKey removes a key from metadata and from every asset.
+func (s *AssetService) DeleteAttributeKey(
+	ctx context.Context,
+	key string,
+) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return fmt.Errorf("%w: attribute key is required", ErrInvalidInput)
+	}
+	now := time.Now().UTC()
+	tx := s.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var ids []string
+	if err := tx.Model(&store.AssetAttribute{}).
+		Where("key = ?", key).
+		Pluck("asset_id", &ids).Error; err != nil {
+		return err
+	}
+	if err := store.DeleteAttributeKey(tx, key); err != nil {
+		return err
+	}
+	if len(ids) > 0 {
+		if err := tx.Model(&store.Asset{}).
+			Where("id IN ?", ids).
+			Update("updated_at", now).Error; err != nil {
+			return err
+		}
+	}
+	return tx.Commit().Error
+}
+
+// ApplyAssetAttributesBulk applies one attribute key to many assets. Mode
+// "add" merges values into existing values; "replace" sets the exact set.
+func (s *AssetService) ApplyAssetAttributesBulk(
+	ctx context.Context,
+	assetIDs []string,
+	key string,
+	values []string,
+	mode string,
+) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return fmt.Errorf("%w: attribute key is required", ErrInvalidInput)
+	}
+	if mode != "add" && mode != "replace" {
+		return fmt.Errorf("%w: attribute mode must be add or replace", ErrInvalidInput)
+	}
+	if !actorCanWriteAttribute(ctx, key) {
+		return ErrForbidden
+	}
+	if containsAttributeUnassigned(values) {
+		return fmt.Errorf("%w: unassigned is not a real attribute value", ErrInvalidInput)
+	}
+	cleanedValues := cleanAttributeValues(values)
+	cleanedIDs := make([]string, 0, len(assetIDs))
+	seen := make(map[string]bool, len(assetIDs))
+	for _, id := range assetIDs {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		cleanedIDs = append(cleanedIDs, id)
+	}
+	if len(cleanedIDs) == 0 {
+		return fmt.Errorf("%w: at least one asset is required", ErrInvalidInput)
+	}
+	if mode == "add" && len(cleanedValues) == 0 {
+		return nil
+	}
+	if err := s.validateAttributeAssignment(ctx, key, cleanedValues); err != nil {
+		return err
+	}
+	if mode == "add" && len(cleanedValues) > 0 {
+		rules, err := s.attributeRules(ctx, key)
+		if err != nil {
+			return err
+		}
+		if !rules.Multi {
+			var conflicts int64
+			if err := s.db.WithContext(ctx).
+				Model(&store.AssetAttribute{}).
+				Where("asset_id IN ? AND key = ? AND value <> ?", cleanedIDs, key, cleanedValues[0]).
+				Count(&conflicts).Error; err != nil {
+				return err
+			}
+			if conflicts > 0 {
+				return fmt.Errorf("%w: attribute %q is single-valued", ErrInvalidInput, key)
+			}
+		}
+	}
+
+	now := time.Now().UTC()
+	tx := s.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var visuals []struct {
+		ID      string
+		ImageOf string
+	}
+	if err := tx.Model(&store.Asset{}).
+		Select("id, image_of").
+		Where("image_of IN ? AND role = ?", cleanedIDs, domain.AssetRoleVisual).
+		Scan(&visuals).Error; err != nil {
+		return err
+	}
+	visualByParent := make(map[string][]string)
+	for _, visual := range visuals {
+		visualByParent[visual.ImageOf] = append(visualByParent[visual.ImageOf], visual.ID)
+	}
+
+	apply := func(tx *gorm.DB, id string) error {
+		if mode == "replace" {
+			return store.ReplaceAssetAttributeKey(tx, id, key, cleanedValues)
+		}
+		return store.AddAssetAttributeKeyValues(tx, id, key, cleanedValues)
+	}
+
+	for _, id := range cleanedIDs {
+		if err := apply(tx, id); err != nil {
+			return err
+		}
+		for _, visualID := range visualByParent[id] {
+			if err := apply(tx, visualID); err != nil {
+				return err
+			}
+		}
+	}
+
+	allIDs := append([]string{}, cleanedIDs...)
+	for _, visual := range visuals {
+		allIDs = append(allIDs, visual.ID)
+	}
+	if err := tx.Model(&store.Asset{}).
+		Where("id IN ?", allIDs).
+		Update("updated_at", now).Error; err != nil {
+		return err
+	}
+	return tx.Commit().Error
 }
 
 func (s *AssetService) List(ctx context.Context, filter domain.AssetFilter) (*domain.AssetPage, error) {
@@ -819,6 +2204,16 @@ func (s *AssetService) storeUploadFile(ctx context.Context, driverName, filename
 		return nil, err
 	}
 
+	uploaderName := ""
+	var attributes []domain.AssetAttribute
+	if actor := domain.ActorFromContext(ctx); actor != nil {
+		uploaderName = actor.Name
+		attributes = actor.Scope.UploadAttributes
+	}
+	if err := s.validateUploadAttributes(ctx, attributes); err != nil {
+		return nil, err
+	}
+
 	id := uuid.New().String()
 	ext := filepath.Ext(filename)
 	storageKey := fmt.Sprintf("uploads/%s%s", id, ext)
@@ -826,13 +2221,6 @@ func (s *AssetService) storeUploadFile(ctx context.Context, driverName, filename
 	// 1. Save original to target storage driver (Local, SFTP, S3)
 	if err := driver.Save(ctx, storageKey, file); err != nil {
 		return nil, fmt.Errorf("failed to save to %s storage: %w", driverName, err)
-	}
-
-	uploaderName := ""
-	var attributes []domain.AssetAttribute
-	if actor := domain.ActorFromContext(ctx); actor != nil {
-		uploaderName = actor.Name
-		attributes = actor.Scope.UploadAttributes
 	}
 
 	now := time.Now().UTC()

@@ -327,6 +327,417 @@ func (s *Server) handleListAttributes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"attributes": facets})
 }
 
+type assetAttributesBulkRequest struct {
+	AssetIDs []string `json:"asset_ids"`
+	Key      string   `json:"key"`
+	Values   []string `json:"values"`
+	Mode     string   `json:"mode"`
+}
+
+// handleApplyAssetsAttributes applies one attribute key to many assets.
+func (s *Server) handleApplyAssetsAttributes(w http.ResponseWriter, r *http.Request) {
+	var req assetAttributesBulkRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	for _, id := range req.AssetIDs {
+		if _, ok := s.ownedAsset(w, r, id); !ok {
+			return
+		}
+	}
+	if err := s.deps.Assets.ApplyAssetAttributesBulk(
+		r.Context(), req.AssetIDs, req.Key, req.Values, req.Mode,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleListAttributeCatalog returns usage facets plus metadata-only values for
+// keys already in use. Used by the attributes dialog and inspector.
+func (s *Server) handleListAttributeCatalog(w http.ResponseWriter, r *http.Request) {
+	facets, err := s.deps.Assets.AttributeCatalog(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"attributes": facets})
+}
+
+type attributeValuesRequest struct {
+	Key    string   `json:"key"`
+	Values []string `json:"values"`
+}
+
+// handleAddAttributeValues creates metadata-only values for an existing key.
+func (s *Server) handleAddAttributeValues(w http.ResponseWriter, r *http.Request) {
+	var req attributeValuesRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.AddAttributeValues(
+		r.Context(), req.Key, req.Values,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleSetAssetAttributes replaces the values of one attribute key on an
+// asset. The actor also needs a write-capable attribute grant for the key.
+func (s *Server) handleSetAssetAttributes(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := s.ownedAsset(w, r, id); !ok {
+		return
+	}
+	var req attributeValuesRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	asset, err := s.deps.Assets.SetAssetAttributeValues(
+		r.Context(), id, req.Key, req.Values,
+	)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, asset)
+}
+
+type createAttributeRequest struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+}
+
+func (s *Server) handleCreateAttribute(w http.ResponseWriter, r *http.Request) {
+	var req createAttributeRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.CreateAttribute(r.Context(), req.Key, req.Label); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type attributeValuesLockRequest struct {
+	Key    string `json:"key"`
+	Locked bool   `json:"locked"`
+}
+
+func (s *Server) handleSetAttributeValuesLocked(w http.ResponseWriter, r *http.Request) {
+	var req attributeValuesLockRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.SetAttributeValuesLocked(r.Context(), req.Key, req.Locked); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type attributeLabelRequest struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// handleSetAttributeLabel overrides the display label for a key or value. An
+// empty value targets the key-level label; the stored attribute is unchanged.
+func (s *Server) handleSetAttributeLabel(w http.ResponseWriter, r *http.Request) {
+	var req attributeLabelRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.SetAttributeLabel(
+		r.Context(), req.Key, req.Value, req.Label,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type attributeSortRequest struct {
+	Key  string `json:"key"`
+	Sort string `json:"sort"`
+}
+
+// handleSetAttributeSort sets the key-level ordering setting.
+func (s *Server) handleSetAttributeSort(w http.ResponseWriter, r *http.Request) {
+	var req attributeSortRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.SetAttributeSort(
+		r.Context(), req.Key, req.Sort,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type attributeRenderRequest struct {
+	Key    string `json:"key"`
+	Render string `json:"render"`
+}
+
+// handleSetAttributeRender sets the key-level rendering setting.
+func (s *Server) handleSetAttributeRender(w http.ResponseWriter, r *http.Request) {
+	var req attributeRenderRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.SetAttributeRender(
+		r.Context(), req.Key, req.Render,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type attributeSearchableRequest struct {
+	Key        string `json:"key"`
+	Searchable bool   `json:"searchable"`
+}
+
+func (s *Server) handleSetAttributeSearchable(w http.ResponseWriter, r *http.Request) {
+	var req attributeSearchableRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.SetAttributeSearchable(
+		r.Context(), req.Key, req.Searchable,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type attributeMultiRequest struct {
+	Key   string `json:"key"`
+	Multi bool   `json:"multi"`
+}
+
+func (s *Server) handleSetAttributeMulti(w http.ResponseWriter, r *http.Request) {
+	var req attributeMultiRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.SetAttributeMulti(
+		r.Context(), req.Key, req.Multi,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type attributeUnassignedRequest struct {
+	Key               string `json:"key"`
+	IncludeUnassigned bool   `json:"include_unassigned"`
+}
+
+func (s *Server) handleSetAttributeUnassigned(w http.ResponseWriter, r *http.Request) {
+	var req attributeUnassignedRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.SetAttributeUnassigned(
+		r.Context(), req.Key, req.IncludeUnassigned,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type attributeUnassignedLabelRequest struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+}
+
+func (s *Server) handleSetAttributeUnassignedLabel(w http.ResponseWriter, r *http.Request) {
+	var req attributeUnassignedLabelRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.SetAttributeUnassignedLabel(
+		r.Context(), req.Key, req.Label,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type attributeDescriptionRequest struct {
+	Key         string `json:"key"`
+	Value       string `json:"value"`
+	Description string `json:"description"`
+}
+
+func (s *Server) handleSetAttributeDescription(w http.ResponseWriter, r *http.Request) {
+	var req attributeDescriptionRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.SetAttributeDescription(
+		r.Context(), req.Key, req.Value, req.Description,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type attributeColorRequest struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+	Color string `json:"color"`
+}
+
+func (s *Server) handleSetAttributeColor(w http.ResponseWriter, r *http.Request) {
+	var req attributeColorRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.SetAttributeColor(
+		r.Context(), req.Key, req.Value, req.Color,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type attributeValueOrderRequest struct {
+	Key    string   `json:"key"`
+	Values []string `json:"values"`
+}
+
+func (s *Server) handleSetAttributeValueOrder(w http.ResponseWriter, r *http.Request) {
+	var req attributeValueOrderRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.SetAttributeValueOrder(
+		r.Context(), req.Key, req.Values,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type attributeKeyOrderRequest struct {
+	Keys []string `json:"keys"`
+}
+
+func (s *Server) handleSetAttributeKeyOrder(w http.ResponseWriter, r *http.Request) {
+	var req attributeKeyOrderRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.SetAttributeKeyOrder(r.Context(), req.Keys); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type attributeValueSearchRequest struct {
+	Key     string `json:"key"`
+	Enabled bool   `json:"enabled"`
+}
+
+func (s *Server) handleSetAttributeValueSearch(w http.ResponseWriter, r *http.Request) {
+	var req attributeValueSearchRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.SetAttributeValueSearch(
+		r.Context(), req.Key, req.Enabled,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type attributeParentRequest struct {
+	Key    string `json:"key"`
+	Parent string `json:"parent"`
+}
+
+func (s *Server) handleSetAttributeParent(w http.ResponseWriter, r *http.Request) {
+	var req attributeParentRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.SetAttributeParent(
+		r.Context(), req.Key, req.Parent,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleAttributeTree returns nested attribute trees for the sidebar.
+func (s *Server) handleAttributeTree(w http.ResponseWriter, r *http.Request) {
+	trees, err := s.deps.Assets.AttributeTree(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"trees": trees})
+}
+
+type attributeDeleteValueRequest struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+func (s *Server) handleDeleteAttributeValue(w http.ResponseWriter, r *http.Request) {
+	var req attributeDeleteValueRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.DeleteAttributeValue(
+		r.Context(), req.Key, req.Value,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type attributeDeleteKeyRequest struct {
+	Key string `json:"key"`
+}
+
+func (s *Server) handleDeleteAttributeKey(w http.ResponseWriter, r *http.Request) {
+	var req attributeDeleteKeyRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.deps.Assets.DeleteAttributeKey(
+		r.Context(), req.Key,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleGetAsset(w http.ResponseWriter, r *http.Request) {
 	asset, ok := s.ownedAsset(w, r, r.PathValue("id"))
 	if !ok {

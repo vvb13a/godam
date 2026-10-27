@@ -1,6 +1,8 @@
 import type {
   Asset,
   AttributeFacet,
+  AttributeTree,
+  Instance,
   Collection,
   Conversion,
   ImgProxyCatalog,
@@ -229,6 +231,226 @@ export function listAttributeFacets(): Promise<AttributeFacet[]> {
   )
 }
 
+export function listAttributeCatalog(): Promise<AttributeFacet[]> {
+  return requestJSON<{ attributes: AttributeFacet[] }>(
+    '/api/attributes/catalog',
+  ).then((response) => response.attributes ?? [])
+}
+
+export function createAttributeValues(
+  key: string,
+  values: string[],
+): Promise<void> {
+  return requestVoid('/api/attributes/metadata/values', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, values }),
+  })
+}
+
+export function createAttribute(
+  key: string,
+  label = '',
+): Promise<void> {
+  return requestVoid('/api/attributes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, label }),
+  })
+}
+
+export function updateAttributeDescription(
+  key: string,
+  value: string,
+  description: string,
+): Promise<void> {
+  return requestVoid('/api/attributes/metadata/description', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, value, description }),
+  })
+}
+
+export function updateAttributeColor(
+  key: string,
+  value: string,
+  color: string,
+): Promise<void> {
+  return requestVoid('/api/attributes/metadata/color', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, value, color }),
+  })
+}
+
+export function updateAttributeValueOrder(
+  key: string,
+  values: string[],
+): Promise<void> {
+  return requestVoid('/api/attributes/metadata/value-order', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, values }),
+  })
+}
+
+export function updateAttributeKeyOrder(keys: string[]): Promise<void> {
+  return requestVoid('/api/attributes/metadata/key-order', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keys }),
+  })
+}
+
+export function updateAttributeValuesLocked(
+  key: string,
+  locked: boolean,
+): Promise<void> {
+  return requestVoid('/api/attributes/metadata/values-lock', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, locked }),
+  })
+}
+
+export function updateAttributeValueSearch(
+  key: string,
+  enabled: boolean,
+): Promise<void> {
+  return requestVoid('/api/attributes/metadata/value-search', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, enabled }),
+  })
+}
+
+export function updateAttributeStamping(
+  keys: boolean,
+  values: boolean,
+): Promise<Instance> {
+  return sendJSON<Instance>('/api/instance/attribute-stamping', 'PUT', {
+    keys,
+    values,
+  })
+}
+
+export function updateAttributeLabel(
+  key: string,
+  value: string,
+  label: string,
+): Promise<void> {
+  return requestVoid('/api/attributes/metadata/label', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, value, label }),
+  })
+}
+
+export function updateAttributeSort(
+  key: string,
+  sort: string,
+): Promise<void> {
+  return requestVoid('/api/attributes/metadata/sort', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, sort }),
+  })
+}
+
+export function updateAttributeParent(
+  key: string,
+  parent: string,
+): Promise<void> {
+  return requestVoid('/api/attributes/metadata/parent', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, parent }),
+  })
+}
+
+export function listAttributeTree(): Promise<AttributeTree[]> {
+  return requestJSON<{ trees: AttributeTree[] }>('/api/attributes/tree').then(
+    (response) => response.trees ?? [],
+  )
+}
+
+export function updateAttributeRender(
+  key: string,
+  render: string,
+): Promise<void> {
+  return requestVoid('/api/attributes/metadata/render', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, render }),
+  })
+}
+
+export function updateAttributeSearchable(
+  key: string,
+  searchable: boolean,
+): Promise<void> {
+  return requestVoid('/api/attributes/metadata/search', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, searchable }),
+  })
+}
+
+export function updateAttributeMulti(
+  key: string,
+  multi: boolean,
+): Promise<void> {
+  return requestVoid('/api/attributes/metadata/multi', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, multi }),
+  })
+}
+
+export function updateAttributeUnassigned(
+  key: string,
+  includeUnassigned: boolean,
+): Promise<void> {
+  return requestVoid('/api/attributes/metadata/unassigned', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      key,
+      include_unassigned: includeUnassigned,
+    }),
+  })
+}
+
+export function updateAttributeUnassignedLabel(
+  key: string,
+  label: string,
+): Promise<void> {
+  return requestVoid('/api/attributes/metadata/unassigned-label', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, label }),
+  })
+}
+
+export function deleteAttributeValue(
+  key: string,
+  value: string,
+): Promise<void> {
+  return requestVoid('/api/attributes/metadata/value', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, value }),
+  })
+}
+
+export function deleteAttributeKey(key: string): Promise<void> {
+  return requestVoid('/api/attributes/metadata/key', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key }),
+  })
+}
+
 export function listAssets(params: AssetListParams): Promise<AssetPage> {
   const query = new URLSearchParams()
   if (params.collectionIds?.length) {
@@ -411,6 +633,36 @@ export function updateAsset(
   input: UpdateAssetInput,
 ): Promise<Asset> {
   return sendJSON<Asset>(`/api/assets/${encodeURIComponent(id)}`, 'PUT', input)
+}
+
+export function setAssetAttributeValues(
+  id: string,
+  key: string,
+  values: string[],
+): Promise<Asset> {
+  return sendJSON<Asset>(
+    `/api/assets/${encodeURIComponent(id)}/attributes`,
+    'PUT',
+    { key, values },
+  )
+}
+
+export function bulkSetAssetAttributeValues(
+  assetIds: string[],
+  key: string,
+  values: string[],
+  mode: 'add' | 'replace',
+): Promise<void> {
+  return requestVoid('/api/assets/attributes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      asset_ids: assetIds,
+      key,
+      values,
+      mode,
+    }),
+  })
 }
 
 export interface UploadSession {

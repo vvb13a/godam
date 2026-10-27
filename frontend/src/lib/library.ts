@@ -21,6 +21,8 @@ export const library = reactive({
   watermark_asset_id: '',
   allowed_mime_types: [] as string[],
   upload_limits: {} as UploadLimits,
+  upload_attribute_keys: true,
+  upload_attribute_values: true,
   loaded: false,
   collections: [] as Collection[],
   smartCollections: [] as SmartCollection[],

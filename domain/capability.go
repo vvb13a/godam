@@ -3,16 +3,20 @@ package domain
 import "strings"
 
 const (
-	CapabilityAssetsRead       = "assets:read"
-	CapabilityAssetsUpload     = "assets:upload"
-	CapabilityAssetsUpdate     = "assets:update"
-	CapabilityAssetsDelete     = "assets:delete"
-	CapabilitySettingsStorage  = "settings:storage"
-	CapabilitySettingsPresets  = "settings:presets"
-	CapabilitySettingsUpload   = "settings:upload"
-	CapabilityConversionsWarm  = "conversions:warm"
-	CapabilityConversionsPurge = "conversions:purge"
-	CapabilityLibraryUpdate    = "library:update"
+	CapabilityAssetsRead             = "assets:read"
+	CapabilityAssetsUpload           = "assets:upload"
+	CapabilityAssetsUpdate           = "assets:update"
+	CapabilityAssetsDelete           = "assets:delete"
+	CapabilitySettingsStorage        = "settings:storage"
+	CapabilitySettingsPresets        = "settings:presets"
+	CapabilitySettingsUpload         = "settings:upload"
+	CapabilitySettingsAttributes     = "settings:attributes"
+	CapabilityConversionsWarm        = "conversions:warm"
+	CapabilityConversionsPurge       = "conversions:purge"
+	CapabilityLibraryUpdate          = "library:update"
+	CapabilityAttributesSelect       = "attributes:select"
+	CapabilityAttributesCreateKeys   = "attributes:create_keys"
+	CapabilityAttributesCreateValues = "attributes:create_values"
 )
 
 // AllCapabilities is the explicit set granted to trusted direct access.
@@ -24,9 +28,13 @@ var AllCapabilities = []string{
 	CapabilitySettingsStorage,
 	CapabilitySettingsPresets,
 	CapabilitySettingsUpload,
+	CapabilitySettingsAttributes,
 	CapabilityConversionsWarm,
 	CapabilityConversionsPurge,
 	CapabilityLibraryUpdate,
+	CapabilityAttributesSelect,
+	CapabilityAttributesCreateKeys,
+	CapabilityAttributesCreateValues,
 }
 
 // Can reports whether the capability set allows want. It supports exact

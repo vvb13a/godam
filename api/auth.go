@@ -124,6 +124,7 @@ func publicScope(scope domain.Scope) domain.Scope {
 	public := domain.Scope{
 		Username:       scope.Username,
 		AllFilters:     scope.AllFilters,
+		AllAttributes:  scope.AllAttributes,
 		UploadSettings: append([]domain.UploadSetting{}, scope.UploadSettings...),
 	}
 	for name, grant := range scope.Filters {

@@ -207,7 +207,129 @@ library; picker tokens with tenant isolation should keep explicit keys.
 `GET /api/attributes` lists the attribute keys and values available for
 filtering. The result is already scoped: tokens without attribute access get an
 empty list, explicit scopes return only their active keys, wildcard tokens see
-all keys, and locked/hidden attributes are excluded and enforced.
+all keys, and locked/hidden attributes are excluded and enforced. Each facet
+includes a display `label`, a `sort` setting (`count:asc`, `count:desc`,
+`abc:asc`, `abc:desc`, `custom`, or `open`), and a `render` setting (`select`,
+`checkbox`, `tags`, `tree`, or `open`). `open` lets each user choose their own order or renderer;
+the other values fix it for everyone.
+
+Display labels only affect presentation; filters and uploads continue to use
+the raw key/value strings. Metadata management routes require
+`settings:attributes`:
+
+```text
+POST   /api/attributes/metadata/values
+DELETE /api/attributes/metadata/value
+DELETE /api/attributes/metadata/key
+PUT    /api/attributes/metadata/label
+PUT    /api/attributes/metadata/sort
+PUT    /api/attributes/metadata/render
+PUT    /api/attributes/metadata/search
+PUT    /api/attributes/metadata/multi
+PUT    /api/attributes/metadata/unassigned
+PUT    /api/attributes/metadata/unassigned-label
+PUT    /api/attributes/metadata/parent
+PUT    /api/attributes/metadata/value-search
+PUT    /api/attributes/metadata/values-lock
+PUT    /api/attributes/metadata/description
+PUT    /api/attributes/metadata/color
+PUT    /api/attributes/metadata/value-order
+PUT    /api/attributes/metadata/key-order
+POST   /api/attributes
+```
+
+Facets and values also carry optional `description` and `color` fields, plus a
+`position` used by custom ordering. Colors are hex strings without the leading
+`#`; values without a color inherit the key color. Reorder values with
+`PUT /api/attributes/metadata/value-order` and `{ "key": "model", "values": [...] }`,
+and keys with `PUT /api/attributes/metadata/key-order` and `{ "keys": [...] }`.
+Set descriptions or colors with the matching metadata routes.
+
+Create a new attribute key with `POST /api/attributes` and
+`{ "key": "model", "label": "Model" }`. Creating keys requires
+`settings:attributes` or `attributes:create_keys`. Creating values requires
+`settings:attributes` or `attributes:create_values`, and the key must be
+unlocked. `PUT /api/attributes/metadata/values-lock` with
+`{ "key": "model", "locked": true }` blocks new values on every path until it is
+unlocked.
+
+Upload stamping has two independent instance settings, enabled by default:
+new keys and new values are allowed through JWT upload attributes but not
+through the attribute APIs. Update them with
+`PUT /api/instance/attribute-stamping` and `{ "keys": true, "values": true }`
+(`settings:attributes`). This keeps a stolen upload token from creating
+vocabulary through the attributes API.
+
+`PUT /api/attributes/metadata/value-search` with
+`{ "key": "model", "enabled": true }` adds a value search box to that
+attribute's sidebar renderer. It is presentation only and stored per key.
+
+`GET /api/attributes/tree` (`assets:read`) returns nested attribute trees using
+the `parent_key` metadata. Set a parent with
+`{ "key": "model", "parent": "site" }`; an empty `parent` makes the attribute a
+root.
+
+`GET /api/attributes/catalog` (`assets:read`) includes metadata-only values
+that no asset uses yet. The dialog uses it to define vocabulary, and the asset
+inspector uses it for per-asset selection. Create one or more values for an
+existing key with:
+
+```json
+{ "key": "model", "values": ["news", "sports", "weather"] }
+```
+
+Per-asset selection requires `attributes:select` and replaces the values of one
+key without touching other keys:
+
+```text
+PUT /api/assets/{id}/attributes
+```
+
+```json
+{ "key": "model", "values": ["news", "sports"] }
+```
+
+An empty `values` array removes the key from that asset. Locked and hidden token
+attributes cannot be changed. Apply the same change to many assets with:
+
+```text
+POST /api/assets/attributes
+```
+
+```json
+{ "asset_ids": ["ASSET_ID"], "key": "model", "values": ["news"], "mode": "add" }
+```
+
+`mode` is `add` (merge values) or `replace` (set the exact value set; an empty
+array clears the key).
+
+Rename a key or value with:
+
+```json
+{ "key": "model", "value": "news", "label": "Newsroom" }
+```
+
+Omit `value` to rename the key itself. Set `label` to an empty string to clear
+the override. Change ordering or rendering with:
+
+```json
+{ "key": "model", "sort": "open" }
+{ "key": "model", "render": "tags" }
+{ "key": "model", "searchable": true }
+{ "key": "model", "multi": false }
+{ "key": "model", "include_unassigned": true }
+{ "key": "model", "label": "No model" }
+{ "key": "model", "parent": "site" }
+```
+
+`searchable` includes the key's values in asset text search. `multi` controls
+whether a renderer adds (`true`) or replaces (`false`) its selection.
+`include_unassigned` adds an `Unassigned` facet value for assets with no value
+for that key. Its display label is set with
+`PUT /api/attributes/metadata/unassigned-label` and `{ "key": "model", "label": "No model" }`.
+Delete a single value
+with `{ "key": "model", "value": "news" }` or an entire key with
+`{ "key": "model" }`; both remove the value from every asset.
 
 ### Upload settings
 
@@ -262,6 +384,10 @@ Management and configuration routes require explicit capabilities in
 | `conversions:warm` | Warm conversions |
 | `conversions:purge` | Purge the conversion cache |
 | `library:update` | Rename the library, set cover/watermark, manage tags and collections |
+| `settings:attributes` | Manage attribute labels, ordering, rendering, nesting, search, selection, and values |
+| `attributes:select` | Change attribute values per asset, including bulk add/replace |
+| `attributes:create_keys` | Create new attribute keys through the attributes API |
+| `attributes:create_values` | Create new attribute values through the attributes API |
 
 `assets:*` grants all `assets:*` capabilities, and `*` grants everything.
 Tokens without a `capabilities` claim default to `assets:read` only. Add

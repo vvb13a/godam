@@ -65,7 +65,7 @@ type Scope struct {
 	Filters          map[string]FilterGrant `json:"filters,omitempty"`
 	AllFilters       bool                   `json:"all_filters,omitempty"`
 	Attributes       []AttributeGrant       `json:"attributes,omitempty"`
-	AllAttributes    bool                   `json:"-"`
+	AllAttributes    bool                   `json:"all_attributes,omitempty"`
 	UploadAttributes []AssetAttribute       `json:"-"`
 	UploadSettings   []UploadSetting        `json:"upload_settings,omitempty"`
 }

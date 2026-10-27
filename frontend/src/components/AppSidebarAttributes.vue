@@ -4,28 +4,53 @@ import InputGroup from 'primevue/inputgroup'
 import InputNumber from 'primevue/inputnumber'
 import MultiSelect from 'primevue/multiselect'
 import InputGroupAddon from 'primevue/inputgroupaddon'
+import Popover from 'primevue/popover'
 import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
 import { useToast } from 'primevue/usetoast'
 import {
+  Check,
+  CheckSquare,
   ChevronLeft,
   ChevronRight,
+  Circle,
+  CircleFill,
+  Cog,
   File,
+  Folder,
   Image,
   Images,
+  List,
   Lock,
   Search,
   SlidersH,
+  SortAlt,
+  Square,
   SortAmountDown,
   SortAmountUp,
+  Tags,
   Times,
   Upload,
   Video,
   VolumeUp,
 } from '@primeicons/vue'
-import { computed, nextTick, ref, watch, type Component } from 'vue'
+import { computed, nextTick, reactive, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as api from '../api/client'
+import {
+  attributeRenderMode,
+  effectiveAttributeRender,
+  setAttributeRenderMode,
+  type AttributeRenderMode,
+} from '../lib/attributeRender'
+import {
+  USER_SORT_OPTIONS,
+  effectiveAttributeSort,
+  setUserAttributeSort,
+  sortAttributeValues,
+} from '../lib/attributeSort'
+import { attributeTreeFor, loadAttributeTrees } from '../lib/attributeTree'
+import { attributesRevision, openAttributesDialog } from '../lib/attributesDialog'
 import { auth } from '../lib/auth'
 import { hasCapability } from '../lib/capabilities'
 import { openDisplaySettings } from '../lib/displaySettings'
@@ -45,10 +70,18 @@ import {
   toggleColor,
 } from '../lib/filters'
 import { currentLibrary, library, refreshLibrary } from '../lib/library'
+import { libraryColorHex } from '../lib/libraryColors'
 import { panels, toggleLeftPanel } from '../lib/panels'
 import { clearSmartSelection } from '../lib/smartSelection'
 import { openUpload } from '../lib/upload'
-import type { AttributeFacet } from '../types'
+import type {
+  AttributeFacet,
+  AttributeSortMode,
+  AttributeSortSetting,
+  AttributeTreeNode,
+} from '../types'
+import AttributeTree from './AttributeTree.vue'
+import TagBadge from './TagBadge.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -146,12 +179,133 @@ const activeGrants = computed(() =>
 const attributeFacets = ref<AttributeFacet[]>([])
 
 const displayFacets = computed<AttributeFacet[]>(() => {
-  if (attributeFacets.value.length) return attributeFacets.value
-  return activeGrants.value.map((grant) => ({
-    key: grant.key,
-    values: grant.values.map((value) => ({ value, count: 0 })),
-  }))
+  const facets = attributeFacets.value.length
+    ? attributeFacets.value
+    : activeGrants.value.map((grant) => ({
+        key: grant.key,
+        label: grant.key,
+        sort: 'open' as AttributeSortSetting,
+        render: 'open' as const,
+        searchable: false,
+        value_search: false,
+        multi: true,
+        include_unassigned: false,
+        values_locked: false,
+        position: 0,
+        values: grant.values.map((value) => ({
+          value,
+          label: value,
+          position: 0,
+          count: 0,
+        })),
+      }))
+  return [...facets].sort(
+    (a, b) =>
+      (a.position ?? 0) - (b.position ?? 0) ||
+      (a.label || a.key).localeCompare(b.label || b.key),
+  )
 })
+
+const sidebarFacets = computed<AttributeFacet[]>(() => {
+  const facets = displayFacets.value
+  const byKey = new Map(facets.map((facet) => [facet.key, facet]))
+  const children = new Map<string, string[]>()
+  const roots: string[] = []
+  for (const facet of facets) {
+    const parent = facet.parent_key
+    if (parent && parent !== facet.key && byKey.has(parent)) {
+      const list = children.get(parent)
+      if (list) list.push(facet.key)
+      else children.set(parent, [facet.key])
+    } else {
+      roots.push(facet.key)
+    }
+  }
+  const visible = new Set<string>()
+  const seen = new Set<string>()
+  const visit = (key: string, show: boolean): void => {
+    if (seen.has(key)) return
+    seen.add(key)
+    const facet = byKey.get(key)
+    if (!facet) return
+    if (show) visible.add(key)
+    const showChildren =
+      show && effectiveAttributeRender(facet.key, facet.render) !== 'tree'
+    for (const child of children.get(key) ?? []) {
+      visit(child, showChildren)
+    }
+  }
+  for (const root of roots) visit(root, true)
+  return facets.filter((facet) => visible.has(facet.key))
+})
+
+const canManageAttributes = computed(() => hasCapability('settings:attributes'))
+
+function treeValues(facet: AttributeFacet): AttributeTreeNode[] {
+  const tree = attributeTreeFor(facet.key)
+  if (tree?.values.length) return tree.values
+  return sortedValues(facet).map((value) => ({
+    key: facet.key,
+    value: value.value,
+    label: value.label || value.value,
+    description: value.description,
+    color: value.color || facet.color,
+    position: value.position,
+    count: value.count,
+    children: [],
+  }))
+}
+
+function handleTreeToggle(key: string, value: string): void {
+  const facet = displayFacets.value.find((item) => item.key === key)
+  if (facet) toggleAttributeValue(facet, value)
+}
+
+function sortedValues(facet: AttributeFacet) {
+  return sortAttributeValues(
+    facet.values,
+    effectiveAttributeSort(facet.key, facet.sort),
+  )
+}
+
+const valueQueries = reactive<Record<string, string>>({})
+
+function filteredValues(facet: AttributeFacet) {
+  const values = sortedValues(facet)
+  const query = (valueQueries[facet.key] ?? '').trim().toLowerCase()
+  if (!query) return values
+  return values.filter(
+    (value) =>
+      (value.label || value.value).toLowerCase().includes(query) ||
+      value.value.toLowerCase().includes(query),
+  )
+}
+
+function toggleCheckboxValue(facet: AttributeFacet, value: string): void {
+  if (facet.multi) {
+    toggleAttributeValue(facet, value)
+    return
+  }
+  setSingleAttributeValue(
+    facet,
+    isAttributeValueSelected(facet.key, value) ? null : value,
+  )
+}
+
+function attributeKeyLabel(key: string): string {
+  return displayFacets.value.find((facet) => facet.key === key)?.label ?? key
+}
+
+function valueColor(facet: AttributeFacet, value: { color?: string }): string {
+  return libraryColorHex(value.color || facet.color || '')
+}
+
+function attributeValueLabel(key: string, value: string): string {
+  const facet = displayFacets.value.find((item) => item.key === key)
+  return (
+    facet?.values.find((item) => item.value === value)?.label ?? value
+  )
+}
 
 async function loadAttributeFacets(): Promise<void> {
   try {
@@ -159,6 +313,79 @@ async function loadAttributeFacets(): Promise<void> {
   } catch {
     attributeFacets.value = []
   }
+}
+
+const renderPopover = ref<InstanceType<typeof Popover> | null>(null)
+const renderPopoverKey = ref<string | null>(null)
+
+const RENDER_OPTIONS: {
+  value: AttributeRenderMode
+  label: string
+  icon: Component
+}[] = [
+  { value: 'select', label: 'Select', icon: List },
+  { value: 'checkbox', label: 'Checkbox', icon: CheckSquare },
+  { value: 'tags', label: 'Tags', icon: Tags },
+  { value: 'tree', label: 'Tree', icon: Folder },
+]
+
+function renderOption(key: string) {
+  return (
+    RENDER_OPTIONS.find(
+      (option) => option.value === attributeRenderMode(key),
+    ) ?? RENDER_OPTIONS[0]
+  )
+}
+
+function renderIcon(key: string): Component {
+  return renderOption(key).icon
+}
+
+function renderModeLabel(key: string): string {
+  return renderOption(key).label
+}
+
+function openRenderPopover(event: Event, key: string): void {
+  renderPopoverKey.value = key
+  renderPopover.value?.toggle(event)
+}
+
+const popoverRenderMode = computed<AttributeRenderMode>(() =>
+  renderPopoverKey.value ? attributeRenderMode(renderPopoverKey.value) : 'select',
+)
+
+function chooseRenderMode(mode: AttributeRenderMode): void {
+  if (!renderPopoverKey.value) return
+  setAttributeRenderMode(renderPopoverKey.value, mode)
+  renderPopover.value?.hide()
+}
+
+const sortPopover = ref<InstanceType<typeof Popover> | null>(null)
+const sortPopoverKey = ref<string | null>(null)
+
+const sortPopoverFacet = computed<AttributeFacet | null>(() =>
+  sortPopoverKey.value
+    ? (displayFacets.value.find(
+        (facet) => facet.key === sortPopoverKey.value,
+      ) ?? null)
+    : null,
+)
+
+const popoverSortMode = computed<AttributeSortMode>(() => {
+  const key = sortPopoverKey.value
+  if (!key) return 'count:desc'
+  return effectiveAttributeSort(key, sortPopoverFacet.value?.sort)
+})
+
+function openSortPopover(event: Event, key: string): void {
+  sortPopoverKey.value = key
+  sortPopover.value?.toggle(event)
+}
+
+function chooseSortMode(mode: AttributeSortMode): void {
+  if (!sortPopoverKey.value) return
+  setUserAttributeSort(sortPopoverKey.value, mode)
+  sortPopover.value?.hide()
 }
 
 const TYPES = [
@@ -181,6 +408,29 @@ function setAttributeValues(key: string, values: string[] | null): void {
   clearSmartSelection()
   if (values?.length) filterState.attributes[key] = values
   else delete filterState.attributes[key]
+}
+
+function isAttributeValueSelected(key: string, value: string): boolean {
+  return (filterState.attributes[key] ?? []).includes(value)
+}
+
+function toggleAttributeValue(facet: AttributeFacet, value: string): void {
+  const current = filterState.attributes[facet.key] ?? []
+  if (!facet.multi) {
+    setAttributeValues(facet.key, current.includes(value) ? [] : [value])
+    return
+  }
+  const next = current.includes(value)
+    ? current.filter((item) => item !== value)
+    : [...current, value]
+  setAttributeValues(facet.key, next)
+}
+
+function setSingleAttributeValue(
+  facet: AttributeFacet,
+  value: string | null | undefined,
+): void {
+  setAttributeValues(facet.key, value ? [value] : [])
 }
 
 const COLOR_OPTIONS = [
@@ -429,7 +679,7 @@ const chips = computed<Chip[]>(() => {
     for (const value of values) {
       out.push({
         key: `attribute:${key}:${value}`,
-        label: `${key}: ${value}`,
+        label: `${attributeKeyLabel(key)}: ${attributeValueLabel(key, value)}`,
         locked: grant?.mode === 'locked',
         clear: () => clearAttributeValue(key, value),
       })
@@ -627,10 +877,16 @@ watch(
   () => {
     void refreshLibrary()
     void loadAttributeFacets()
+    void loadAttributeTrees(true)
   },
 )
 
+watch(attributesRevision, () => {
+  void loadAttributeFacets()
+})
+
 void loadAttributeFacets()
+void loadAttributeTrees()
 </script>
 
 <template>
@@ -800,26 +1056,278 @@ void loadAttributeFacets()
             </InputGroup>
           </section>
 
-          <section v-for="facet in displayFacets" :key="facet.key">
-            <p
-              class="mb-1.5 text-[10px] font-semibold tracking-wide text-slate-400 uppercase"
+          <section v-for="facet in sidebarFacets" :key="facet.key">
+            <div class="mb-1.5 flex items-center justify-between gap-2">
+              <div class="flex min-w-0 items-center gap-1.5">
+                <span
+                  class="h-2 w-2 shrink-0 rounded-full"
+                  :style="{
+                    backgroundColor: libraryColorHex(facet.color ?? ''),
+                  }"
+                />
+                <p
+                  class="truncate text-[10px] font-semibold tracking-wide text-slate-400 uppercase"
+                  v-tooltip="{ value: facet.description || '' }"
+                >
+                  {{ facet.label || facet.key }}
+                </p>
+              </div>
+              <div class="flex items-center gap-0.5">
+                <button
+                  v-if="facet.sort === 'open'"
+                  type="button"
+                  class="inline-flex h-5 w-5 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-brand-700 dark:hover:bg-slate-800 dark:hover:text-brand-400"
+                  title="Sort attribute values"
+                  :aria-label="`Sort values for ${facet.key}`"
+                  @click="openSortPopover($event, facet.key)"
+                >
+                  <SortAlt :size="12" />
+                </button>
+                <button
+                  v-if="facet.render === 'open'"
+                  type="button"
+                  class="inline-flex h-5 w-5 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-brand-700 dark:hover:bg-slate-800 dark:hover:text-brand-400"
+                  :title="`Render as ${renderModeLabel(facet.key)}`"
+                  :aria-label="`Change rendering for ${facet.key}`"
+                  @click="openRenderPopover($event, facet.key)"
+                >
+                  <component :is="renderIcon(facet.key)" :size="12" />
+                </button>
+              </div>
+            </div>
+
+            <div v-if="facet.value_search" class="mb-1.5">
+              <div
+                class="flex items-center gap-1.5 rounded-md border border-slate-200 px-2 py-1 dark:border-slate-700"
+              >
+                <Search :size="12" class="shrink-0 text-slate-400" />
+                <input
+                  v-model="valueQueries[facet.key]"
+                  type="text"
+                  placeholder="Search values…"
+                  class="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-slate-400"
+                />
+                <button
+                  v-if="valueQueries[facet.key]"
+                  type="button"
+                  class="inline-flex text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                  title="Clear search"
+                  @click="valueQueries[facet.key] = ''"
+                >
+                  <Times :size="10" />
+                </button>
+              </div>
+            </div>
+
+            <div
+              v-if="effectiveAttributeRender(facet.key, facet.render) === 'tags'"
+              class="flex flex-wrap gap-1"
             >
-              {{ facet.key }}
-            </p>
-            <MultiSelect
-              :model-value="filterState.attributes[facet.key] ?? []"
-              :options="facet.values"
-              option-label="value"
+              <p
+                v-if="!filteredValues(facet).length"
+                class="text-xs text-slate-400"
+              >
+                No values
+              </p>
+              <button
+                v-for="value in filteredValues(facet)"
+                :key="value.value"
+                type="button"
+                class="max-w-full cursor-pointer rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                :aria-pressed="
+                  isAttributeValueSelected(facet.key, value.value)
+                "
+                v-tooltip="{ value: value.description || '' }"
+                @click="toggleAttributeValue(facet, value.value)"
+              >
+                <TagBadge
+                  :name="value.label || value.value"
+                  :color="valueColor(facet, value)"
+                  :selected="isAttributeValueSelected(facet.key, value.value)"
+                >
+                  <span
+                    v-if="value.count"
+                    class="shrink-0 text-[10px] opacity-70"
+                  >
+                    {{ value.count }}
+                  </span>
+                </TagBadge>
+              </button>
+            </div>
+
+            <div
+              v-else-if="
+                effectiveAttributeRender(facet.key, facet.render) === 'checkbox'
+              "
+              class="space-y-0.5"
+            >
+              <p
+                v-if="!filteredValues(facet).length"
+                class="px-1 py-1 text-xs text-slate-400"
+              >
+                No values
+              </p>
+              <button
+                v-for="value in filteredValues(facet)"
+                :key="value.value"
+                type="button"
+                class="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm transition hover:bg-slate-100 dark:hover:bg-slate-800"
+                :class="
+                  isAttributeValueSelected(facet.key, value.value)
+                    ? 'text-brand-700 dark:text-brand-300'
+                    : 'text-slate-700 dark:text-slate-200'
+                "
+                :aria-pressed="
+                  isAttributeValueSelected(facet.key, value.value)
+                "
+                v-tooltip="{ value: value.description || '' }"
+                @click="toggleCheckboxValue(facet, value.value)"
+              >
+                <CheckSquare
+                  v-if="facet.multi && isAttributeValueSelected(facet.key, value.value)"
+                  :size="15"
+                  class="shrink-0"
+                  :style="{ color: valueColor(facet, value) }"
+                />
+                <Square
+                  v-else-if="facet.multi"
+                  :size="15"
+                  class="shrink-0"
+                  :style="{ color: valueColor(facet, value) }"
+                />
+                <CircleFill
+                  v-else-if="isAttributeValueSelected(facet.key, value.value)"
+                  :size="15"
+                  class="shrink-0"
+                  :style="{ color: valueColor(facet, value) }"
+                />
+                <Circle
+                  v-else
+                  :size="15"
+                  class="shrink-0"
+                  :style="{ color: valueColor(facet, value) }"
+                />
+                <span class="min-w-0 flex-1 truncate">{{ value.label || value.value }}</span>
+                <span
+                  v-if="value.count"
+                  class="shrink-0 text-xs text-slate-400"
+                >
+                  {{ value.count }}
+                </span>
+              </button>
+            </div>
+
+            <AttributeTree
+              v-else-if="effectiveAttributeRender(facet.key, facet.render) === 'tree'"
+              :values="treeValues(facet)"
+              :selected="filterState.attributes"
+              :filter="valueQueries[facet.key] ?? ''"
+              @toggle="handleTreeToggle"
+            />
+
+            <Select
+              v-else-if="!facet.multi"
+              :model-value="(filterState.attributes[facet.key] ?? [])[0] ?? null"
+              :options="filteredValues(facet)"
+              option-label="label"
               option-value="value"
-              :placeholder="`Any ${facet.key}`"
+              :placeholder="`Any ${facet.label || facet.key}`"
+              showClear
+              size="small"
+              class="w-full"
+              @update:model-value="setSingleAttributeValue(facet, $event)"
+            >
+              <template #option="{ option }">
+                <span
+                  class="flex min-w-0 items-center gap-2"
+                  v-tooltip="{ value: option.description || '' }"
+                >
+                  <span
+                    class="h-2 w-2 shrink-0 rounded-full"
+                    :style="{ backgroundColor: valueColor(facet, option) }"
+                  />
+                  <span class="truncate">{{ option.label }}</span>
+                </span>
+              </template>
+            </Select>
+
+            <MultiSelect
+              v-else
+              :model-value="filterState.attributes[facet.key] ?? []"
+              :options="filteredValues(facet)"
+              option-label="label"
+              option-value="value"
+              :placeholder="`Any ${facet.label || facet.key}`"
               display="chip"
               :max-selected-labels="2"
               showClear
               size="small"
               class="w-full"
               @update:model-value="setAttributeValues(facet.key, $event)"
-            />
+            >
+              <template #option="{ option }">
+                <span
+                  class="flex min-w-0 items-center gap-2"
+                  v-tooltip="{ value: option.description || '' }"
+                >
+                  <span
+                    class="h-2 w-2 shrink-0 rounded-full"
+                    :style="{ backgroundColor: valueColor(facet, option) }"
+                  />
+                  <span class="truncate">{{ option.label }}</span>
+                </span>
+              </template>
+            </MultiSelect>
           </section>
+
+          <Popover ref="renderPopover" :pt="{ content: { class: '!p-1' } }">
+            <div class="w-40">
+              <button
+                v-for="option in RENDER_OPTIONS"
+                :key="option.value"
+                type="button"
+                class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
+                :class="
+                  popoverRenderMode === option.value
+                    ? 'bg-brand-50 text-brand-700 dark:bg-brand-950/50 dark:text-brand-300'
+                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                "
+                @click="chooseRenderMode(option.value)"
+              >
+                <component :is="option.icon" :size="14" class="shrink-0" />
+                <span class="flex-1 text-left">{{ option.label }}</span>
+                <Check
+                  v-if="popoverRenderMode === option.value"
+                  :size="12"
+                  class="shrink-0"
+                />
+              </button>
+            </div>
+          </Popover>
+
+          <Popover ref="sortPopover" :pt="{ content: { class: '!p-1' } }">
+            <div class="w-44">
+              <button
+                v-for="option in USER_SORT_OPTIONS"
+                :key="option.value"
+                type="button"
+                class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
+                :class="
+                  popoverSortMode === option.value
+                    ? 'bg-brand-50 text-brand-700 dark:bg-brand-950/50 dark:text-brand-300'
+                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                "
+                @click="chooseSortMode(option.value)"
+              >
+                <span class="flex-1 text-left">{{ option.label }}</span>
+                <Check
+                  v-if="popoverSortMode === option.value"
+                  :size="12"
+                  class="shrink-0"
+                />
+              </button>
+            </div>
+          </Popover>
 
           <section v-if="isFilterVisible('type')">
             <p
@@ -1147,8 +1655,19 @@ void loadAttributeFacets()
               Upload
             </button>
             <button
+              v-if="canManageAttributes"
               type="button"
               class="ml-auto inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              title="Manage attributes"
+              aria-label="Manage attributes"
+              @click="openAttributesDialog"
+            >
+              <Cog :size="16" />
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              :class="canManageAttributes ? '' : 'ml-auto'"
               title="Display settings"
               aria-label="Display settings"
               @click="openDisplaySettings"

@@ -9,15 +9,17 @@ import (
 
 // Instance mirrors the singleton "instance" table.
 type Instance struct {
-	ID               string    `gorm:"column:id;primaryKey;type:text"`
-	Name             string    `gorm:"column:name;type:text;not null"`
-	Color            string    `gorm:"column:color;type:text;not null;default:'f97316'"`
-	CoverAssetID     *string   `gorm:"column:cover_asset_id;type:text"`
-	WatermarkAssetID *string   `gorm:"column:watermark_asset_id;type:text"`
-	AllowedMimeTypes string    `gorm:"column:allowed_mime_types;type:text;not null;default:''"`
-	UploadLimits     string    `gorm:"column:upload_limits;type:text;not null;default:''"`
-	CreatedAt        time.Time `gorm:"column:created_at"`
-	UpdatedAt        time.Time `gorm:"column:updated_at"`
+	ID                    string    `gorm:"column:id;primaryKey;type:text"`
+	Name                  string    `gorm:"column:name;type:text;not null"`
+	Color                 string    `gorm:"column:color;type:text;not null;default:'f97316'"`
+	CoverAssetID          *string   `gorm:"column:cover_asset_id;type:text"`
+	WatermarkAssetID      *string   `gorm:"column:watermark_asset_id;type:text"`
+	AllowedMimeTypes      string    `gorm:"column:allowed_mime_types;type:text;not null;default:''"`
+	UploadLimits          string    `gorm:"column:upload_limits;type:text;not null;default:''"`
+	UploadAttributeKeys   bool      `gorm:"column:upload_attribute_keys;not null;default:true"`
+	UploadAttributeValues bool      `gorm:"column:upload_attribute_values;not null;default:true"`
+	CreatedAt             time.Time `gorm:"column:created_at"`
+	UpdatedAt             time.Time `gorm:"column:updated_at"`
 }
 
 func (Instance) TableName() string { return "instance" }
@@ -42,15 +44,17 @@ func InstanceModel(i *domain.Instance) *Instance {
 		uploadLimits = string(encoded)
 	}
 	return &Instance{
-		ID:               i.ID,
-		Name:             i.Name,
-		Color:            i.Color,
-		CoverAssetID:     cover,
-		WatermarkAssetID: watermark,
-		AllowedMimeTypes: allowed,
-		UploadLimits:     uploadLimits,
-		CreatedAt:        i.CreatedAt,
-		UpdatedAt:        i.UpdatedAt,
+		ID:                    i.ID,
+		Name:                  i.Name,
+		Color:                 i.Color,
+		CoverAssetID:          cover,
+		WatermarkAssetID:      watermark,
+		AllowedMimeTypes:      allowed,
+		UploadLimits:          uploadLimits,
+		UploadAttributeKeys:   i.UploadAttributeKeys,
+		UploadAttributeValues: i.UploadAttributeValues,
+		CreatedAt:             i.CreatedAt,
+		UpdatedAt:             i.UpdatedAt,
 	}
 }
 
@@ -72,15 +76,17 @@ func (m *Instance) ToDomain() *domain.Instance {
 		_ = json.Unmarshal([]byte(m.UploadLimits), &uploadLimits)
 	}
 	return &domain.Instance{
-		ID:               m.ID,
-		Name:             m.Name,
-		Color:            m.Color,
-		CoverAssetID:     cover,
-		WatermarkAssetID: watermark,
-		AllowedMimeTypes: allowed,
-		UploadLimits:     uploadLimits,
-		CreatedAt:        m.CreatedAt,
-		UpdatedAt:        m.UpdatedAt,
+		ID:                    m.ID,
+		Name:                  m.Name,
+		Color:                 m.Color,
+		CoverAssetID:          cover,
+		WatermarkAssetID:      watermark,
+		AllowedMimeTypes:      allowed,
+		UploadLimits:          uploadLimits,
+		UploadAttributeKeys:   m.UploadAttributeKeys,
+		UploadAttributeValues: m.UploadAttributeValues,
+		CreatedAt:             m.CreatedAt,
+		UpdatedAt:             m.UpdatedAt,
 	}
 }
 

@@ -37,6 +37,26 @@ func (s *Server) handleUpdateInstance(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, instance)
 }
 
+type attributeStampingRequest struct {
+	Keys   bool `json:"keys"`
+	Values bool `json:"values"`
+}
+
+func (s *Server) handleSetInstanceAttributeStamping(w http.ResponseWriter, r *http.Request) {
+	var req attributeStampingRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	instance, err := s.deps.Instance.SetAttributeStamping(
+		r.Context(), req.Keys, req.Values,
+	)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, instance)
+}
+
 type instanceAssetRefRequest struct {
 	AssetID string `json:"asset_id"`
 }

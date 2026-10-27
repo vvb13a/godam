@@ -13,10 +13,12 @@ import {
   FolderOpen,
   FolderPlus,
   Images,
+  ListCheck,
   Palette,
   Search,
   SlidersH,
   Tag,
+  Times,
   Trash,
   Upload,
 } from '@primeicons/vue'
@@ -24,6 +26,10 @@ import type { Component } from 'vue'
 import { computed, nextTick, ref } from 'vue'
 import { useRouter, type RouteLocationRaw } from 'vue-router'
 import * as api from '../api/client'
+import { selectedIds } from '../lib/assetSelection'
+import { attributeCatalog, loadAttributeCatalog } from '../lib/attributeCatalog'
+import { effectiveAttributeSort, sortAttributeValues } from '../lib/attributeSort'
+import { notifyAttributesChanged, openAttributesDialog } from '../lib/attributesDialog'
 import { openBackupSettings } from '../lib/backupSettings'
 import { notifyConversionCacheChanged } from '../lib/conversionCache'
 import { openCollectionsDialog } from '../lib/collectionsDialog'
@@ -44,10 +50,18 @@ import { openTagsDialog } from '../lib/tagsDialog'
 import { THEME_OPTIONS, setThemeMode } from '../lib/theme'
 import { openUpload } from '../lib/upload'
 import { openUploadSettings } from '../lib/uploadSettings'
+import { ATTRIBUTE_UNASSIGNED } from '../types'
 import type { SmartCollectionFilter } from '../types'
 import Kbd from './Kbd.vue'
 
-type Scope = 'all' | 'commands' | 'collections' | 'tags' | 'smart' | 'create'
+type Scope =
+  | 'all'
+  | 'commands'
+  | 'collections'
+  | 'tags'
+  | 'smart'
+  | 'attributes'
+  | 'create'
 
 interface PaletteItem extends CommandMenuItem {
   folderIcon?: Component
@@ -67,6 +81,7 @@ const confirm = useConfirm()
 const commandRef = ref<{ $el?: HTMLElement } | null>(null)
 const scope = ref<Scope>('all')
 const search = ref('')
+void loadAttributeCatalog()
 
 const scopes: { value: Scope; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -74,6 +89,7 @@ const scopes: { value: Scope; label: string }[] = [
   { value: 'collections', label: 'Collections' },
   { value: 'tags', label: 'Tags' },
   { value: 'smart', label: 'Smart' },
+  { value: 'attributes', label: 'Attributes' },
   { value: 'create', label: 'Create' },
 ]
 
@@ -212,6 +228,77 @@ async function purgeCache(): Promise<void> {
   }
 }
 
+async function applyBulkAttribute(
+  key: string,
+  values: string[],
+  mode: 'add' | 'replace',
+): Promise<void> {
+  const ids = selectedIds.value.slice()
+  if (!ids.length) return
+  try {
+    await api.bulkSetAssetAttributeValues(ids, key, values, mode)
+    notifyLibraryChanged()
+    notifyAttributesChanged()
+    toast.add({
+      severity: 'success',
+      summary:
+        mode === 'add'
+          ? `Added attribute to ${ids.length} asset${ids.length === 1 ? '' : 's'}`
+          : `Updated attributes on ${ids.length} asset${ids.length === 1 ? '' : 's'}`,
+      life: 2500,
+    })
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: 'Could not update attributes',
+      detail: e instanceof Error ? e.message : String(e),
+      life: 4000,
+    })
+  }
+}
+
+function attributePaletteItems(
+  mode: 'add' | 'replace',
+): PaletteItem[] {
+  const items: PaletteItem[] = []
+  for (const facet of attributeCatalog.items) {
+    const label = facet.label || facet.key
+    const values = sortAttributeValues(
+      facet.values.filter((value) => value.value !== ATTRIBUTE_UNASSIGNED),
+      effectiveAttributeSort(facet.key, facet.sort),
+    )
+    if (mode === 'replace' && values.length) {
+      items.push({
+        label: `Clear ${label}`,
+        icon: Times,
+        keywords: ['attributes', 'clear', label, facet.key],
+        command: () => void applyBulkAttribute(facet.key, [], 'replace'),
+      })
+    }
+    for (const value of values) {
+      const valueLabel = value.label || value.value
+      items.push({
+        label:
+          mode === 'add'
+            ? `Add ${valueLabel} → ${label}`
+            : `Set ${label} = ${valueLabel}`,
+        icon: ListCheck,
+        keywords: [
+          'attributes',
+          mode,
+          label,
+          facet.key,
+          valueLabel,
+          value.value,
+        ],
+        command: () =>
+          void applyBulkAttribute(facet.key, [value.value], mode),
+      })
+    }
+  }
+  return items
+}
+
 const groups = computed<PaletteGroup[]>(() => {
   const commands: PaletteItem[] = []
   const term = search.value.trim()
@@ -254,6 +341,17 @@ const groups = computed<PaletteGroup[]>(() => {
       command: () => {
         close()
         openTagsDialog()
+      },
+    })
+  }
+  if (hasCapability('settings:attributes')) {
+    commands.push({
+      label: 'Manage attributes',
+      icon: Cog,
+      keywords: ['attributes', 'manage', 'rename', 'sort', 'labels'],
+      command: () => {
+        close()
+        openAttributesDialog()
       },
     })
   }
@@ -415,6 +513,29 @@ const groups = computed<PaletteGroup[]>(() => {
         },
       })),
     })
+  }
+
+  if (
+    hasCapability('attributes:select') &&
+    selectedIds.value.length &&
+    attributeCatalog.items.length
+  ) {
+    const addItems = attributePaletteItems('add')
+    const replaceItems = attributePaletteItems('replace')
+    if (addItems.length) {
+      result.push({
+        label: 'Attributes · Add',
+        scope: 'attributes',
+        items: addItems,
+      })
+    }
+    if (replaceItems.length) {
+      result.push({
+        label: 'Attributes · Replace',
+        scope: 'attributes',
+        items: replaceItems,
+      })
+    }
   }
 
   return result

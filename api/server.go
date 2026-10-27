@@ -100,6 +100,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/instance/cover", s.withCapability(domain.CapabilityLibraryUpdate, s.handleSetInstanceCover))
 	s.mux.HandleFunc("PUT /api/instance/watermark", s.withCapability(domain.CapabilityLibraryUpdate, s.handleSetInstanceWatermark))
 	s.mux.HandleFunc("PUT /api/instance/upload-settings", s.withCapability(domain.CapabilitySettingsUpload, s.handleSetInstanceUploadSettings))
+	s.mux.HandleFunc("PUT /api/instance/attribute-stamping", s.withCapability(domain.CapabilitySettingsAttributes, s.handleSetInstanceAttributeStamping))
 	s.mux.HandleFunc("GET /api/instance/backup", s.withCapability(domain.CapabilitySettingsStorage, s.handleGetBackup))
 	s.mux.HandleFunc("PUT /api/instance/backup", s.withCapability(domain.CapabilitySettingsStorage, s.handleSetBackup))
 	s.mux.HandleFunc("POST /api/instance/backup/test", s.withCapability(domain.CapabilitySettingsStorage, s.handleTestBackup))
@@ -108,6 +109,26 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /api/assets", s.withCapability(domain.CapabilityAssetsRead, s.handleListAssets))
 	s.mux.HandleFunc("GET /api/attributes", s.withCapability(domain.CapabilityAssetsRead, s.handleListAttributes))
+	s.mux.HandleFunc("GET /api/attributes/catalog", s.withCapability(domain.CapabilityAssetsRead, s.handleListAttributeCatalog))
+	s.mux.HandleFunc("PUT /api/attributes/metadata/label", s.withCapability(domain.CapabilitySettingsAttributes, s.handleSetAttributeLabel))
+	s.mux.HandleFunc("PUT /api/attributes/metadata/sort", s.withCapability(domain.CapabilitySettingsAttributes, s.handleSetAttributeSort))
+	s.mux.HandleFunc("PUT /api/attributes/metadata/render", s.withCapability(domain.CapabilitySettingsAttributes, s.handleSetAttributeRender))
+	s.mux.HandleFunc("POST /api/attributes/metadata/values", s.withAnyCapability(s.handleAddAttributeValues, domain.CapabilitySettingsAttributes, domain.CapabilityAttributesCreateValues))
+	s.mux.HandleFunc("PUT /api/attributes/metadata/values-lock", s.withCapability(domain.CapabilitySettingsAttributes, s.handleSetAttributeValuesLocked))
+	s.mux.HandleFunc("POST /api/attributes", s.withAnyCapability(s.handleCreateAttribute, domain.CapabilitySettingsAttributes, domain.CapabilityAttributesCreateKeys))
+	s.mux.HandleFunc("DELETE /api/attributes/metadata/value", s.withCapability(domain.CapabilitySettingsAttributes, s.handleDeleteAttributeValue))
+	s.mux.HandleFunc("DELETE /api/attributes/metadata/key", s.withCapability(domain.CapabilitySettingsAttributes, s.handleDeleteAttributeKey))
+	s.mux.HandleFunc("PUT /api/attributes/metadata/search", s.withCapability(domain.CapabilitySettingsAttributes, s.handleSetAttributeSearchable))
+	s.mux.HandleFunc("PUT /api/attributes/metadata/multi", s.withCapability(domain.CapabilitySettingsAttributes, s.handleSetAttributeMulti))
+	s.mux.HandleFunc("PUT /api/attributes/metadata/unassigned", s.withCapability(domain.CapabilitySettingsAttributes, s.handleSetAttributeUnassigned))
+	s.mux.HandleFunc("PUT /api/attributes/metadata/unassigned-label", s.withCapability(domain.CapabilitySettingsAttributes, s.handleSetAttributeUnassignedLabel))
+	s.mux.HandleFunc("PUT /api/attributes/metadata/parent", s.withCapability(domain.CapabilitySettingsAttributes, s.handleSetAttributeParent))
+	s.mux.HandleFunc("PUT /api/attributes/metadata/value-search", s.withCapability(domain.CapabilitySettingsAttributes, s.handleSetAttributeValueSearch))
+	s.mux.HandleFunc("PUT /api/attributes/metadata/description", s.withCapability(domain.CapabilitySettingsAttributes, s.handleSetAttributeDescription))
+	s.mux.HandleFunc("PUT /api/attributes/metadata/color", s.withCapability(domain.CapabilitySettingsAttributes, s.handleSetAttributeColor))
+	s.mux.HandleFunc("PUT /api/attributes/metadata/value-order", s.withCapability(domain.CapabilitySettingsAttributes, s.handleSetAttributeValueOrder))
+	s.mux.HandleFunc("PUT /api/attributes/metadata/key-order", s.withCapability(domain.CapabilitySettingsAttributes, s.handleSetAttributeKeyOrder))
+	s.mux.HandleFunc("GET /api/attributes/tree", s.withCapability(domain.CapabilityAssetsRead, s.handleAttributeTree))
 	s.mux.HandleFunc("POST /api/assets/upload", s.withCapability(domain.CapabilityAssetsUpload, s.handleUploadAsset))
 	s.mux.HandleFunc("POST /api/assets/uploads", s.withCapability(domain.CapabilityAssetsUpload, s.handleStartUpload))
 	s.mux.HandleFunc("PUT /api/assets/uploads/{id}/chunks", s.withCapability(domain.CapabilityAssetsUpload, s.handleUploadChunk))
@@ -115,9 +136,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/assets/uploads/{id}", s.withCapability(domain.CapabilityAssetsUpload, s.handleCancelUpload))
 	s.mux.HandleFunc("POST /api/assets/collections", s.withCapability(domain.CapabilityAssetsUpdate, s.handleAddAssetsToCollection))
 	s.mux.HandleFunc("POST /api/assets/tags", s.withCapability(domain.CapabilityAssetsUpdate, s.handleApplyAssetsTags))
+	s.mux.HandleFunc("POST /api/assets/attributes", s.withCapability(domain.CapabilityAttributesSelect, s.handleApplyAssetsAttributes))
 	s.mux.HandleFunc("GET /api/assets/zip", s.withCapability(domain.CapabilityAssetsRead, s.handleDownloadAssetsZip))
 	s.mux.HandleFunc("GET /api/assets/{id}", s.withCapability(domain.CapabilityAssetsRead, s.handleGetAsset))
 	s.mux.HandleFunc("PUT /api/assets/{id}", s.withCapability(domain.CapabilityAssetsUpdate, s.handleUpdateAsset))
+	s.mux.HandleFunc("PUT /api/assets/{id}/attributes", s.withCapability(domain.CapabilityAttributesSelect, s.handleSetAssetAttributes))
 	s.mux.HandleFunc("DELETE /api/assets/{id}", s.withCapability(domain.CapabilityAssetsDelete, s.handleDeleteAsset))
 	s.mux.HandleFunc("GET /api/assets/{id}/content", s.withCapability(domain.CapabilityAssetsRead, s.handleAssetContent))
 	s.mux.HandleFunc("GET /api/assets/{id}/conversions", s.withCapability(domain.CapabilityAssetsRead, s.handleListConversions))
@@ -171,6 +194,8 @@ func writeError(w http.ResponseWriter, err error) {
 		status = http.StatusNotFound
 	case errors.Is(err, service.ErrPresetNameTaken):
 		status = http.StatusConflict
+	case errors.Is(err, service.ErrForbidden):
+		status = http.StatusForbidden
 	case errors.Is(err, service.ErrInvalidInput):
 		status = http.StatusBadRequest
 	case errors.Is(err, service.ErrUnsupportedFormat), errors.Is(err, service.ErrFileTooLarge):
@@ -232,6 +257,21 @@ func (s *Server) withCapability(capability string, next http.HandlerFunc) http.H
 			return
 		}
 		next(w, r)
+	}
+}
+
+func (s *Server) withAnyCapability(next http.HandlerFunc, capabilities ...string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		actor := domain.ActorFromContext(r.Context())
+		for _, capability := range capabilities {
+			if actor.Can(capability) {
+				next(w, r)
+				return
+			}
+		}
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error": "missing required capability",
+		})
 	}
 }
 

@@ -8,6 +8,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterView } from 'vue-router'
 import AppSidebar from './components/AppSidebar.vue'
 import AppSidebarAttributes from './components/AppSidebarAttributes.vue'
+import AttributesDialog from './components/AttributesDialog.vue'
 import CollectionsDialog from './components/CollectionsDialog.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import LibraryBackupDialog from './components/LibraryBackupDialog.vue'
@@ -269,6 +270,7 @@ onBeforeUnmount(() => {
 
     <UploadDialog />
     <CommandPalette />
+    <AttributesDialog />
     <TagsDialog />
     <CollectionsDialog />
     <PresetsDialog />
@@ -278,6 +280,7 @@ onBeforeUnmount(() => {
 
     <ConfirmDialog group="navigation" />
     <ConfirmDialog group="upload-discard" />
+    <ConfirmDialog group="attributes" />
     <ConfirmPopup group="editor" />
     <ConfirmPopup group="upload" />
     <Toast />

@@ -22,19 +22,71 @@ export interface AssetAttribute {
   value: string
 }
 
+export type AttributeSortMode =
+  | 'count:asc'
+  | 'count:desc'
+  | 'abc:asc'
+  | 'abc:desc'
+  | 'custom'
+
+export type AttributeSortSetting = AttributeSortMode | 'open'
+
+export type AttributeRenderSetting =
+  | 'select'
+  | 'checkbox'
+  | 'tags'
+  | 'tree'
+  | 'open'
+
+export const ATTRIBUTE_UNASSIGNED = '__godam_unassigned__'
+
 export interface AttributeFacetValue {
   value: string
+  label: string
+  description?: string
+  color?: string
+  position: number
   count: number
 }
 
 export interface AttributeFacet {
   key: string
+  label: string
+  description?: string
+  color?: string
+  sort: AttributeSortSetting
+  render: AttributeRenderSetting
+  searchable: boolean
+  value_search: boolean
+  multi: boolean
+  include_unassigned: boolean
+  values_locked: boolean
+  parent_key?: string
+  position: number
   values: AttributeFacetValue[]
+}
+
+export interface AttributeTreeNode {
+  key: string
+  value: string
+  label: string
+  description?: string
+  color?: string
+  position: number
+  count: number
+  children?: AttributeTreeNode[]
+}
+
+export interface AttributeTree {
+  key: string
+  label: string
+  values: AttributeTreeNode[]
 }
 
 export interface EmbedScope {
   username?: string
   all_filters?: boolean
+  all_attributes?: boolean
   filters?: Record<string, FilterGrant>
   attributes?: AttributeGrant[]
   upload_settings?: UploadSetting[]
@@ -62,6 +114,8 @@ export interface Instance {
   watermark_asset_id?: string
   allowed_mime_types?: string[]
   upload_limits?: UploadLimits
+  upload_attribute_keys?: boolean
+  upload_attribute_values?: boolean
   created_at: string
   updated_at: string
 }

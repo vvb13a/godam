@@ -27,6 +27,7 @@ import {
   Folder,
   GripVertical,
   Images,
+  ListCheck,
   Lock,
   Pencil,
   Refresh,
@@ -43,6 +44,10 @@ import * as api from '../api/client'
 import { auth } from '../lib/auth'
 import { hasAnyCapability, hasCapability } from '../lib/capabilities'
 import { assetDrag, endAssetDrag, startAssetDrag } from '../lib/assetDrag'
+import { selectedIds } from '../lib/assetSelection'
+import { attributeCatalog, loadAttributeCatalog } from '../lib/attributeCatalog'
+import { effectiveAttributeSort, sortAttributeValues } from '../lib/attributeSort'
+import { notifyAttributesChanged, openAttributesDialog } from '../lib/attributesDialog'
 import { openBackupSettings } from '../lib/backupSettings'
 import { notifyConversionCacheChanged } from '../lib/conversionCache'
 import {
@@ -101,8 +106,10 @@ import {
   theme,
   type ThemeMode,
 } from '../lib/theme'
+import { ATTRIBUTE_UNASSIGNED } from '../types'
 import type {
   Asset,
+  AttributeFacet,
   Collection,
   SmartCollection,
   Tag as TagModel,
@@ -119,6 +126,7 @@ import TagFilterPopover from './TagFilterPopover.vue'
 const toast = useToast()
 
 initFilterState(auth.user?.scope)
+void loadAttributeCatalog()
 
 const searchQuery = computed({
   get: () => filterState.search,
@@ -145,14 +153,6 @@ let loadMoreTimer: number | null = null
 let searchTimer: number | null = null
 let loadSeq = 0
 
-const localSelectedIds = ref<string[]>([])
-const selectedIds = computed<string[]>({
-  get: () => (embed.active ? embed.selectedIds : localSelectedIds.value),
-  set: (value) => {
-    if (embed.active) embed.selectedIds = value
-    else localSelectedIds.value = value
-  },
-})
 const anchorId = ref<string | null>(null)
 
 const embedPicker = computed(() => embed.active && embed.mode !== 'library')
@@ -907,6 +907,7 @@ const canManage = computed(() =>
     'settings:upload',
     'settings:storage',
     'library:update',
+    'settings:attributes',
   ]),
 )
 
@@ -1023,10 +1024,15 @@ const filterChips = computed<FilterChip[]>(() => {
       (item) => item.key === key,
     )
     if (grant?.mode === 'hidden') continue
+    const facet = attributeCatalog.items.find((item) => item.key === key)
     for (const value of values) {
+      const meta = facet?.values.find((item) => item.value === value)
       chips.push({
         key: `attribute:${key}:${value}`,
-        label: `${key}: ${value}`,
+        label: `${facet?.label || key}: ${
+          meta?.label ||
+          (value === ATTRIBUTE_UNASSIGNED ? 'Unassigned' : value)
+        }`,
         locked: grant?.mode === 'locked',
         clear: () => clearAttributeValue(key, value),
       })
@@ -1493,6 +1499,72 @@ function nativeItemStyle(asset: Asset): Record<string, string> {
   return { gridColumn: `span ${cols}`, gridRow: `span ${rows}` }
 }
 
+function attributeBulkValueItems(
+  facet: AttributeFacet,
+  mode: 'add' | 'replace',
+): MenuItem[] {
+  const values = sortAttributeValues(
+    facet.values.filter((value) => value.value !== ATTRIBUTE_UNASSIGNED),
+    effectiveAttributeSort(facet.key, facet.sort),
+  )
+  const items: MenuItem[] = []
+  for (const value of values) {
+    items.push({
+      label: value.label || value.value,
+      command: () =>
+        void applyBulkAttribute(facet.key, [value.value], mode),
+    })
+  }
+  return items
+}
+
+const attributeBulkItems = computed<MenuItem[]>(() =>
+  attributeCatalog.items
+    .filter((facet) =>
+      facet.values.some((value) => value.value !== ATTRIBUTE_UNASSIGNED),
+    )
+    .map((facet) => ({
+      label: facet.label || facet.key,
+      items: [
+        { label: 'Add', items: attributeBulkValueItems(facet, 'add') },
+        { label: 'Replace', items: attributeBulkValueItems(facet, 'replace') },
+        {
+          label: 'Clear',
+          command: () => void applyBulkAttribute(facet.key, [], 'replace'),
+        },
+      ],
+    })),
+)
+
+async function applyBulkAttribute(
+  key: string,
+  values: string[],
+  mode: 'add' | 'replace',
+): Promise<void> {
+  const ids = selectedIds.value.slice()
+  if (!ids.length) return
+  try {
+    await api.bulkSetAssetAttributeValues(ids, key, values, mode)
+    notifyLibraryChanged()
+    notifyAttributesChanged()
+    toast.add({
+      severity: 'success',
+      summary:
+        mode === 'add'
+          ? `Added attribute to ${ids.length} asset${ids.length === 1 ? '' : 's'}`
+          : `Updated attributes on ${ids.length} asset${ids.length === 1 ? '' : 's'}`,
+      life: 2500,
+    })
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: 'Could not update attributes',
+      detail: e instanceof Error ? e.message : String(e),
+      life: 4000,
+    })
+  }
+}
+
 const menuItems = computed<MenuItem[]>(() => {
   const count = selectedIds.value.length
   const items: MenuItem[] = []
@@ -1554,6 +1626,16 @@ const menuItems = computed<MenuItem[]>(() => {
           const asset = selectedAssets.value[0]
           if (asset) openAssetCollections(asset.id)
         },
+      })
+    }
+    if (
+      hasCapability('attributes:select') &&
+      attributeBulkItems.value.length
+    ) {
+      items.push({
+        label: 'Attributes',
+        icon: ListCheck,
+        items: attributeBulkItems.value,
       })
     }
     if (hasCapability('library:update')) {
@@ -1623,6 +1705,16 @@ const menuItems = computed<MenuItem[]>(() => {
               openBulkAssetCollections(selectedIds.value.slice(), 'add'),
           },
         ],
+      })
+    }
+    if (
+      hasCapability('attributes:select') &&
+      attributeBulkItems.value.length
+    ) {
+      items.push({
+        label: 'Attributes',
+        icon: ListCheck,
+        items: attributeBulkItems.value,
       })
     }
   }
@@ -3348,6 +3440,15 @@ onBeforeUnmount(() => {
                 <Folder :size="14" />
                 <span>Collections</span>
               </button>
+              <button
+                v-if="hasCapability('settings:attributes')"
+                type="button"
+                class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                @click="openManage(openAttributesDialog)"
+              >
+                <Cog :size="14" />
+                <span>Attributes</span>
+              </button>
               <div class="my-1 border-t border-slate-100 dark:border-slate-800" />
               <button
                 v-if="hasCapability('settings:upload')"
@@ -3525,9 +3626,6 @@ onBeforeUnmount(() => {
       </div>
 
       <div
-        v-if="
-          !isAttributesSidebar || singleAsset || selectedAssets.length > 1
-        "
         class="relative h-full shrink-0 transition-[width] duration-200 ease-in-out"
         :class="panels.rightCollapsed ? '' : 'px-4'"
         :style="{ width: panels.rightCollapsed ? '0px' : '22rem' }"
