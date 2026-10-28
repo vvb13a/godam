@@ -27,7 +27,7 @@ func newDeliveryTestService(t *testing.T) (*AssetService, *StatsService) {
 	assets := NewAssetService(
 		cfg, db, registry, local,
 		NewCompositeExtractor(), NewPreviewGenerator(600, 85),
-		NewTagService(db), nil,
+		nil,
 	)
 	return assets, NewStatsService(db, nil)
 }

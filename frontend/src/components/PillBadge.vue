@@ -17,7 +17,7 @@ const props = withDefaults(
 )
 
 // Pick whichever of white or slate-900 has the higher contrast against the
-// tag's background.
+// pill's background.
 function contentColor(color: string): string {
   const raw = color.replace('#', '')
   if (raw.length !== 6) return '#ffffff'
@@ -64,7 +64,7 @@ const starColor = computed(() => {
 
 <template>
   <span
-    class="tag-pill inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs text-slate-700 opacity-80 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+    class="pill inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs text-slate-700 opacity-80 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
     :class="selected ? 'opacity-100' : ''"
     :style="badgeStyle"
   >
@@ -82,11 +82,11 @@ const starColor = computed(() => {
 </template>
 
 <style scoped>
-.tag-pill {
+.pill {
   position: relative;
 }
 
-.tag-pill::after {
+.pill::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -97,7 +97,7 @@ const starColor = computed(() => {
   transition: opacity 120ms ease;
 }
 
-.tag-pill:hover::after {
+.pill:hover::after {
   opacity: 0.08;
 }
 </style>

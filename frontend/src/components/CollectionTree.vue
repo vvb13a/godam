@@ -776,7 +776,7 @@ function applyLocalMove(
   })
 }
 
-// treePt tags each row with its collection id so delegated events can resolve
+// treePt marks each row with its collection id so delegated events can resolve
 // the whole row, drops the built-in toggle (the folder icon doubles as the
 // expand/collapse control) and moves the row padding onto the slot content so
 // the whole card can be styled.

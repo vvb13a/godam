@@ -35,7 +35,6 @@ import {
   Search,
   SlidersH,
   SortAlt,
-  Tag,
   Times,
   Upload,
 } from '@primeicons/vue'
@@ -55,7 +54,6 @@ import {
   clearAttributeFilter,
   clearAttributeValue,
   clearCollectionFilter,
-  clearTagFilter,
   filterSettings,
   filterState,
   initFilterState,
@@ -96,7 +94,6 @@ import {
 } from '../lib/collectionsDialog'
 import { openPresetsDialog } from '../lib/presetsDialog'
 import { clearSmartSelection, smartSelection } from '../lib/smartSelection'
-import { openAssetTags, openBulkAssetTags, openTagsDialog } from '../lib/tagsDialog'
 import { openUpload } from '../lib/upload'
 import { openUploadSettings } from '../lib/uploadSettings'
 import { warmPresets } from '../lib/warmPresets'
@@ -112,7 +109,6 @@ import type {
   AttributeFacet,
   Collection,
   SmartCollection,
-  Tag as TagModel,
 } from '../types'
 import AssetCard from './AssetCard.vue'
 import AssetEditor from './AssetEditor.vue'
@@ -121,7 +117,6 @@ import FilterInspector from './FilterInspector.vue'
 import Inspector from './Inspector.vue'
 import LibraryInspector from './LibraryInspector.vue'
 import MultiSelectionPanel from './MultiSelectionPanel.vue'
-import TagFilterPopover from './TagFilterPopover.vue'
 
 const toast = useToast()
 
@@ -160,7 +155,6 @@ const embedSingle = computed(() => embed.active && embed.mode === 'single')
 const embedCollectionLocked = computed(
   () => embedPicker.value && embed.collectionLocked,
 )
-const embedTagLocked = computed(() => embedPicker.value && embed.tagLocked)
 const embedTypeLocked = computed(() => embed.active && embed.typeLocked)
 const embedMimeLocked = computed(() => embed.active && embed.mimeLocked)
 const embedSearchLocked = computed(() => embed.active && embed.searchLocked)
@@ -586,7 +580,6 @@ const availableOptionalFilters = computed(() =>
 )
 const filtersPopover = ref<InstanceType<typeof Popover> | null>(null)
 const collectionFilterOpen = ref(false)
-const tagFilterOpen = ref(false)
 const searchOpen = ref(false)
 const searchWrapper = ref<HTMLElement | null>(null)
 
@@ -596,7 +589,6 @@ function toggleFilters(event: Event): void {
 
 function onFiltersHide(): void {
   collectionFilterOpen.value = false
-  tagFilterOpen.value = false
 }
 
 function toggleSearch(): void {
@@ -696,13 +688,6 @@ const collectionFilter = computed<string[]>({
     filterState.collections = values
   },
 })
-const tagFilter = computed<string[]>({
-  get: () => filterState.tags,
-  set: (values) => {
-    clearSmartSelection()
-    filterState.tags = values
-  },
-})
 const typeFilter = computed<string[]>({
   get: () => filterState.types,
   set: (values) => {
@@ -785,13 +770,7 @@ const modifiedBefore = dateFilter('modifiedBefore')
 const uploadCollectionId = computed(() =>
   collectionFilter.value.length === 1 ? collectionFilter.value[0] : null,
 )
-// Only a single, concrete tag filter is auto-applied to uploads; multi-tag and
-// the virtual "untagged" filter are skipped.
-const uploadTagId = computed(() =>
-  tagFilter.value.length === 1 ? tagFilter.value[0] : null,
-)
 const uncategorizedView = computed(() => filterState.uncategorized)
-const untaggedView = computed(() => filterState.untagged)
 
 const presetOptions = computed(() =>
   library.presets.map((preset) => ({
@@ -937,10 +916,6 @@ function collectionName(id: string): string {
   )
 }
 
-function tagName(id: string): string {
-  return library.tags.find((tag) => tag.id === id)?.name ?? 'Tag'
-}
-
 function typeName(value: string): string {
   return (
     TYPE_CATEGORIES.value.find((category) => category.value === value)?.label ??
@@ -983,7 +958,6 @@ function dateRangeLabel(
 const filterChips = computed<FilterChip[]>(() => {
   const chips: FilterChip[] = []
   const collectionLocked = embed.active && embed.collectionLocked
-  const tagLocked = embed.active && embed.tagLocked
 
   for (const id of filterState.collections) {
     chips.push({
@@ -999,23 +973,6 @@ const filterChips = computed<FilterChip[]>(() => {
       label: 'Uncategorized',
       clear: () => {
         filterState.uncategorized = false
-      },
-    })
-  }
-  for (const id of filterState.tags) {
-    chips.push({
-      key: `tag:${id}`,
-      label: `Tag: ${tagName(id)}`,
-      locked: tagLocked,
-      clear: () => clearTagFilter(id),
-    })
-  }
-  if (filterState.untagged) {
-    chips.push({
-      key: 'untagged',
-      label: 'Untagged',
-      clear: () => {
-        filterState.untagged = false
       },
     })
   }
@@ -1237,9 +1194,9 @@ const singleAsset = computed(() => {
   return assets.value.find((asset) => asset.id === id) ?? null
 })
 
-// The Inspector falls back to describing the active collection/tag when no
-// asset is selected. Only concrete ids count; the virtual 'uncategorized' /
-// 'untagged' filters have no entity to describe.
+// The Inspector falls back to describing the active collection when no asset
+// is selected. Only a concrete id counts; the virtual 'uncategorized' filter
+// has no entity to describe.
 const activeCollection = computed<Collection | null>(() => {
   if (filterState.collections.length !== 1 || filterState.uncategorized) {
     return null
@@ -1251,11 +1208,6 @@ const activeCollection = computed<Collection | null>(() => {
   )
 })
 
-const activeTag = computed<TagModel | null>(() => {
-  if (filterState.tags.length !== 1 || filterState.untagged) return null
-  return library.tags.find((item) => item.id === filterState.tags[0]) ?? null
-})
-
 // A smart collection is only "active" when it was explicitly opened from the
 // sidebar (tracked as client-side state); manually setting the same filters
 // does not select it. It also drops out once the filters no longer match.
@@ -1265,10 +1217,8 @@ const activeSmartCollection = computed<SmartCollection | null>(() => {
   if (!id || !filter) return null
   if (
     filterState.collections.length > 1 ||
-    filterState.tags.length > 1 ||
     filterState.types.length > 1 ||
     filterState.uncategorized ||
-    filterState.untagged ||
     filterState.search ||
     OPTIONAL_FILTERS.some((item) => hasFilterValue(item.key))
   ) {
@@ -1276,7 +1226,6 @@ const activeSmartCollection = computed<SmartCollection | null>(() => {
   }
   const matches =
     (filter.collection ?? '') === (filterState.collections[0] ?? '') &&
-    (filter.tag ?? '') === (filterState.tags[0] ?? '') &&
     (filter.type ?? '') === (filterState.types[0] ?? '') &&
     (filter.sort || 'date-desc') === filterState.sort
   if (!matches) return null
@@ -1309,8 +1258,6 @@ const hasActiveFilters = computed(
   () =>
     collectionFilter.value.length > 0 ||
     filterState.uncategorized ||
-    tagFilter.value.length > 0 ||
-    filterState.untagged ||
     typeFilter.value.length > 0 ||
     Object.keys(filterState.attributes).length > 0 ||
     colorFilter.value.length > 0 ||
@@ -1615,11 +1562,6 @@ const menuItems = computed<MenuItem[]>(() => {
     }
     if (hasCapability('assets:update')) {
       items.push({
-        label: 'Tags',
-        icon: Tag,
-        command: openTags,
-      })
-      items.push({
         label: 'Collections',
         icon: Folder,
         command: () => {
@@ -1676,20 +1618,6 @@ const menuItems = computed<MenuItem[]>(() => {
       })
     }
     if (hasCapability('assets:update')) {
-      items.push({
-        label: 'Tags',
-        icon: Tag,
-        items: [
-          {
-            label: 'Replace',
-            command: () => openBulkAssetTags(selectedIds.value.slice(), 'replace'),
-          },
-          {
-            label: 'Add',
-            command: () => openBulkAssetTags(selectedIds.value.slice(), 'add'),
-          },
-        ],
-      })
       items.push({
         label: 'Collections',
         icon: Folder,
@@ -1769,8 +1697,6 @@ function assetParams(): api.AssetListParams {
     params.collectionIds = [...filterState.collections]
   }
 
-  if (filterState.untagged) params.untagged = true
-  if (filterState.tags.length) params.tagIds = [...filterState.tags]
   if (Object.keys(filterState.attributes).length) {
     params.attributes = { ...filterState.attributes }
   }
@@ -2143,11 +2069,6 @@ function downloadSelectionZip(): void {
   window.setTimeout(() => frame.remove(), 60000)
 }
 
-function openTags(): void {
-  const asset = selectedAssets.value[0]
-  if (asset) openAssetTags(asset.id)
-}
-
 // Re-renders previews one asset at a time (sequential, to avoid spawning many
 // media processes at once) and updates each card as it finishes.
 async function regeneratePreviews(assets: Asset[]): Promise<void> {
@@ -2256,16 +2177,16 @@ function openManage(action: () => void): void {
   action()
 }
 
-// onChanged replaces the affected asset client-side (title/note/tags/
-// collections changed), avoiding a full library/asset reload.
+// onChanged replaces the affected asset client-side (title/note/collections
+// changed), avoiding a full library/asset reload.
 function onChanged(asset: Asset): void {
   const index = assets.value.findIndex((item) => item.id === asset.id)
   if (index >= 0) assets.value[index] = asset
   if (selectedDetail.value?.id === asset.id) selectedDetail.value = asset
 }
 
-// Refreshes the sidebar/library after a collection or tag is edited in the
-// Inspector, so the tree, tag list and this panel all pick up the new values.
+// Refreshes the sidebar/library after a collection is edited in the Inspector,
+// so the tree and this panel all pick up the new values.
 function onSubjectChanged(): void {
   notifyLibraryChanged()
 }
@@ -2483,7 +2404,6 @@ onBeforeUnmount(() => {
               <span
                 v-if="
                   embedCollectionLocked ||
-                  embedTagLocked ||
                   embedTypeLocked ||
                   embedMimeLocked ||
                   embedSearchLocked ||
@@ -2534,7 +2454,7 @@ onBeforeUnmount(() => {
               class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
               title="Upload"
               aria-label="Upload"
-              @click="openUpload([], uploadCollectionId, uploadTagId)"
+              @click="openUpload([], uploadCollectionId)"
             >
               <Upload :size="16" />
             </button>
@@ -2695,7 +2615,7 @@ onBeforeUnmount(() => {
             v-if="!isAttributesSidebar"
             ref="filtersPopover"
             :pt="{ content: { class: '!p-0' } }"
-            :dismissable="!collectionFilterOpen && !tagFilterOpen"
+            :dismissable="!collectionFilterOpen"
             @hide="onFiltersHide"
           >
             <div class="w-[34rem] max-w-[calc(100vw-2rem)]">
@@ -2723,17 +2643,6 @@ onBeforeUnmount(() => {
                     "
                     @show="collectionFilterOpen = true"
                     @hide="collectionFilterOpen = false"
-                  />
-                  <TagFilterPopover
-                    v-model="tagFilter"
-                    :disabled="embedTagLocked || untaggedView"
-                    :locked-title="
-                      untaggedView
-                        ? 'Untagged is automatically applied in this view'
-                        : 'Tags are locked by the host application'
-                    "
-                    @show="tagFilterOpen = true"
-                    @hide="tagFilterOpen = false"
                   />
                   <MultiSelect
                     v-model="typeFilter"
@@ -3348,8 +3257,8 @@ onBeforeUnmount(() => {
                   class="w-full"
                 />
                 <p class="mt-2 text-xs text-slate-400">
-                  How clicking a collection or tag in the sidebar changes the
-                  current filters.
+                  How clicking a collection in the sidebar changes the current
+                  filters.
                 </p>
               </div>
 
@@ -3421,15 +3330,6 @@ onBeforeUnmount(() => {
               >
                 <Images :size="14" />
                 <span>Presets</span>
-              </button>
-              <button
-                v-if="hasCapability('library:update')"
-                type="button"
-                class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-                @click="openManage(openTagsDialog)"
-              >
-                <Tag :size="14" />
-                <span>Tags</span>
               </button>
               <button
                 v-if="hasCapability('library:update')"
@@ -3649,10 +3549,9 @@ onBeforeUnmount(() => {
               @close="clearSelection"
             />
             <FilterInspector
-              v-else-if="activeSmartCollection || activeCollection || activeTag"
+              v-else-if="activeSmartCollection || activeCollection"
               :collection="activeCollection ?? undefined"
               :smart-collection="activeSmartCollection ?? undefined"
-              :tag="activeTag ?? undefined"
               :assets="visibleAssets"
               :size="filteredSize"
               :total="total"

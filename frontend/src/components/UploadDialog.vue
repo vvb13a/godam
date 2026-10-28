@@ -28,7 +28,6 @@ import { library, notifyLibraryChanged } from '../lib/library'
 import { libraryColorHex } from '../lib/libraryColors'
 import { ACCEPT_STRING } from '../lib/mimeTypes'
 import { openUploadCollections } from '../lib/collectionsDialog'
-import { openUploadTags } from '../lib/tagsDialog'
 import { theme } from '../lib/theme'
 import {
   clearUploadItems,
@@ -42,8 +41,8 @@ import {
 } from '../lib/upload'
 import type { UploadItem } from '../lib/upload'
 import FileTypePreview from './FileTypePreview.vue'
-import type { Collection, Tag } from '../types'
-import TagBadge from './TagBadge.vue'
+import type { Collection } from '../types'
+import PillBadge from './PillBadge.vue'
 
 const UPLOAD_CONCURRENCY = 3
 
@@ -281,11 +280,6 @@ const sortedItems = computed(() => {
   return items
 })
 
-const selectedTags = computed<Tag[]>(() => {
-  const ids = new Set(upload.destinationTagIds)
-  return library.tags.filter((tag) => ids.has(tag.id))
-})
-
 const selectedCollections = computed<Collection[]>(() => {
   const ids = new Set(upload.destinationCollectionIds)
   return library.collections.filter((collection) => ids.has(collection.id))
@@ -333,7 +327,6 @@ function cleanup(): void {
   clearUploadItems()
   appliedAssetIds.clear()
   upload.destinationCollectionIds = []
-  upload.destinationTagIds = []
   editingId.value = null
   running.value = false
   error.value = null
@@ -458,16 +451,6 @@ function onWindowDrop(event: DragEvent): void {
     ? Array.from(event.dataTransfer.files)
     : []
   if (files.length) addFiles(files)
-}
-
-function tagColor(tag: Tag): string | undefined {
-  if (!tag.group_id) return undefined
-  const group = library.tagGroups.find((item) => item.id === tag.group_id)
-  return group?.color ? `#${group.color}` : undefined
-}
-
-function removeTag(tagId: string): void {
-  upload.destinationTagIds = upload.destinationTagIds.filter((id) => id !== tagId)
 }
 
 function removeCollection(collectionId: string): void {
@@ -769,13 +752,9 @@ async function applyDestinations(assetIds: string[]): Promise<void> {
   const fresh = assetIds.filter((id) => !appliedAssetIds.has(id))
   if (!fresh.length) return
   const collectionIds = [...upload.destinationCollectionIds]
-  const tagIds = [...upload.destinationTagIds]
-  await Promise.all([
-    ...collectionIds.map((id) => api.addAssetsToCollection(id, fresh)),
-    tagIds.length
-      ? api.applyAssetsTags(fresh, tagIds, 'add')
-      : Promise.resolve(),
-  ])
+  await Promise.all(
+    collectionIds.map((id) => api.addAssetsToCollection(id, fresh)),
+  )
   for (const id of fresh) appliedAssetIds.add(id)
 }
 
@@ -1205,41 +1184,6 @@ function onPrimary(): void {
 
         <section>
           <div class="mb-2 flex items-center justify-between">
-            <h3 class="text-sm font-semibold">Tags</h3>
-            <button
-              class="inline-flex text-slate-400 hover:text-brand-700 disabled:opacity-40 dark:hover:text-brand-400"
-              title="Select tags"
-              :disabled="running"
-              @click="openUploadTags"
-            >
-              <Plus :size="14" />
-            </button>
-          </div>
-          <div class="flex flex-wrap gap-1">
-            <TagBadge
-              v-for="tag in selectedTags"
-              :key="tag.id"
-              :name="tag.name"
-              :color="tagColor(tag)"
-              :starred="tag.starred"
-            >
-              <button
-                class="inline-flex text-slate-400 hover:text-red-500 disabled:opacity-40"
-                title="Remove tag"
-                :disabled="running"
-                @click="removeTag(tag.id)"
-              >
-                <Times :size="12" />
-              </button>
-            </TagBadge>
-            <span v-if="!selectedTags.length" class="text-xs text-slate-400">
-              No tags
-            </span>
-          </div>
-        </section>
-
-        <section>
-          <div class="mb-2 flex items-center justify-between">
             <h3 class="text-sm font-semibold">Collections</h3>
             <button
               class="inline-flex text-slate-400 hover:text-brand-700 disabled:opacity-40 dark:hover:text-brand-400"
@@ -1251,7 +1195,7 @@ function onPrimary(): void {
             </button>
           </div>
           <div class="flex flex-wrap gap-1">
-            <TagBadge
+            <PillBadge
               v-for="collection in selectedCollections"
               :key="collection.id"
               :name="collection.name"
@@ -1265,7 +1209,7 @@ function onPrimary(): void {
               >
                 <Times :size="12" />
               </button>
-            </TagBadge>
+            </PillBadge>
             <span v-if="!selectedCollections.length" class="text-xs text-slate-400">
               No collections
             </span>

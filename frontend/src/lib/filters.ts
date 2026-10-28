@@ -34,12 +34,10 @@ watch(
 
 export const filterState = reactive({
   collections: [] as string[],
-  tags: [] as string[],
   types: [] as string[],
   colors: [] as string[],
   mimeTypes: [] as string[],
   uncategorized: false,
-  untagged: false,
   preset: '',
   presetExclude: false,
   search: '',
@@ -63,8 +61,6 @@ export const filterState = reactive({
 
 const collectionLocked = (): boolean =>
   (embed.active && embed.collectionLocked) || filterLocked('collection')
-const tagLocked = (): boolean =>
-  (embed.active && embed.tagLocked) || filterLocked('tag')
 const typeLocked = (): boolean =>
   (embed.active && embed.typeLocked) || filterLocked('type')
 const mimeLocked = (): boolean =>
@@ -126,13 +122,11 @@ export function isFilterVisible(name: string): boolean {
 function clearFacetFilters(): void {
   filterState.attributes = enforcedAttributes()
   if (!collectionLocked()) filterState.collections = []
-  if (!tagLocked()) filterState.tags = []
   if (!typeLocked()) filterState.types = []
   if (!mimeLocked()) filterState.mimeTypes = []
   if (!searchLocked()) filterState.search = ''
   filterState.colors = []
   if (!filterLocked('uncategorized')) filterState.uncategorized = false
-  if (!filterLocked('untagged')) filterState.untagged = false
   filterState.preset = ''
   filterState.presetExclude = false
   filterState.minSize = null
@@ -162,12 +156,6 @@ export function clearCollectionFilter(id: string): void {
   filterState.collections = filterState.collections.filter(
     (item) => item !== id,
   )
-}
-
-export function clearTagFilter(id: string): void {
-  if (tagLocked()) return
-  clearSmartSelection()
-  filterState.tags = filterState.tags.filter((item) => item !== id)
 }
 
 export function isAttributeLocked(key: string): boolean {
@@ -252,28 +240,6 @@ export function applyCollectionFilter(id: string): void {
   filterState.uncategorized = false
 }
 
-export function toggleTag(id: string): void {
-  if (tagLocked()) return
-  clearSmartSelection()
-  if (filterState.tags.includes(id)) {
-    clearTagFilter(id)
-    return
-  }
-  if (filterSettings.clickMode === 'replace') clearFacetFilters()
-  filterState.tags = [...filterState.tags.filter((item) => item !== id), id]
-  filterState.untagged = false
-}
-
-export function applyTagFilter(id: string): void {
-  if (tagLocked()) return
-  clearSmartSelection()
-  if (filterSettings.clickMode === 'replace') clearFacetFilters()
-  if (!filterState.tags.includes(id)) {
-    filterState.tags = [...filterState.tags, id]
-  }
-  filterState.untagged = false
-}
-
 export function toggleUncategorized(): void {
   if (collectionLocked() || filterLocked('uncategorized')) return
   clearSmartSelection()
@@ -284,18 +250,6 @@ export function toggleUncategorized(): void {
   if (filterSettings.clickMode === 'replace') clearFacetFilters()
   filterState.uncategorized = true
   filterState.collections = []
-}
-
-export function toggleUntagged(): void {
-  if (tagLocked() || filterLocked('untagged')) return
-  clearSmartSelection()
-  if (filterState.untagged) {
-    filterState.untagged = false
-    return
-  }
-  if (filterSettings.clickMode === 'replace') clearFacetFilters()
-  filterState.untagged = true
-  filterState.tags = []
 }
 
 export function resetSort(): void {
@@ -320,18 +274,11 @@ export function initFilterState(scope?: EmbedScope): void {
   }
 
   if (embed.collectionId) filterState.collections = [embed.collectionId]
-  if (embed.tag) filterState.tags = [embed.tag]
 
   const collection = filterValues('collection')
   if (collection.length) {
     if (filterLocked('collection') || filterState.collections.length === 0) {
       filterState.collections = [...collection]
-    }
-  }
-  const tag = filterValues('tag')
-  if (tag.length) {
-    if (filterLocked('tag') || filterState.tags.length === 0) {
-      filterState.tags = [...tag]
     }
   }
   const type = filterValues('type')
@@ -347,7 +294,6 @@ export function initFilterState(scope?: EmbedScope): void {
     }
   }
   if (filterTrue('uncategorized')) filterState.uncategorized = true
-  if (filterTrue('untagged')) filterState.untagged = true
   const search = filterValues('search')[0]
   if (search) {
     if (filterLocked('search') || !filterState.search) {
@@ -365,13 +311,11 @@ export function initFilterState(scope?: EmbedScope): void {
 export function hasActiveFilterState(): boolean {
   return (
     filterState.collections.length > 0 ||
-    filterState.tags.length > 0 ||
     filterState.types.length > 0 ||
     Object.keys(filterState.attributes).length > 0 ||
     filterState.colors.length > 0 ||
     filterState.mimeTypes.length > 0 ||
     filterState.uncategorized ||
-    filterState.untagged ||
     Boolean(filterState.preset) ||
     Boolean(filterState.search.trim()) ||
     filterState.minSize !== null ||

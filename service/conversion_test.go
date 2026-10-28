@@ -38,7 +38,7 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 	assets := NewAssetService(
 		cfg, db, registry, local,
 		NewCompositeExtractor(), NewPreviewGenerator(600, 85),
-		NewTagService(db), nil,
+		nil,
 	)
 
 	var source bytes.Buffer
@@ -127,7 +127,7 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 			{Name: "resize", Args: []string{"fit", "200", "0"}},
 			{Name: "quality", Args: []string{"82"}},
 		},
-	}, true, nil, nil)
+	}, true, nil)
 	if err != nil {
 		t.Fatalf("create preset: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 		Options: []domain.PresetOption{
 			{Name: "resize", Args: []string{"fit", "100", "0"}},
 		},
-	}, false, []string{other.ID}, nil); err != nil {
+	}, false, []string{other.ID}); err != nil {
 		t.Fatalf("create restricted preset: %v", err)
 	}
 	if _, err := svc.ConvertPreset(ctx, asset.ID, "restricted.webp"); !errors.Is(err, ErrPresetNotAllowed) {

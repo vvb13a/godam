@@ -19,7 +19,7 @@ import { libraryColorHex } from '../lib/libraryColors'
 import { splitNames } from '../lib/names'
 import { useAnimatedHeight } from '../lib/useAnimatedHeight'
 import CollectionTree from './CollectionTree.vue'
-import TagBadge from './TagBadge.vue'
+import PillBadge from './PillBadge.vue'
 import Kbd from './Kbd.vue'
 
 const toast = useToast()
@@ -331,7 +331,7 @@ function removeSelection(id: string): void {
         class="max-h-28 shrink-0 overflow-y-auto border-t border-slate-200 px-2 py-2 dark:border-slate-800"
       >
         <div class="flex flex-wrap gap-1">
-          <TagBadge
+          <PillBadge
             v-for="collection in selectedCollections"
             :key="collection.id"
             :name="collection.name"
@@ -344,7 +344,7 @@ function removeSelection(id: string): void {
             >
               <Times :size="12" />
             </button>
-          </TagBadge>
+          </PillBadge>
         </div>
       </div>
 

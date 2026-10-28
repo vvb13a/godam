@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -62,8 +61,8 @@ func (s *SmartCollectionService) List(ctx context.Context) ([]domain.SmartCollec
 }
 
 // countAssets returns how many assets in the library match a saved filter. The
-// special collection/tag values "uncategorized"/"untagged" and the broad media
-// categories mirror the asset list's filtering.
+// special collection value "uncategorized" and the broad media categories
+// mirror the asset list's filtering.
 func (s *SmartCollectionService) countAssets(ctx context.Context, filter domain.SmartCollectionFilter) (int, error) {
 	query := s.db.WithContext(ctx).Model(&store.Asset{}).
 		Where("role = ?", domain.AssetRoleOriginal)
@@ -77,20 +76,6 @@ func (s *SmartCollectionService) countAssets(ctx context.Context, filter domain.
 			"id IN (SELECT asset_id FROM asset_collections WHERE collection_id = ?)",
 			filter.Collection,
 		)
-	}
-
-	switch filter.Tag {
-	case "":
-	case "untagged":
-		query = query.Where("id NOT IN (SELECT asset_id FROM asset_tags)")
-	default:
-		ids := splitCSV(filter.Tag)
-		if len(ids) > 0 {
-			query = query.Where(
-				"id IN (SELECT asset_id FROM asset_tags WHERE tag_id IN ?)",
-				ids,
-			)
-		}
 	}
 
 	switch filter.Type {
@@ -117,17 +102,6 @@ func (s *SmartCollectionService) countAssets(ctx context.Context, filter domain.
 		return 0, err
 	}
 	return int(count), nil
-}
-
-func splitCSV(value string) []string {
-	parts := strings.Split(value, ",")
-	ids := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if trimmed := strings.TrimSpace(part); trimmed != "" {
-			ids = append(ids, trimmed)
-		}
-	}
-	return ids
 }
 
 func (s *SmartCollectionService) GetByID(ctx context.Context, id string) (*domain.SmartCollection, error) {

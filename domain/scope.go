@@ -24,13 +24,11 @@ const (
 // deny. Attribute filters are scoped separately.
 var FilterNames = []string{
 	"collection",
-	"tag",
 	"type",
 	"mime",
 	"search",
 	"sort",
 	"uncategorized",
-	"untagged",
 	"color",
 	"size",
 	"duration",
@@ -71,7 +69,7 @@ type Scope struct {
 }
 
 // Filter returns the grant for a filter name. Canonical names are collection,
-// tag, type, mime, search, sort, uncategorized, and untagged.
+// type, mime, search, sort, and uncategorized.
 func (s Scope) Filter(name string) (FilterGrant, bool) {
 	grant, ok := s.Filters[name]
 	return grant, ok

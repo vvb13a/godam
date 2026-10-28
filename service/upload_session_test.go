@@ -31,7 +31,7 @@ func newUploadTestService(t *testing.T) *AssetService {
 	return NewAssetService(
 		cfg, db, registry, local,
 		NewCompositeExtractor(), NewPreviewGenerator(600, 85),
-		NewTagService(db), nil,
+		nil,
 	)
 }
 

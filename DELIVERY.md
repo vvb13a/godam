@@ -27,7 +27,7 @@ Derived visual assets are capped at 1920 on the long edge. Larger delivery
 sizes are produced by imgproxy on demand; no 400px derivative is stored.
 
 Visual assets are excluded from listings, search, stats, zip downloads, backup,
-and collection/tag counts. They are deleted with their parent and regenerated in
+and collection counts. They are deleted with their parent and regenerated in
 place, so the visual asset ID stays stable. A missing visual asset is generated
 lazily on the first `/img` or authenticated preview request.
 

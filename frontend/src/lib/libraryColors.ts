@@ -1,5 +1,5 @@
 // LIBRARY_COLORS is the curated palette for library swatches. Colors are stored
-// without the leading '#' (matching tag-group colors) and rendered as `#${hex}`.
+// without the leading '#' and rendered as `#${hex}`.
 export interface LibraryColor {
   name: string
   value: string

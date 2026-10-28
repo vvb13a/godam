@@ -6,7 +6,7 @@ import { computed, ref } from 'vue'
 import { library } from '../lib/library'
 import { libraryColorHex } from '../lib/libraryColors'
 import CollectionTree from './CollectionTree.vue'
-import TagBadge from './TagBadge.vue'
+import PillBadge from './PillBadge.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -81,7 +81,7 @@ function clear(): void {
   >
     <span class="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
       <template v-if="selectedItems.length">
-        <TagBadge
+        <PillBadge
           v-for="item in visibleItems"
           :key="item.id"
           :name="item.label"

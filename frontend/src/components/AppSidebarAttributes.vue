@@ -60,7 +60,6 @@ import {
   clearAllFilters,
   clearAttributeValue,
   clearCollectionFilter,
-  clearTagFilter,
   clearTypeValue,
   filterState,
   hasActiveFilterState,
@@ -81,7 +80,7 @@ import type {
   AttributeTreeNode,
 } from '../types'
 import AttributeTree from './AttributeTree.vue'
-import TagBadge from './TagBadge.vue'
+import PillBadge from './PillBadge.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -627,9 +626,6 @@ const sortFieldLabel = computed(
 const uploadCollectionId = computed(() =>
   filterState.collections.length === 1 ? filterState.collections[0] : null,
 )
-const uploadTagId = computed(() =>
-  filterState.tags.length === 1 ? filterState.tags[0] : null,
-)
 
 const searchInput = ref(filterState.search)
 let searchTimer: number | null = null
@@ -704,25 +700,6 @@ const chips = computed<Chip[]>(() => {
       clear: () => {
         if (isFilterLocked('uncategorized')) return
         filterState.uncategorized = false
-      },
-    })
-  }
-  for (const id of filterState.tags) {
-    out.push({
-      key: `tag:${id}`,
-      label: library.tags.find((item) => item.id === id)?.name ?? 'Tag',
-      locked: (embed.active && embed.tagLocked) || isFilterLocked('tag'),
-      clear: () => clearTagFilter(id),
-    })
-  }
-  if (filterState.untagged) {
-    out.push({
-      key: 'untagged',
-      label: 'Untagged',
-      locked: isFilterLocked('untagged'),
-      clear: () => {
-        if (isFilterLocked('untagged')) return
-        filterState.untagged = false
       },
     })
   }
@@ -1140,7 +1117,7 @@ void loadAttributeTrees()
                 v-tooltip="{ value: value.description || '' }"
                 @click="toggleAttributeValue(facet, value.value)"
               >
-                <TagBadge
+                <PillBadge
                   :name="value.label || value.value"
                   :color="valueColor(facet, value)"
                   :selected="isAttributeValueSelected(facet.key, value.value)"
@@ -1151,7 +1128,7 @@ void loadAttributeTrees()
                   >
                     {{ value.count }}
                   </span>
-                </TagBadge>
+                </PillBadge>
               </button>
             </div>
 
@@ -1649,7 +1626,7 @@ void loadAttributeTrees()
               v-if="hasCapability('assets:upload')"
               type="button"
               class="inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-brand-700"
-              @click="openUpload([], uploadCollectionId, uploadTagId)"
+              @click="openUpload([], uploadCollectionId)"
             >
               <Upload :size="15" />
               Upload

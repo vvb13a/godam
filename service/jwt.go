@@ -314,7 +314,7 @@ func (s jwtScope) toDomain(username string) (domain.Scope, error) {
 			return domain.Scope{}, err
 		}
 		values := normalizeAttributeValues(filter.Values)
-		if name == "uncategorized" || name == "untagged" {
+		if name == "uncategorized" {
 			values = normalizeBoolFilterValues(values)
 		}
 		if name == "type" || name == "mime" {
@@ -482,8 +482,6 @@ func normalizeFilterName(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "collection", "collections", "collection_id", "collection_ids":
 		return "collection"
-	case "tag", "tags", "tag_id", "tag_ids":
-		return "tag"
 	case "type", "types":
 		return "type"
 	case "mime", "mimes", "mime_type", "mime_types":
@@ -494,8 +492,6 @@ func normalizeFilterName(value string) string {
 		return "sort"
 	case "uncategorized":
 		return "uncategorized"
-	case "untagged":
-		return "untagged"
 	}
 	return ""
 }

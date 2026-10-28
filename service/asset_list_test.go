@@ -426,22 +426,9 @@ func TestAssetListMultiValueAndRangeFilters(t *testing.T) {
 			t.Fatalf("create collection: %v", err)
 		}
 	}
-	for _, tag := range []store.Tag{
-		{ID: "t1", Name: "T1", CreatedAt: base, UpdatedAt: base},
-		{ID: "t2", Name: "T2", CreatedAt: base, UpdatedAt: base},
-	} {
-		if err := db.Create(&tag).Error; err != nil {
-			t.Fatalf("create tag: %v", err)
-		}
-	}
 	for _, link := range []struct{ asset, collection string }{{"a1", "c1"}, {"a2", "c2"}} {
 		if err := db.Exec("INSERT INTO asset_collections (asset_id, collection_id) VALUES (?, ?)", link.asset, link.collection).Error; err != nil {
 			t.Fatalf("link collection: %v", err)
-		}
-	}
-	for _, link := range []struct{ asset, tag string }{{"a1", "t1"}, {"a2", "t2"}} {
-		if err := db.Exec("INSERT INTO asset_tags (asset_id, tag_id) VALUES (?, ?)", link.asset, link.tag).Error; err != nil {
-			t.Fatalf("link tag: %v", err)
 		}
 	}
 
@@ -472,8 +459,6 @@ func TestAssetListMultiValueAndRangeFilters(t *testing.T) {
 
 	expect(domain.AssetFilter{CollectionIDs: []string{"c1", "c2"}}, "a1", "a2")
 	expect(domain.AssetFilter{CollectionIDs: []string{"c1"}, Uncategorized: true}, "a1", "a3")
-	expect(domain.AssetFilter{TagIDs: []string{"t1", "t2"}}, "a1", "a2")
-	expect(domain.AssetFilter{TagIDs: []string{"t1"}, Untagged: true}, "a1", "a3")
 	expect(domain.AssetFilter{Types: []string{"image", "video"}}, "a1")
 	expect(domain.AssetFilter{Types: []string{"image", "document"}}, "a1", "a2", "a3")
 	expect(domain.AssetFilter{MimeTypes: []string{"image/png", "application/pdf"}}, "a1", "a2")
@@ -590,19 +575,12 @@ func TestAssetListPresetFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create collection: %v", err)
 	}
-	tag, err := NewTagService(db).GetOrCreate(ctx, "Needs thumbnail")
-	if err != nil {
-		t.Fatalf("create tag: %v", err)
-	}
 	if err := db.Exec(`INSERT INTO asset_collections (asset_id, collection_id) VALUES (?, ?)`, "a1", collection.ID).Error; err != nil {
 		t.Fatalf("link collection: %v", err)
 	}
-	if err := db.Exec(`INSERT INTO asset_tags (asset_id, tag_id) VALUES (?, ?)`, "a2", tag.ID).Error; err != nil {
-		t.Fatalf("link tag: %v", err)
-	}
 
 	presets := NewPresetService(db)
-	restricted, err := presets.Create(ctx, "Restricted", "restricted", testPresetParameters(), false, []string{collection.ID}, []string{tag.ID})
+	restricted, err := presets.Create(ctx, "Restricted", "restricted", testPresetParameters(), false, []string{collection.ID})
 	if err != nil {
 		t.Fatalf("create preset: %v", err)
 	}
@@ -635,10 +613,10 @@ func TestAssetListPresetFilter(t *testing.T) {
 		}
 	}
 
-	assertIDs(ids(domain.AssetFilter{PresetID: restricted.ID, Sort: "name-asc"}), "a1", "a2")
-	assertIDs(ids(domain.AssetFilter{PresetID: restricted.ID, PresetExclude: true, Sort: "name-asc"}), "a3")
+	assertIDs(ids(domain.AssetFilter{PresetID: restricted.ID, Sort: "name-asc"}), "a1")
+	assertIDs(ids(domain.AssetFilter{PresetID: restricted.ID, PresetExclude: true, Sort: "name-asc"}), "a2", "a3")
 
-	global, err := presets.Create(ctx, "Global", "global", testPresetParameters(), true, nil, nil)
+	global, err := presets.Create(ctx, "Global", "global", testPresetParameters(), true, nil)
 	if err != nil {
 		t.Fatalf("create global preset: %v", err)
 	}

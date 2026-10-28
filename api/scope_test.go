@@ -10,7 +10,6 @@ import (
 func TestApplyScopeToAssetFilterEnforcesLockedOnly(t *testing.T) {
 	scope := domain.Scope{Filters: map[string]domain.FilterGrant{
 		"collection": {Values: []string{"locked-collection"}, Mode: domain.ScopeModeLocked},
-		"tag":        {Values: []string{"default-tag"}, Mode: domain.ScopeModeActive},
 		"type":       {Values: []string{"image"}, Mode: domain.ScopeModeActive},
 		"mime":       {Values: []string{"image/png"}, Mode: domain.ScopeModeActive},
 		"search":     {Values: []string{"brand"}, Mode: domain.ScopeModeLocked},
@@ -19,7 +18,6 @@ func TestApplyScopeToAssetFilterEnforcesLockedOnly(t *testing.T) {
 
 	filter := domain.AssetFilter{
 		CollectionIDs: []string{"attacker-collection"},
-		TagIDs:        []string{"chosen-tag"},
 		Types:         []string{"video"},
 		MimeTypes:     []string{"video/mp4"},
 		Search:        "other",
@@ -32,9 +30,6 @@ func TestApplyScopeToAssetFilterEnforcesLockedOnly(t *testing.T) {
 	}
 	if filter.Search != "brand" {
 		t.Fatalf("locked search was not enforced: %q", filter.Search)
-	}
-	if len(filter.TagIDs) != 1 || filter.TagIDs[0] != "chosen-tag" {
-		t.Fatalf("active tag default should not override the request: %v", filter.TagIDs)
 	}
 	if len(filter.Types) != 1 || filter.Types[0] != "video" {
 		t.Fatalf("active type default should not override the request: %v", filter.Types)

@@ -3,11 +3,9 @@ package domain
 import "time"
 
 // SmartCollectionFilter is a saved asset-view filter. Empty fields mean "no
-// constraint". Tag holds the raw tag query value (comma-separated ids or
-// "untagged"); Collection holds a collection id or "uncategorized".
+// constraint". Collection holds a collection id or "uncategorized".
 type SmartCollectionFilter struct {
 	Collection string `json:"collection,omitempty"`
-	Tag        string `json:"tag,omitempty"`
 	Type       string `json:"type,omitempty"`
 	Sort       string `json:"sort,omitempty"`
 }

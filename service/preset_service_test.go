@@ -24,7 +24,7 @@ func TestPresetServiceCRUD(t *testing.T) {
 	ctx := context.Background()
 	presets := NewPresetService(db)
 
-	created, err := presets.Create(ctx, "Thumbnail", "thumbnail", testPresetParameters(), true, nil, nil)
+	created, err := presets.Create(ctx, "Thumbnail", "thumbnail", testPresetParameters(), true, nil)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestPresetServiceCRUD(t *testing.T) {
 		t.Fatalf("created = %+v", created)
 	}
 
-	if _, err := presets.Create(ctx, "Duplicate", "thumbnail", testPresetParameters(), true, nil, nil); !errors.Is(err, ErrPresetNameTaken) {
+	if _, err := presets.Create(ctx, "Duplicate", "thumbnail", testPresetParameters(), true, nil); !errors.Is(err, ErrPresetNameTaken) {
 		t.Fatalf("duplicate error = %v", err)
 	}
 
@@ -41,7 +41,7 @@ func TestPresetServiceCRUD(t *testing.T) {
 		t.Fatalf("get by name: %+v err=%v", found, err)
 	}
 
-	updated, err := presets.Update(ctx, created.ID, "Small thumbnail", "small", testPresetParameters(), true, nil, nil)
+	updated, err := presets.Update(ctx, created.ID, "Small thumbnail", "small", testPresetParameters(), true, nil)
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -67,13 +67,13 @@ func TestPresetServiceValidation(t *testing.T) {
 	presets := NewPresetService(db)
 	ctx := context.Background()
 
-	if _, err := presets.Create(ctx, "", "empty-label", testPresetParameters(), true, nil, nil); !errors.Is(err, ErrInvalidInput) {
+	if _, err := presets.Create(ctx, "", "empty-label", testPresetParameters(), true, nil); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("empty label error = %v", err)
 	}
-	if _, err := presets.Create(ctx, "Label", "Bad Name", testPresetParameters(), true, nil, nil); !errors.Is(err, ErrInvalidInput) {
+	if _, err := presets.Create(ctx, "Label", "Bad Name", testPresetParameters(), true, nil); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("bad name error = %v", err)
 	}
-	if _, err := presets.Create(ctx, "Label", "800x600", testPresetParameters(), true, nil, nil); !errors.Is(err, ErrInvalidInput) {
+	if _, err := presets.Create(ctx, "Label", "800x600", testPresetParameters(), true, nil); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("reserved name error = %v", err)
 	}
 }
@@ -83,15 +83,10 @@ func TestPresetAvailability(t *testing.T) {
 	ctx := context.Background()
 	presets := NewPresetService(db)
 	collections := NewCollectionService(db)
-	tags := NewTagService(db)
 
 	collection, err := collections.Create(ctx, nil, "Campaign", "", "")
 	if err != nil {
 		t.Fatalf("create collection: %v", err)
-	}
-	tag, err := tags.GetOrCreate(ctx, "Needs thumbnail")
-	if err != nil {
-		t.Fatalf("create tag: %v", err)
 	}
 
 	now := time.Now().UTC()
@@ -107,15 +102,15 @@ func TestPresetAvailability(t *testing.T) {
 	if err := db.Exec(`INSERT INTO asset_collections (asset_id, collection_id) VALUES (?, ?)`, "asset-1", collection.ID).Error; err != nil {
 		t.Fatalf("link collection: %v", err)
 	}
-	if err := db.Exec(`INSERT INTO asset_tags (asset_id, tag_id) VALUES (?, ?)`, "asset-2", tag.ID).Error; err != nil {
-		t.Fatalf("link tag: %v", err)
+	if err := db.Exec(`INSERT INTO asset_collections (asset_id, collection_id) VALUES (?, ?)`, "asset-2", collection.ID).Error; err != nil {
+		t.Fatalf("link collection: %v", err)
 	}
 
-	restricted, err := presets.Create(ctx, "Restricted", "restricted", testPresetParameters(), false, []string{collection.ID}, []string{tag.ID})
+	restricted, err := presets.Create(ctx, "Restricted", "restricted", testPresetParameters(), false, []string{collection.ID})
 	if err != nil {
 		t.Fatalf("create restricted preset: %v", err)
 	}
-	if len(restricted.CollectionIDs) != 1 || len(restricted.TagIDs) != 1 {
+	if len(restricted.CollectionIDs) != 1 {
 		t.Fatalf("targets = %+v", restricted)
 	}
 
@@ -148,7 +143,7 @@ func TestPresetAvailability(t *testing.T) {
 		t.Fatalf("asset-3 presets = %+v err=%v", allowed, err)
 	}
 
-	global, err := presets.Create(ctx, "Global", "global", testPresetParameters(), true, nil, nil)
+	global, err := presets.Create(ctx, "Global", "global", testPresetParameters(), true, nil)
 	if err != nil {
 		t.Fatalf("create global preset: %v", err)
 	}

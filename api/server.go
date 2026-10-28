@@ -21,8 +21,6 @@ type Deps struct {
 	AssetsBaseURL    string
 	Collections      *service.CollectionService
 	SmartCollections *service.SmartCollectionService
-	Tags             *service.TagService
-	TagGroups        *service.TagGroupService
 	Instance         *service.InstanceService
 	Stats            *service.StatsService
 	Backups          *service.BackupService
@@ -135,7 +133,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/assets/uploads/{id}/complete", s.withCapability(domain.CapabilityAssetsUpload, s.handleCompleteUpload))
 	s.mux.HandleFunc("DELETE /api/assets/uploads/{id}", s.withCapability(domain.CapabilityAssetsUpload, s.handleCancelUpload))
 	s.mux.HandleFunc("POST /api/assets/collections", s.withCapability(domain.CapabilityAssetsUpdate, s.handleAddAssetsToCollection))
-	s.mux.HandleFunc("POST /api/assets/tags", s.withCapability(domain.CapabilityAssetsUpdate, s.handleApplyAssetsTags))
 	s.mux.HandleFunc("POST /api/assets/attributes", s.withCapability(domain.CapabilityAttributesSelect, s.handleApplyAssetsAttributes))
 	s.mux.HandleFunc("GET /api/assets/zip", s.withCapability(domain.CapabilityAssetsRead, s.handleDownloadAssetsZip))
 	s.mux.HandleFunc("GET /api/assets/{id}", s.withCapability(domain.CapabilityAssetsRead, s.handleGetAsset))
@@ -147,8 +144,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/assets/{id}/content", s.withCapability(domain.CapabilityAssetsUpdate, s.handleReplaceAssetContent))
 	s.mux.HandleFunc("GET /api/assets/{id}/preview", s.withCapability(domain.CapabilityAssetsRead, s.handleAssetPreview))
 	s.mux.HandleFunc("POST /api/assets/{id}/preview", s.withCapability(domain.CapabilityAssetsUpdate, s.handleRegeneratePreview))
-	s.mux.HandleFunc("POST /api/assets/{id}/tags", s.withCapability(domain.CapabilityAssetsUpdate, s.handleAddTag))
-	s.mux.HandleFunc("DELETE /api/assets/{id}/tags/{tagId}", s.withCapability(domain.CapabilityAssetsUpdate, s.handleRemoveTag))
 	s.mux.HandleFunc("POST /api/assets/{id}/collections", s.withCapability(domain.CapabilityAssetsUpdate, s.handleAddToCollection))
 	s.mux.HandleFunc("DELETE /api/assets/{id}/collections/{collectionId}", s.withCapability(domain.CapabilityAssetsUpdate, s.handleRemoveFromCollection))
 
@@ -164,15 +159,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/smart-collections/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleUpdateSmartCollection))
 	s.mux.HandleFunc("DELETE /api/smart-collections/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleDeleteSmartCollection))
 
-	s.mux.HandleFunc("GET /api/tags", s.withCapability(domain.CapabilityAssetsRead, s.handleListTags))
-	s.mux.HandleFunc("POST /api/tags", s.withCapability(domain.CapabilityLibraryUpdate, s.handleCreateTag))
-	s.mux.HandleFunc("PUT /api/tags/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleUpdateTag))
-	s.mux.HandleFunc("DELETE /api/tags/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleDeleteTag))
-
-	s.mux.HandleFunc("GET /api/tag-groups", s.withCapability(domain.CapabilityAssetsRead, s.handleListTagGroups))
-	s.mux.HandleFunc("POST /api/tag-groups", s.withCapability(domain.CapabilityLibraryUpdate, s.handleCreateTagGroup))
-	s.mux.HandleFunc("PUT /api/tag-groups/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleUpdateTagGroup))
-	s.mux.HandleFunc("DELETE /api/tag-groups/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleDeleteTagGroup))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -322,15 +308,6 @@ func assetVisibleToActor(asset *domain.Asset, actor *domain.Actor) bool {
 	return true
 }
 
-func (s *Server) ownedTag(w http.ResponseWriter, r *http.Request, id string) (*domain.Tag, bool) {
-	tag, err := s.deps.Tags.GetByID(r.Context(), id)
-	if err != nil {
-		writeError(w, err)
-		return nil, false
-	}
-	return tag, true
-}
-
 func (s *Server) ownedCollection(w http.ResponseWriter, r *http.Request, id string) (*domain.Collection, bool) {
 	collection, err := s.deps.Collections.GetByID(r.Context(), id)
 	if err != nil {
@@ -338,15 +315,6 @@ func (s *Server) ownedCollection(w http.ResponseWriter, r *http.Request, id stri
 		return nil, false
 	}
 	return collection, true
-}
-
-func (s *Server) ownedTagGroup(w http.ResponseWriter, r *http.Request, id string) (*domain.TagGroup, bool) {
-	group, err := s.deps.TagGroups.GetByID(r.Context(), id)
-	if err != nil {
-		writeError(w, err)
-		return nil, false
-	}
-	return group, true
 }
 
 func (s *Server) ownedSmartCollection(w http.ResponseWriter, r *http.Request, id string) (*domain.SmartCollection, bool) {

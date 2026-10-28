@@ -14,7 +14,6 @@ import CommandPalette from './components/CommandPalette.vue'
 import LibraryBackupDialog from './components/LibraryBackupDialog.vue'
 import LibraryUploadSettingsDialog from './components/LibraryUploadSettingsDialog.vue'
 import PresetsDialog from './components/PresetsDialog.vue'
-import TagsDialog from './components/TagsDialog.vue'
 import WarmPresetsProgress from './components/WarmPresetsProgress.vue'
 import UploadDialog from './components/UploadDialog.vue'
 import { auth } from './lib/auth'
@@ -72,12 +71,6 @@ function currentCollectionId(): string | null {
     : null
 }
 
-// currentTagId returns the tag filter's id only when a single concrete tag is
-// active (not the "untagged" pseudo-filter or a multi-tag selection).
-function currentTagId(): string | null {
-  return filterState.tags.length === 1 ? filterState.tags[0] : null
-}
-
 function resetGlobalDrag(): void {
   dragDepth = 0
   dragging.value = false
@@ -120,7 +113,7 @@ function onDrop(event: DragEvent): void {
     ? Array.from(event.dataTransfer.files)
     : []
   if (files.length) {
-    openUpload(files, currentCollectionId(), currentTagId())
+    openUpload(files, currentCollectionId())
   }
 }
 
@@ -271,7 +264,6 @@ onBeforeUnmount(() => {
     <UploadDialog />
     <CommandPalette />
     <AttributesDialog />
-    <TagsDialog />
     <CollectionsDialog />
     <PresetsDialog />
     <WarmPresetsProgress />

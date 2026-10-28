@@ -34,8 +34,8 @@ var (
 )
 
 // AssetService owns the asset lifecycle: upload, metadata extraction, preview
-// generation, storage and the collection/tag relations. Persistence goes
-// through the gorm-backed store package.
+// generation, storage and the collection relations. Persistence goes through
+// the gorm-backed store package.
 type AssetService struct {
 	cfg        *Config
 	db         *gorm.DB
@@ -43,7 +43,6 @@ type AssetService struct {
 	local      storage.Driver
 	extractor  *CompositeExtractor
 	previewGen *DefaultPreviewGenerator
-	tags       *TagService
 	backup     *BackupService
 	uploads    *uploadManager
 }
@@ -55,7 +54,6 @@ func NewAssetService(
 	local storage.Driver,
 	extractor *CompositeExtractor,
 	previewGen *DefaultPreviewGenerator,
-	tags *TagService,
 	backup *BackupService,
 ) *AssetService {
 	stagingDir := ""
@@ -69,7 +67,6 @@ func NewAssetService(
 		local:      local,
 		extractor:  extractor,
 		previewGen: previewGen,
-		tags:       tags,
 		backup:     backup,
 		uploads:    newUploadManager(stagingDir),
 	}
@@ -78,7 +75,6 @@ func NewAssetService(
 func (s *AssetService) GetByID(ctx context.Context, id string) (*domain.Asset, error) {
 	var m store.Asset
 	err := s.db.WithContext(ctx).
-		Preload("Tags").
 		Preload("Collections").
 		Preload("Colors", func(db *gorm.DB) *gorm.DB {
 			return db.Order("position ASC")
@@ -161,21 +157,6 @@ func (s *AssetService) applyAssetFilters(query *gorm.DB, filter domain.AssetFilt
 		query = query.Where("("+strings.Join(clauses, " OR ")+")", args...)
 	}
 
-	if len(filter.TagIDs) > 0 || filter.Untagged {
-		clauses := make([]string, 0, 2)
-		args := make([]any, 0, 1)
-		if len(filter.TagIDs) > 0 {
-			clauses = append(clauses,
-				"assets.id IN (SELECT asset_id FROM asset_tags WHERE tag_id IN ?)")
-			args = append(args, filter.TagIDs)
-		}
-		if filter.Untagged {
-			clauses = append(clauses,
-				"assets.id NOT IN (SELECT asset_id FROM asset_tags)")
-		}
-		query = query.Where("("+strings.Join(clauses, " OR ")+")", args...)
-	}
-
 	if filter.PresetID != "" {
 		allowed := `(
 			EXISTS (SELECT 1 FROM presets p WHERE p.id = ? AND p.library_wide = 1)
@@ -184,16 +165,11 @@ func (s *AssetService) applyAssetFilters(query *gorm.DB, filter domain.AssetFilt
 				JOIN preset_collections pc ON pc.collection_id = ac.collection_id
 				WHERE pc.preset_id = ?
 			)
-			OR assets.id IN (
-				SELECT at.asset_id FROM asset_tags at
-				JOIN preset_tags pt ON pt.tag_id = at.tag_id
-				WHERE pt.preset_id = ?
-			)
 		)`
 		if filter.PresetExclude {
-			query = query.Where("NOT "+allowed, filter.PresetID, filter.PresetID, filter.PresetID)
+			query = query.Where("NOT "+allowed, filter.PresetID, filter.PresetID)
 		} else {
-			query = query.Where(allowed, filter.PresetID, filter.PresetID, filter.PresetID)
+			query = query.Where(allowed, filter.PresetID, filter.PresetID)
 		}
 	}
 
@@ -2495,48 +2471,6 @@ func (s *AssetService) Download(ctx context.Context, assetID, destPath string, t
 	return err
 }
 
-func (s *AssetService) AddTag(ctx context.Context, assetID, tagName string) error {
-	var asset store.Asset
-	if err := s.db.WithContext(ctx).Select("id").First(&asset, "id = ?", assetID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return domain.ErrNotFound
-		}
-		return err
-	}
-	tag, err := s.tags.GetOrCreate(ctx, tagName)
-	if err != nil {
-		return err
-	}
-	return s.db.WithContext(ctx).
-		Exec("INSERT OR IGNORE INTO asset_tags (asset_id, tag_id) VALUES (?, ?)", assetID, tag.ID).Error
-}
-
-// AddTagByID attaches an existing tag to an asset, so callers that already know
-// the tag id are not affected by name normalization.
-func (s *AssetService) AddTagByID(ctx context.Context, assetID, tagID string) error {
-	var asset store.Asset
-	if err := s.db.WithContext(ctx).Select("id").First(&asset, "id = ?", assetID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return domain.ErrNotFound
-		}
-		return err
-	}
-	var tag store.Tag
-	if err := s.db.WithContext(ctx).Select("id").First(&tag, "id = ?", tagID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return domain.ErrNotFound
-		}
-		return err
-	}
-	return s.db.WithContext(ctx).
-		Exec("INSERT OR IGNORE INTO asset_tags (asset_id, tag_id) VALUES (?, ?)", assetID, tagID).Error
-}
-
-func (s *AssetService) RemoveTag(ctx context.Context, assetID, tagID string) error {
-	return s.db.WithContext(ctx).
-		Exec("DELETE FROM asset_tags WHERE asset_id = ? AND tag_id = ?", assetID, tagID).Error
-}
-
 // AddToCollection adds an asset to a collection.
 func (s *AssetService) AddToCollection(ctx context.Context, assetID, collectionID string) error {
 	var asset store.Asset
@@ -2601,46 +2535,6 @@ func (s *AssetService) ApplyCollectionsBulk(ctx context.Context, assetIDs, colle
 		 WHERE a.id IN ? AND c.id IN ?`,
 		assetIDs, collectionIDs,
 	).Error
-}
-
-// AddTagsBulk attaches many tags to many assets in one statement, scoped to the
-// library so assets and tags from other libraries are never linked. Existing
-// links are ignored, so the operation is idempotent.
-func (s *AssetService) AddTagsBulk(ctx context.Context, assetIDs, tagIDs []string) error {
-	if len(assetIDs) == 0 || len(tagIDs) == 0 {
-		return nil
-	}
-	return s.db.WithContext(ctx).Exec(
-		`INSERT OR IGNORE INTO asset_tags (asset_id, tag_id)
-		 SELECT a.id, t.id FROM assets a, tags t
-		 WHERE a.id IN ? AND t.id IN ?`,
-		assetIDs, tagIDs,
-	).Error
-}
-
-// ReplaceTagsBulk makes tagIDs the exact tag set of every given asset (scoped to
-// the library), in one transaction. Pass an empty tagIDs to clear tags.
-func (s *AssetService) ReplaceTagsBulk(ctx context.Context, assetIDs, tagIDs []string) error {
-	if len(assetIDs) == 0 {
-		return nil
-	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec(
-			`DELETE FROM asset_tags WHERE asset_id IN ?`,
-			assetIDs,
-		).Error; err != nil {
-			return err
-		}
-		if len(tagIDs) == 0 {
-			return nil
-		}
-		return tx.Exec(
-			`INSERT OR IGNORE INTO asset_tags (asset_id, tag_id)
-			 SELECT a.id, t.id FROM assets a, tags t
-			 WHERE a.id IN ? AND t.id IN ?`,
-			assetIDs, tagIDs,
-		).Error
-	})
 }
 
 func (s *AssetService) Delete(ctx context.Context, id string) error {

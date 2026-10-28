@@ -66,7 +66,7 @@ router.beforeEach(async () => {
 })
 
 // Protect unsaved edits in the detail editor on every navigation (sidebar
-// collections/tags, other routes, …), matching the editor's Back control.
+// collections, other routes, …), matching the editor's Back control.
 router.beforeEach(async () => {
   return await leaveEditor()
 })

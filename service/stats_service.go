@@ -79,15 +79,12 @@ func (s *StatsService) GetScoped(ctx context.Context, attributes map[string][]st
 		return query
 	}
 
-	var assets, collections, tags int64
+	var assets, collections int64
 	if err := originals().Count(&assets).Error; err != nil {
 		return nil, fmt.Errorf("count assets: %w", err)
 	}
 	if err := db.Model(&store.Collection{}).Count(&collections).Error; err != nil {
 		return nil, fmt.Errorf("count collections: %w", err)
-	}
-	if err := db.Model(&store.Tag{}).Count(&tags).Error; err != nil {
-		return nil, fmt.Errorf("count tags: %w", err)
 	}
 
 	var uncategorized int64
@@ -95,13 +92,6 @@ func (s *StatsService) GetScoped(ctx context.Context, attributes map[string][]st
 		Where("id NOT IN (SELECT asset_id FROM asset_collections)").
 		Count(&uncategorized).Error; err != nil {
 		return nil, fmt.Errorf("count uncategorized: %w", err)
-	}
-
-	var untagged int64
-	if err := originals().
-		Where("id NOT IN (SELECT asset_id FROM asset_tags)").
-		Count(&untagged).Error; err != nil {
-		return nil, fmt.Errorf("count untagged: %w", err)
 	}
 
 	var storageBytes int64
@@ -141,9 +131,7 @@ func (s *StatsService) GetScoped(ctx context.Context, attributes map[string][]st
 	return &domain.Stats{
 		Assets:          int(assets),
 		Collections:     int(collections),
-		Tags:            int(tags),
 		Uncategorized:   int(uncategorized),
-		Untagged:        int(untagged),
 		StorageBytes:    storageBytes,
 		Conversions:     conversionStats.Count,
 		ConversionBytes: conversionStats.Bytes,

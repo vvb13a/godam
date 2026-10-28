@@ -1,6 +1,6 @@
 import { reactive, watch } from 'vue'
 
-export type QuicklinkType = 'collection' | 'smart' | 'tag'
+export type QuicklinkType = 'collection' | 'smart'
 
 export interface Quicklink {
   type: QuicklinkType
@@ -22,9 +22,7 @@ function load(): Quicklink[] {
         item &&
         typeof item.id === 'string' &&
         typeof item.name === 'string' &&
-        (item.type === 'collection' ||
-          item.type === 'smart' ||
-          item.type === 'tag'),
+        item.type === 'collection' || item.type === 'smart',
     )
   } catch {
     return []

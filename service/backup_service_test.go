@@ -111,7 +111,7 @@ func TestBackupSFTPFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	backup := NewBackupService(db, registry, secret)
-	assets := NewAssetService(cfg, db, registry, local, NewCompositeExtractor(), NewPreviewGenerator(128, 85), NewTagService(db), backup)
+	assets := NewAssetService(cfg, db, registry, local, NewCompositeExtractor(), NewPreviewGenerator(128, 85), backup)
 
 	if _, err := backup.SetSettings(context.Background(), BackupSettingsRequest{
 		Enabled:  true,

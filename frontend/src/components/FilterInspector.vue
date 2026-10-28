@@ -1,18 +1,16 @@
 <script setup lang="ts">
 import Message from 'primevue/message'
-import { Filter, Folder, Tag as TagIcon } from '@primeicons/vue'
+import { Filter, Folder } from '@primeicons/vue'
 import { computed, ref, watch } from 'vue'
 import * as api from '../api/client'
 import { formatDateTime, formatRelative, formatSize } from '../lib/format'
-import { library } from '../lib/library'
 import { LIBRARY_COLORS, libraryColorHex } from '../lib/libraryColors'
-import type { Asset, Collection, SmartCollection, Tag } from '../types'
+import type { Asset, Collection, SmartCollection } from '../types'
 import AssetPreviewGrid from './AssetPreviewGrid.vue'
 
 const props = defineProps<{
   collection?: Collection
   smartCollection?: SmartCollection
-  tag?: Tag
   assets: Asset[]
   size: number
   total?: number
@@ -34,12 +32,6 @@ const countLabel = computed(() => {
   if (!props.totalCapped && loaded >= count.value) return totalLabel
   return `${loaded} of ${totalLabel}`
 })
-
-function tagColor(tag?: Tag): string {
-  if (!tag?.group_id) return '#94a3b8'
-  const group = library.tagGroups.find((item) => item.id === tag.group_id)
-  return group?.color ? `#${group.color}` : '#94a3b8'
-}
 
 // Exactly one subject is passed. Normalising to one shape keeps the template
 // free of branching on the subject type.
@@ -69,29 +61,27 @@ const subject = computed(() => {
       icon: Folder,
     }
   }
-  const tag = props.tag
   return {
-    kind: 'Tag',
-    id: tag?.id ?? '',
-    name: tag?.name ?? '',
-    description: tag?.description ?? '',
-    color: tagColor(tag),
-    createdAt: tag?.created_at ?? '',
-    updatedAt: tag?.updated_at ?? '',
-    icon: TagIcon,
+    kind: 'Collection',
+    id: '',
+    name: '',
+    description: '',
+    color: '#94a3b8',
+    createdAt: '',
+    updatedAt: '',
+    icon: Folder,
   }
 })
 
-// Collections and smart collections carry a user-editable colour; tags derive
-// theirs from their group.
+// Collections and smart collections carry a user-editable colour.
 const canColor = computed(
   () => Boolean(props.collection) || Boolean(props.smartCollection),
 )
 
 const currentColor = computed(() => subject.value.color)
 
-// Reset the form when the subject changes (a different collection/tag is
-// selected, or the stored values change after a save + library refresh).
+// Reset the form when the subject changes (a different collection is selected,
+// or the stored values change after a save + library refresh).
 watch(
   () => `${subject.value.id}\u0000${subject.value.name}\u0000${subject.value.description}`,
   () => {
@@ -137,14 +127,6 @@ async function persist(color?: string): Promise<void> {
         props.smartCollection.id,
         nextName,
         color ?? props.smartCollection.color,
-        nextDescription,
-      )
-    } else if (props.tag) {
-      await api.updateTag(
-        props.tag.id,
-        nextName,
-        props.tag.group_id ?? null,
-        props.tag.starred,
         nextDescription,
       )
     }

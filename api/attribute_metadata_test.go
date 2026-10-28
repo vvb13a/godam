@@ -19,7 +19,7 @@ func TestAttributeMetadataAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	assets := service.NewAssetService(nil, db, nil, nil, nil, nil, nil, nil)
+	assets := service.NewAssetService(nil, db, nil, nil, nil, nil, nil)
 	instances := service.NewInstanceService(db, nil)
 	if _, err := instances.Ensure(t.Context(), "Test"); err != nil {
 		t.Fatalf("ensure instance: %v", err)
@@ -107,7 +107,7 @@ func TestAttributeCatalogAndAssetSelectionAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	assets := service.NewAssetService(nil, db, nil, nil, nil, nil, nil, nil)
+	assets := service.NewAssetService(nil, db, nil, nil, nil, nil, nil)
 	instances := service.NewInstanceService(db, nil)
 	if _, err := instances.Ensure(t.Context(), "Test"); err != nil {
 		t.Fatalf("ensure instance: %v", err)

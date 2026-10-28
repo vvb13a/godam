@@ -170,20 +170,11 @@ func TestBulkAssetRelations(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 	cols := NewCollectionService(db)
-	tags := NewTagService(db)
 	assets := &AssetService{db: db}
 
 	col, err := cols.Create(ctx, nil, "C", "", "")
 	if err != nil {
 		t.Fatalf("create collection: %v", err)
-	}
-	tag1, err := tags.GetOrCreate(ctx, "One")
-	if err != nil {
-		t.Fatalf("create tag1: %v", err)
-	}
-	tag2, err := tags.GetOrCreate(ctx, "Two")
-	if err != nil {
-		t.Fatalf("create tag2: %v", err)
 	}
 	for _, id := range []string{"a1", "a2"} {
 		if err := db.Create(&store.Asset{
@@ -212,33 +203,11 @@ func TestBulkAssetRelations(t *testing.T) {
 		t.Fatalf("expected 2 collection links, got %d", n)
 	}
 
-	// Bulk add tags merges the tag into both assets and is idempotent.
-	if err := assets.AddTagsBulk(ctx, []string{"a1", "a2"}, []string{tag1.ID}); err != nil {
-		t.Fatalf("add tags bulk: %v", err)
+	// Replacing with an empty set clears collection membership.
+	if err := assets.ApplyCollectionsBulk(ctx, []string{"a1", "a2"}, nil, "replace"); err != nil {
+		t.Fatalf("clear collections bulk: %v", err)
 	}
-	if err := assets.AddTagsBulk(ctx, []string{"a1", "a2"}, []string{tag1.ID}); err != nil {
-		t.Fatalf("add tags bulk repeat: %v", err)
-	}
-	if n := countRows("asset_tags", "tag_id", tag1.ID); n != 2 {
-		t.Fatalf("expected 2 tag links, got %d", n)
-	}
-
-	// Replace clears the old set then applies the new one.
-	if err := assets.ReplaceTagsBulk(ctx, []string{"a1", "a2"}, []string{tag2.ID}); err != nil {
-		t.Fatalf("replace tags bulk: %v", err)
-	}
-	if n := countRows("asset_tags", "tag_id", tag1.ID); n != 0 {
-		t.Fatalf("expected old tags cleared, got %d", n)
-	}
-	if n := countRows("asset_tags", "tag_id", tag2.ID); n != 2 {
-		t.Fatalf("expected 2 replacement tag links, got %d", n)
-	}
-
-	// An empty replacement clears every tag for the assets.
-	if err := assets.ReplaceTagsBulk(ctx, []string{"a1", "a2"}, nil); err != nil {
-		t.Fatalf("clear tags bulk: %v", err)
-	}
-	if n := countRows("asset_tags", "tag_id", tag2.ID); n != 0 {
-		t.Fatalf("expected cleared tags, got %d", n)
+	if n := countRows("asset_collections", "collection_id", col.ID); n != 0 {
+		t.Fatalf("expected cleared collections, got %d", n)
 	}
 }

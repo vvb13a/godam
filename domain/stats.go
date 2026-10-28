@@ -4,9 +4,7 @@ package domain
 type Stats struct {
 	Assets          int         `json:"assets"`
 	Collections     int         `json:"collections"`
-	Tags            int         `json:"tags"`
 	Uncategorized   int         `json:"uncategorized"`
-	Untagged        int         `json:"untagged"`
 	StorageBytes    int64       `json:"storage_bytes"`
 	Conversions     int         `json:"conversions"`
 	ConversionBytes int64       `json:"conversion_bytes"`

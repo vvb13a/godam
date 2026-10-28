@@ -7,7 +7,6 @@ export type SidebarToggleKey =
   | 'quicklinks'
   | 'collections'
   | 'smartCollections'
-  | 'tags'
 
 export type SidebarMode = 'classic' | 'attributes'
 
@@ -15,7 +14,6 @@ export interface SidebarPrefs {
   quicklinks: boolean
   collections: boolean
   smartCollections: boolean
-  tags: boolean
   order: SidebarToggleKey[]
   mode: SidebarMode
 }
@@ -25,14 +23,12 @@ const SIDEBAR_KEYS: SidebarToggleKey[] = [
   'quicklinks',
   'collections',
   'smartCollections',
-  'tags',
 ]
 
 const DEFAULT_PREFS: SidebarPrefs = {
   quicklinks: true,
   collections: true,
   smartCollections: true,
-  tags: true,
   order: [...SIDEBAR_KEYS],
   mode: 'classic',
 }
@@ -88,5 +84,4 @@ export const SIDEBAR_TOGGLES: SidebarToggle[] = [
   { key: 'quicklinks', label: 'Quicklinks' },
   { key: 'collections', label: 'Collections' },
   { key: 'smartCollections', label: 'Smart Collections' },
-  { key: 'tags', label: 'Tags' },
 ]

@@ -37,7 +37,6 @@ const form = reactive({
   format: 'webp',
   libraryWide: true,
   collectionIds: [] as string[],
-  tagIds: [] as string[],
   options: {} as Record<string, string[]>,
 })
 const rawArgs = reactive<Record<string, string>>({})
@@ -294,7 +293,6 @@ function resetForm(): void {
   form.format = catalog.value.formats[0] ?? 'webp'
   form.libraryWide = true
   form.collectionIds = []
-  form.tagIds = []
   for (const key of Object.keys(form.options)) delete form.options[key]
   for (const key of Object.keys(rawArgs)) delete rawArgs[key]
   for (const key of Object.keys(textArgs)) delete textArgs[key]
@@ -315,7 +313,6 @@ function selectPreset(preset: Preset): void {
   form.format = preset.parameters.format
   form.libraryWide = preset.library_wide
   form.collectionIds = [...(preset.collection_ids ?? [])]
-  form.tagIds = [...(preset.tag_ids ?? [])]
   for (const key of Object.keys(form.options)) delete form.options[key]
   for (const key of Object.keys(rawArgs)) delete rawArgs[key]
   for (const key of Object.keys(textArgs)) delete textArgs[key]
@@ -441,7 +438,6 @@ async function save(): Promise<void> {
       parameters,
       library_wide: form.libraryWide,
       collection_ids: form.libraryWide ? [] : form.collectionIds,
-      tag_ids: form.libraryWide ? [] : form.tagIds,
     }
     const saved = form.id
       ? await api.updatePreset(form.id, input)
@@ -671,47 +667,29 @@ watch(
                 Library-wide
               </label>
               <p class="text-xs text-slate-400">
-                Available to every asset, unless you scope it to collections or tags.
+                Available to every asset, unless you scope it to collections.
               </p>
-              <div v-if="!form.libraryWide" class="grid grid-cols-2 gap-3">
-                <div>
-                  <label class="mb-1 block text-[11px] text-slate-400">
-                    Collections
-                  </label>
-                  <MultiSelect
-                    v-model="form.collectionIds"
-                    :options="library.collections"
-                    option-label="name"
-                    option-value="id"
-                    display="chip"
-                    filter
-                    showClear
-                    placeholder="No collections"
-                    class="w-full"
-                  />
-                </div>
-                <div>
-                  <label class="mb-1 block text-[11px] text-slate-400">
-                    Tags
-                  </label>
-                  <MultiSelect
-                    v-model="form.tagIds"
-                    :options="library.tags"
-                    option-label="name"
-                    option-value="id"
-                    display="chip"
-                    filter
-                    showClear
-                    placeholder="No tags"
-                    class="w-full"
-                  />
-                </div>
+              <div v-if="!form.libraryWide">
+                <label class="mb-1 block text-[11px] text-slate-400">
+                  Collections
+                </label>
+                <MultiSelect
+                  v-model="form.collectionIds"
+                  :options="library.collections"
+                  option-label="name"
+                  option-value="id"
+                  display="chip"
+                  filter
+                  showClear
+                  placeholder="No collections"
+                  class="w-full"
+                />
               </div>
               <p
-                v-if="!form.libraryWide && !form.collectionIds.length && !form.tagIds.length"
+                v-if="!form.libraryWide && !form.collectionIds.length"
                 class="text-xs text-brand-700 dark:text-brand-400"
               >
-                No asset can use this preset until it is assigned to a collection or tag.
+                No asset can use this preset until it is assigned to a collection.
               </p>
             </div>
 

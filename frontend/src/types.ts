@@ -122,27 +122,6 @@ export interface Instance {
 
 export type Library = Instance
 
-export interface Tag {
-  id: string
-  name: string
-  description: string
-  group_id?: string
-  starred: boolean
-  asset_count: number
-  created_at: string
-  updated_at: string
-}
-
-export interface TagGroup {
-  id: string
-  name: string
-  description: string
-  color: string
-  tag_count: number
-  created_at: string
-  updated_at: string
-}
-
 export interface Collection {
   id: string
   parent_id?: string
@@ -157,7 +136,6 @@ export interface Collection {
 
 export interface SmartCollectionFilter {
   collection?: string
-  tag?: string
   type?: string
   sort?: string
 }
@@ -201,7 +179,6 @@ export interface Asset {
   byte_size: number
   metadata: AssetMetadata
   colors?: AssetColor[]
-  tags?: Tag[]
   collections?: Collection[]
   created_at: string
   updated_at: string
@@ -237,7 +214,6 @@ export interface Preset {
   parameters: PresetParameters
   library_wide: boolean
   collection_ids: string[]
-  tag_ids: string[]
   created_at: string
   modified_at: string
 }
@@ -293,9 +269,7 @@ export interface TypeCount {
 export interface Stats {
   assets: number
   collections: number
-  tags: number
   uncategorized: number
-  untagged: number
   storage_bytes: number
   conversions: number
   conversion_bytes: number

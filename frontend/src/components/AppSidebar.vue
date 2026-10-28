@@ -16,7 +16,6 @@ import { sidebarPrefs, type SidebarToggleKey } from '../lib/sidebar'
 import CollectionTree from './CollectionTree.vue'
 import Quicklinks from './Quicklinks.vue'
 import SmartCollections from './SmartCollections.vue'
-import TagsList from './TagsList.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -90,21 +89,16 @@ const pickerRestricted = computed(
 const collectionsLocked = computed(
   () => pickerRestricted.value && embedState.collectionLocked,
 )
-const tagsLocked = computed(
-  () => pickerRestricted.value && embedState.tagLocked,
-)
 const SECTION_COMPONENTS = {
   quicklinks: Quicklinks,
   collections: CollectionTree,
   smartCollections: SmartCollections,
-  tags: TagsList,
 }
 
 const SECTION_SPACE: Record<SidebarToggleKey, number> = {
   quicklinks: 18,
   collections: 34,
   smartCollections: 22,
-  tags: 26,
 }
 
 const sectionVisible = (key: SidebarToggleKey): boolean => {
@@ -114,13 +108,7 @@ const sectionVisible = (key: SidebarToggleKey): boolean => {
     case 'collections':
       return sidebarPrefs.collections && !collectionsLocked.value
     case 'smartCollections':
-      return (
-        sidebarPrefs.smartCollections &&
-        !collectionsLocked.value &&
-        !tagsLocked.value
-      )
-    case 'tags':
-      return sidebarPrefs.tags && !tagsLocked.value
+      return sidebarPrefs.smartCollections && !collectionsLocked.value
   }
 }
 

@@ -13,17 +13,15 @@ import { effectiveAttributeSort, sortAttributeValues } from '../lib/attributeSor
 import { hasCapability } from '../lib/capabilities'
 import { conversionCacheVersion } from '../lib/conversionCache'
 import { formatDateTime, formatDuration, formatRelative, formatSize } from '../lib/format'
-import { library } from '../lib/library'
 import { hasMediaPreview } from '../lib/mimeTypes'
 import { libraryColorHex } from '../lib/libraryColors'
 import { openAssetCollections } from '../lib/collectionsDialog'
 import { openPresetsDialog } from '../lib/presetsDialog'
-import { openAssetTags } from '../lib/tagsDialog'
 import { warmPresets, warmProgress } from '../lib/warmPresets'
 import { ATTRIBUTE_UNASSIGNED } from '../types'
-import type { Asset, AttributeFacetValue, Conversion, Tag } from '../types'
+import type { Asset, AttributeFacetValue, Conversion } from '../types'
 import FileTypePreview from './FileTypePreview.vue'
-import TagBadge from './TagBadge.vue'
+import PillBadge from './PillBadge.vue'
 
 const props = defineProps<{ asset: Asset }>()
 const emit = defineEmits<{ close: []; changed: [asset: Asset] }>()
@@ -307,16 +305,6 @@ function conversionLabel(conversion: Conversion): string {
   return `${width} × ${height} · ${conversion.format.toUpperCase()}`
 }
 
-function tagColor(tag: Tag): string | undefined {
-  if (!tag.group_id) return undefined
-  const group = library.tagGroups.find((item) => item.id === tag.group_id)
-  return group?.color ? `#${group.color}` : undefined
-}
-
-function editTags(): void {
-  openAssetTags(props.asset.id)
-}
-
 function editCollections(): void {
   openAssetCollections(props.asset.id)
 }
@@ -357,10 +345,6 @@ async function run(action: () => Promise<Asset>): Promise<void> {
   } finally {
     busy.value = false
   }
-}
-
-function removeTag(tagId: string): void {
-  void run(() => api.removeTag(props.asset.id, tagId))
 }
 
 function removeCollection(collectionId: string): void {
@@ -656,39 +640,6 @@ function removeCollection(collectionId: string): void {
 
       <section>
         <div class="mb-2 flex items-center justify-between">
-          <h3 class="text-sm font-semibold">Tags</h3>
-          <button
-            class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400"
-            title="Edit tags"
-            @click="editTags"
-          >
-            <Plus :size="14" />
-          </button>
-        </div>
-        <div class="flex flex-wrap gap-1">
-          <TagBadge
-            v-for="tag in asset.tags"
-            :key="tag.id"
-            :name="tag.name"
-            :color="tagColor(tag)"
-          >
-            <button
-              class="inline-flex text-slate-400 hover:text-red-500"
-              title="Remove tag"
-              :disabled="busy"
-              @click="removeTag(tag.id)"
-            >
-              <Times :size="12" />
-            </button>
-          </TagBadge>
-          <span v-if="!asset.tags?.length" class="text-xs text-slate-400">
-            No tags
-          </span>
-        </div>
-      </section>
-
-      <section>
-        <div class="mb-2 flex items-center justify-between">
           <h3 class="text-sm font-semibold">Collections</h3>
           <button
             class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400"
@@ -699,7 +650,7 @@ function removeCollection(collectionId: string): void {
           </button>
         </div>
         <div class="flex flex-wrap gap-1">
-          <TagBadge
+          <PillBadge
             v-for="collection in asset.collections"
             :key="collection.id"
             :name="collection.name"
@@ -713,7 +664,7 @@ function removeCollection(collectionId: string): void {
             >
               <Times :size="12" />
             </button>
-          </TagBadge>
+          </PillBadge>
           <span v-if="!asset.collections?.length" class="text-xs text-slate-400">
             No collections
           </span>

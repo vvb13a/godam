@@ -6,8 +6,6 @@ import type {
   Preset,
   SmartCollection,
   Stats,
-  Tag,
-  TagGroup,
   UploadLimits,
 } from '../types'
 
@@ -26,8 +24,6 @@ export const library = reactive({
   loaded: false,
   collections: [] as Collection[],
   smartCollections: [] as SmartCollection[],
-  tags: [] as Tag[],
-  tagGroups: [] as TagGroup[],
   presets: [] as Preset[],
   stats: null as Stats | null,
   version: 0,
@@ -59,14 +55,6 @@ export async function loadSmartCollections(): Promise<void> {
   library.smartCollections = await api.listSmartCollections()
 }
 
-export async function loadTags(): Promise<void> {
-  library.tags = await api.listTags()
-}
-
-export async function loadTagGroups(): Promise<void> {
-  library.tagGroups = await api.listTagGroups()
-}
-
 export async function loadPresets(): Promise<void> {
   library.presets = await api.listPresets()
 }
@@ -78,8 +66,6 @@ export async function loadStats(): Promise<void> {
 export function clearScopedData(): void {
   library.collections = []
   library.smartCollections = []
-  library.tags = []
-  library.tagGroups = []
   library.presets = []
   library.stats = null
 }
@@ -100,8 +86,6 @@ async function loadScopedData(): Promise<void> {
   await Promise.all([
     loadCollections(),
     loadSmartCollections(),
-    loadTags(),
-    loadTagGroups(),
     loadPresets(),
     loadStats(),
   ])

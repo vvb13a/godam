@@ -29,8 +29,6 @@ var (
 	presetService          *service.PresetService
 	collectionService      *service.CollectionService
 	smartCollectionService *service.SmartCollectionService
-	tagService             *service.TagService
-	tagGroupService        *service.TagGroupService
 	instanceService        *service.InstanceService
 	statsService           *service.StatsService
 	backupService          *service.BackupService
@@ -51,8 +49,6 @@ func main() {
 		AssetsBaseURL:    appConfig.AssetsBaseURL(),
 		Collections:      collectionService,
 		SmartCollections: smartCollectionService,
-		Tags:             tagService,
-		TagGroups:        tagGroupService,
 		Instance:         instanceService,
 		Stats:            statsService,
 		Backups:          backupService,
@@ -139,8 +135,6 @@ func initDependencies() {
 	}
 
 	// 3. Application services (gorm persistence, no repository adapters).
-	tagService = service.NewTagService(db)
-	tagGroupService = service.NewTagGroupService(db)
 	collectionService = service.NewCollectionService(db)
 	smartCollectionService = service.NewSmartCollectionService(db)
 	presetService = service.NewPresetService(db)
@@ -158,7 +152,6 @@ func initDependencies() {
 		localStore,
 		service.NewCompositeExtractor(),
 		service.NewPreviewGenerator(1920, 85),
-		tagService,
 		backupService,
 	)
 	conversionService = service.NewConversionService(assetService, presetService, proxy, conversionStore)

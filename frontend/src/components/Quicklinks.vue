@@ -1,13 +1,7 @@
 <script setup lang="ts">
 import ContextMenu from 'primevue/contextmenu'
 import type { MenuItem } from 'primevue/menuitem'
-import {
-  ExternalLink,
-  Folder,
-  Filter,
-  Tag as TagIcon,
-  Times,
-} from '@primeicons/vue'
+import { ExternalLink, Folder, Filter, Times } from '@primeicons/vue'
 import type { Component } from 'vue'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -41,40 +35,23 @@ const items = computed<ResolvedQuicklink[]>(() =>
         count: collection?.asset_count,
       }
     }
-    if (item.type === 'smart') {
-      const smart = library.smartCollections.find((c) => c.id === item.id)
-      return {
-        ...item,
-        name: smart?.name ?? item.name,
-        color: smart?.color ? `#${smart.color}` : item.color,
-        count: smart?.asset_count,
-      }
-    }
-    const tag = library.tags.find((t) => t.id === item.id)
-    const group = tag?.group_id
-      ? library.tagGroups.find((g) => g.id === tag.group_id)
-      : undefined
+    const smart = library.smartCollections.find((c) => c.id === item.id)
     return {
       ...item,
-      name: tag?.name ?? item.name,
-      color: group?.color ? `#${group.color}` : item.color,
-      count: tag?.asset_count,
+      name: smart?.name ?? item.name,
+      color: smart?.color ? `#${smart.color}` : item.color,
+      count: smart?.asset_count,
     }
   }),
 )
 
 function iconFor(type: QuicklinkType): Component {
-  if (type === 'collection') return Folder
-  if (type === 'smart') return Filter
-  return TagIcon
+  return type === 'collection' ? Folder : Filter
 }
 
 function isActive(item: ResolvedQuicklink): boolean {
   if (item.type === 'collection') {
     return filterState.collections.includes(item.id)
-  }
-  if (item.type === 'tag') {
-    return filterState.tags.includes(item.id)
   }
   return smartSelection.id === item.id
 }
@@ -82,7 +59,6 @@ function isActive(item: ResolvedQuicklink): boolean {
 function navigateFilter(filter: SmartCollectionFilter): void {
   clearAllFilters()
   if (filter.collection) filterState.collections = [filter.collection]
-  if (filter.tag) filterState.tags = [filter.tag]
   if (filter.type) filterState.types = [filter.type]
   filterState.sort = filter.sort || 'date-desc'
   void router.push({ name: 'library' })
@@ -92,12 +68,6 @@ function open(item: ResolvedQuicklink): void {
   if (item.type === 'collection') {
     clearAllFilters()
     filterState.collections = [item.id]
-    void router.push({ name: 'library' })
-    return
-  }
-  if (item.type === 'tag') {
-    clearAllFilters()
-    filterState.tags = [item.id]
     void router.push({ name: 'library' })
     return
   }
@@ -154,7 +124,7 @@ const menuItems = computed<QuicklinkMenuItem[]>(() => {
         v-if="!items.length"
         class="px-2 py-2 text-xs leading-relaxed text-slate-400"
       >
-        Pin collections, smart collections or tags from their context menus.
+        Pin collections or smart collections from their context menus.
       </p>
       <div
         v-for="item in items"

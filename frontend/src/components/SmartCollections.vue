@@ -121,7 +121,6 @@ function currentFilter(): SmartCollectionFilter {
   if (filterState.collections.length === 1) {
     filter.collection = filterState.collections[0]
   }
-  if (filterState.tags.length === 1) filter.tag = filterState.tags[0]
   if (filterState.types.length === 1) filter.type = filterState.types[0]
   if (filterState.sort !== 'date-desc') filter.sort = filterState.sort
   return filter
@@ -130,20 +129,16 @@ function currentFilter(): SmartCollectionFilter {
 const hasFilters = computed(
   () =>
     filterState.collections.length > 0 ||
-    filterState.tags.length > 0 ||
     filterState.types.length > 0,
 )
 
 function isFilterActive(f: SmartCollectionFilter): boolean {
   return (
     filterState.collections.length <= 1 &&
-    filterState.tags.length <= 1 &&
     filterState.types.length <= 1 &&
     !filterState.uncategorized &&
-    !filterState.untagged &&
     !filterState.search &&
     (f.collection ?? '') === (filterState.collections[0] ?? '') &&
-    (f.tag ?? '') === (filterState.tags[0] ?? '') &&
     (f.type ?? '') === (filterState.types[0] ?? '') &&
     (f.sort || 'date-desc') === filterState.sort
   )
@@ -157,7 +152,6 @@ function navigateFilter(f: SmartCollectionFilter): void {
   if (editingId.value) return
   clearAllFilters()
   if (f.collection) filterState.collections = [f.collection]
-  if (f.tag) filterState.tags = [f.tag]
   if (f.type) filterState.types = [f.type]
   filterState.sort = f.sort || 'date-desc'
   void router.push({ name: 'library' })

@@ -10,10 +10,9 @@ type Preset struct {
 	Name       string           `json:"name"`
 	Parameters PresetParameters `json:"parameters"`
 	// LibraryWide makes the preset available to every asset. Otherwise it is
-	// available to assets whose collection or tag is listed in the join tables.
+	// available to assets whose collection is listed in the join table.
 	LibraryWide   bool      `json:"library_wide"`
 	CollectionIDs []string  `json:"collection_ids"`
-	TagIDs        []string  `json:"tag_ids"`
 	CreatedAt     time.Time `json:"created_at"`
 	ModifiedAt    time.Time `json:"modified_at"`
 }

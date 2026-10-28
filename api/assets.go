@@ -60,11 +60,7 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 			filter.Limit = limit
 		}
 	}
-	for _, raw := range []string{q.Get("tag_ids"), q.Get("tag_id")} {
-		filter.TagIDs = append(filter.TagIDs, parseCSV(raw)...)
-	}
 	filter.Uncategorized = q.Get("uncategorized") == "true"
-	filter.Untagged = q.Get("untagged") == "true"
 
 	if raw := q.Get("attributes"); raw != "" {
 		attributes, err := parseAttributeFilters(raw)
@@ -173,8 +169,6 @@ func filterRequested(name string, q url.Values) bool {
 	switch name {
 	case "collection":
 		return q.Get("collection_ids") != "" || q.Get("collection_id") != ""
-	case "tag":
-		return q.Get("tag_ids") != "" || q.Get("tag_id") != ""
 	case "type":
 		return q.Get("types") != "" || q.Get("type") != ""
 	case "mime":
@@ -185,8 +179,6 @@ func filterRequested(name string, q url.Values) bool {
 		return strings.TrimSpace(q.Get("sort")) != ""
 	case "uncategorized":
 		return q.Get("uncategorized") == "true"
-	case "untagged":
-		return q.Get("untagged") == "true"
 	case "color":
 		return q.Get("colors") != "" || q.Get("color") != ""
 	case "size":
@@ -225,11 +217,6 @@ func applyScopeToAssetFilter(filter *domain.AssetFilter, scope domain.Scope) {
 		filter.Uncategorized = false
 	}
 
-	if tag, _ := scope.Filter("tag"); scope.Locked("tag") {
-		filter.TagIDs = append([]string{}, tag.Values...)
-		filter.Untagged = false
-	}
-
 	if typeFilter, _ := scope.Filter("type"); scope.Locked("type") {
 		filter.Types = append([]string{}, typeFilter.Values...)
 	}
@@ -246,9 +233,6 @@ func applyScopeToAssetFilter(filter *domain.AssetFilter, scope domain.Scope) {
 	}
 	if uncategorized, ok := scope.Filter("uncategorized"); scope.Locked("uncategorized") && ok {
 		filter.Uncategorized = filterGrantTrue(uncategorized)
-	}
-	if untagged, ok := scope.Filter("untagged"); scope.Locked("untagged") && ok {
-		filter.Untagged = filterGrantTrue(untagged)
 	}
 }
 
@@ -1065,51 +1049,6 @@ func (s *Server) handleRegeneratePreview(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, asset)
 }
 
-type tagRequest struct {
-	Name  string `json:"name"`
-	TagID string `json:"tag_id"`
-}
-
-func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if _, ok := s.ownedAsset(w, r, id); !ok {
-		return
-	}
-	var req tagRequest
-	if !decodeJSON(w, r, &req) {
-		return
-	}
-	if req.TagID != "" {
-		if err := s.deps.Assets.AddTagByID(r.Context(), id, req.TagID); err != nil {
-			writeError(w, err)
-			return
-		}
-		s.respondAsset(w, r, id)
-		return
-	}
-	if req.Name == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
-		return
-	}
-	if err := s.deps.Assets.AddTag(r.Context(), id, req.Name); err != nil {
-		writeError(w, err)
-		return
-	}
-	s.respondAsset(w, r, id)
-}
-
-func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if _, ok := s.ownedAsset(w, r, id); !ok {
-		return
-	}
-	if err := s.deps.Assets.RemoveTag(r.Context(), id, r.PathValue("tagId")); err != nil {
-		writeError(w, err)
-		return
-	}
-	s.respondAsset(w, r, id)
-}
-
 type collectionRelationRequest struct {
 	CollectionID string `json:"collection_id"`
 }
@@ -1183,37 +1122,6 @@ func (s *Server) handleAddAssetsToCollection(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	if err := s.deps.Assets.ApplyCollectionsBulk(r.Context(), req.AssetIDs, ids, mode); err != nil {
-		writeError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-type bulkTagRequest struct {
-	AssetIDs []string `json:"asset_ids"`
-	TagIDs   []string `json:"tag_ids"`
-	Mode     string   `json:"mode"`
-}
-
-// handleApplyAssetsTags applies a tag set to many assets in one request,
-// replacing the per-asset/tag POST/DELETE tag calls. "add" merges the tags into
-// each asset; "replace" makes tag_ids the exact tag set of every asset.
-func (s *Server) handleApplyAssetsTags(w http.ResponseWriter, r *http.Request) {
-	var req bulkTagRequest
-	if !decodeJSON(w, r, &req) {
-		return
-	}
-	if req.Mode != "add" && req.Mode != "replace" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "mode must be add or replace"})
-		return
-	}
-	var err error
-	if req.Mode == "replace" {
-		err = s.deps.Assets.ReplaceTagsBulk(r.Context(), req.AssetIDs, req.TagIDs)
-	} else {
-		err = s.deps.Assets.AddTagsBulk(r.Context(), req.AssetIDs, req.TagIDs)
-	}
-	if err != nil {
 		writeError(w, err)
 		return
 	}

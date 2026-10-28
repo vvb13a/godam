@@ -17,7 +17,6 @@ import {
   Palette,
   Search,
   SlidersH,
-  Tag,
   Times,
   Trash,
   Upload,
@@ -37,7 +36,6 @@ import { hasCapability } from '../lib/capabilities'
 import { commandMenu } from '../lib/command'
 import {
   applyCollectionFilter,
-  applyTagFilter,
   clearAllFilters,
   filterState,
 } from '../lib/filters'
@@ -46,7 +44,6 @@ import { libraryColorHex } from '../lib/libraryColors'
 import { openPresetsDialog } from '../lib/presetsDialog'
 import { SIDEBAR_TOGGLES, sidebarPrefs } from '../lib/sidebar'
 import { clearSmartSelection, selectSmartCollection } from '../lib/smartSelection'
-import { openTagsDialog } from '../lib/tagsDialog'
 import { THEME_OPTIONS, setThemeMode } from '../lib/theme'
 import { openUpload } from '../lib/upload'
 import { openUploadSettings } from '../lib/uploadSettings'
@@ -58,7 +55,6 @@ type Scope =
   | 'all'
   | 'commands'
   | 'collections'
-  | 'tags'
   | 'smart'
   | 'attributes'
   | 'create'
@@ -87,7 +83,6 @@ const scopes: { value: Scope; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'commands', label: 'Commands' },
   { value: 'collections', label: 'Collections' },
-  { value: 'tags', label: 'Tags' },
   { value: 'smart', label: 'Smart' },
   { value: 'attributes', label: 'Attributes' },
   { value: 'create', label: 'Create' },
@@ -128,7 +123,6 @@ function close(): void {
 function navigateFilter(filter: SmartCollectionFilter): void {
   clearAllFilters()
   if (filter.collection) filterState.collections = [filter.collection]
-  if (filter.tag) filterState.tags = [filter.tag]
   if (filter.type) filterState.types = [filter.type]
   filterState.sort = filter.sort || 'date-desc'
   void router.push({ name: 'library' })
@@ -137,7 +131,6 @@ function navigateFilter(filter: SmartCollectionFilter): void {
 const hasFilters = computed(
   () =>
     filterState.collections.length > 0 ||
-    filterState.tags.length > 0 ||
     filterState.types.length > 0,
 )
 
@@ -147,16 +140,11 @@ function currentCollectionId(): string | null {
     : null
 }
 
-function currentTagId(): string | null {
-  return filterState.tags.length === 1 ? filterState.tags[0] : null
-}
-
 function currentFilter(): SmartCollectionFilter {
   const filter: SmartCollectionFilter = {}
   if (filterState.collections.length === 1) {
     filter.collection = filterState.collections[0]
   }
-  if (filterState.tags.length === 1) filter.tag = filterState.tags[0]
   if (filterState.types.length === 1) filter.type = filterState.types[0]
   if (filterState.sort !== 'date-desc') filter.sort = filterState.sort
   return filter
@@ -171,21 +159,6 @@ async function createCollection(name: string): Promise<void> {
     toast.add({
       severity: 'error',
       summary: 'Could not create collection',
-      detail: e instanceof Error ? e.message : String(e),
-      life: 4000,
-    })
-  }
-}
-
-async function createTag(name: string): Promise<void> {
-  close()
-  try {
-    await api.createTag(name)
-    notifyLibraryChanged()
-  } catch (e) {
-    toast.add({
-      severity: 'error',
-      summary: 'Could not create tag',
       detail: e instanceof Error ? e.message : String(e),
       life: 4000,
     })
@@ -320,7 +293,7 @@ const groups = computed<PaletteGroup[]>(() => {
       keywords: ['upload', 'add', 'import', 'files', 'assets'],
       command: () => {
         close()
-        openUpload([], currentCollectionId(), currentTagId())
+        openUpload([], currentCollectionId())
       },
     })
   }
@@ -332,15 +305,6 @@ const groups = computed<PaletteGroup[]>(() => {
       command: () => {
         close()
         openCollectionsDialog()
-      },
-    })
-    commands.push({
-      label: 'Manage tags',
-      icon: Tag,
-      keywords: ['tags', 'manage', 'create tag'],
-      command: () => {
-        close()
-        openTagsDialog()
       },
     })
   }
@@ -476,27 +440,6 @@ const groups = computed<PaletteGroup[]>(() => {
     })
   }
 
-  if (library.tags.length) {
-    result.push({
-      label: 'Tags',
-      scope: 'tags',
-      items: library.tags.map((tag) => {
-        const group = tag.group_id
-          ? library.tagGroups.find((item) => item.id === tag.group_id)
-          : undefined
-        return {
-          label: tag.name,
-          keywords: ['tag'],
-          dot: group?.color ? `#${group.color}` : '#94a3b8',
-          command: () => {
-            applyTagFilter(tag.id)
-            run({ name: 'library' })
-          },
-        }
-      }),
-    })
-  }
-
   if (library.smartCollections.length) {
     result.push({
       label: 'Smart Collections',
@@ -552,12 +495,6 @@ const model = computed<PaletteGroup[]>(() => {
         keywords: [value, 'create', 'new', 'collection'],
         command: () => void createCollection(value),
       },
-      {
-        label: `Create tag "${value}"`,
-        icon: Tag,
-        keywords: [value, 'create', 'new', 'tag'],
-        command: () => void createTag(value),
-      },
     ]
     if (hasFilters.value) {
       items.push({
@@ -575,7 +512,7 @@ const model = computed<PaletteGroup[]>(() => {
 
 const emptyMessage = computed(() =>
   scope.value === 'create'
-    ? 'Type a name to create a collection, tag, or smart collection.'
+    ? 'Type a name to create a collection or smart collection.'
     : 'No results.',
 )
 

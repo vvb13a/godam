@@ -14,8 +14,6 @@ import type {
   SmartCollection,
   SmartCollectionFilter,
   Stats,
-  Tag,
-  TagGroup,
   UploadLimits,
   User,
 } from '../types'
@@ -188,9 +186,7 @@ export function getStats(): Promise<Stats> {
 
 export interface AssetListParams {
   collectionIds?: string[]
-  tagIds?: string[]
   uncategorized?: boolean
-  untagged?: boolean
   presetId?: string
   presetExclude?: boolean
   search?: string
@@ -456,9 +452,7 @@ export function listAssets(params: AssetListParams): Promise<AssetPage> {
   if (params.collectionIds?.length) {
     query.set('collection_ids', params.collectionIds.join(','))
   }
-  if (params.tagIds?.length) query.set('tag_ids', params.tagIds.join(','))
   if (params.uncategorized) query.set('uncategorized', 'true')
-  if (params.untagged) query.set('untagged', 'true')
   if (params.presetId) query.set('preset_id', params.presetId)
   if (params.presetExclude) query.set('preset_exclude', 'true')
   if (params.search) query.set('search', params.search)
@@ -547,7 +541,6 @@ export interface PresetInput {
   parameters: PresetParameters
   library_wide: boolean
   collection_ids: string[]
-  tag_ids: string[]
 }
 
 export function createPreset(input: PresetInput): Promise<Preset> {
@@ -870,22 +863,7 @@ export function replaceAssetContent(
   )
 }
 
-// ---- Asset tags & collections ----
-
-export function addTag(assetId: string, tagId: string): Promise<Asset> {
-  return sendJSON<Asset>(
-    `/api/assets/${encodeURIComponent(assetId)}/tags`,
-    'POST',
-    { tag_id: tagId },
-  )
-}
-
-export function removeTag(assetId: string, tagId: string): Promise<Asset> {
-  return requestJSON<Asset>(
-    `/api/assets/${encodeURIComponent(assetId)}/tags/${encodeURIComponent(tagId)}`,
-    { method: 'DELETE' },
-  )
-}
+// ---- Asset collections ----
 
 export function addToCollection(
   assetId: string,
@@ -935,86 +913,6 @@ export function addAssetsToCollection(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ collection_id: collectionId, asset_ids: assetIds }),
-  })
-}
-
-// applyAssetsTags adds or replaces tags across many assets in one request.
-// "add" merges tagIds into each asset; "replace" makes them the exact tag set.
-export function applyAssetsTags(
-  assetIds: string[],
-  tagIds: string[],
-  mode: 'add' | 'replace',
-): Promise<void> {
-  return requestVoid('/api/assets/tags', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ asset_ids: assetIds, tag_ids: tagIds, mode }),
-  })
-}
-
-// ---- Tags ----
-
-export function listTags(): Promise<Tag[]> {
-  return getJSON<Tag[]>('/api/tags')
-}
-
-export function createTag(name: string): Promise<Tag> {
-  return sendJSON<Tag>('/api/tags', 'POST', { name })
-}
-
-export function updateTag(
-  id: string,
-  name: string,
-  groupId: string | null,
-  starred: boolean,
-  description: string,
-): Promise<Tag> {
-  return sendJSON<Tag>(`/api/tags/${encodeURIComponent(id)}`, 'PUT', {
-    name,
-    description,
-    group_id: groupId,
-    starred,
-  })
-}
-
-export function deleteTag(id: string): Promise<void> {
-  return requestVoid(`/api/tags/${encodeURIComponent(id)}`, { method: 'DELETE' })
-}
-
-// ---- Tag groups ----
-
-export function listTagGroups(): Promise<TagGroup[]> {
-  return getJSON<TagGroup[]>('/api/tag-groups')
-}
-
-export function createTagGroup(
-  name: string,
-  description: string,
-  color: string,
-): Promise<TagGroup> {
-  return sendJSON<TagGroup>('/api/tag-groups', 'POST', {
-    name,
-    description,
-    color,
-  })
-}
-
-export function updateTagGroup(
-  id: string,
-  name: string,
-  description: string,
-  color: string,
-): Promise<TagGroup> {
-  return sendJSON<TagGroup>(
-    `/api/tag-groups/${encodeURIComponent(id)}`,
-    'PUT',
-    { name, description, color },
-  )
-}
-
-export function deleteTagGroup(id: string): Promise<void> {
-  return requestVoid(`/api/tag-groups/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
   })
 }
 
