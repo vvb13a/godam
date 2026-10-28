@@ -25,6 +25,7 @@ import {
   Search,
   SlidersH,
   Times,
+  Upload,
 } from '@primeicons/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as api from '../api/client'
@@ -36,6 +37,7 @@ import { attributeCatalog, loadAttributeCatalog } from '../lib/attributeCatalog'
 import { effectiveAttributeSort, sortAttributeValues } from '../lib/attributeSort'
 import { notifyAttributesChanged } from '../lib/attributesDialog'
 import { notifyConversionCacheChanged } from '../lib/conversionCache'
+import { openUpload } from '../lib/upload'
 import {
   filterStateMatches,
   filterState,
@@ -1844,13 +1846,47 @@ onBeforeUnmount(() => {
                   class="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-brand-600 dark:border-slate-700 dark:border-t-brand-400"
                 ></span>
               </div>
-              <p v-else-if="!assets.length" class="text-sm text-slate-400">
-                {{
-                  hasActiveFilters
-                    ? 'No assets match the current filters.'
-                    : 'No assets yet.'
-                }}
-              </p>
+              <div
+                v-else-if="!assets.length"
+                class="flex min-h-[60vh] items-center justify-center p-6"
+              >
+                <div
+                  class="w-full max-w-md rounded-2xl border-2 border-dotted border-slate-300 bg-slate-50/60 px-6 py-10 text-center dark:border-slate-700 dark:bg-slate-900/40"
+                >
+                  <div
+                    class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm dark:bg-slate-800 dark:text-slate-500"
+                  >
+                    <Images :size="22" />
+                  </div>
+                  <p class="text-base font-semibold text-slate-700 dark:text-slate-200">
+                    {{
+                      hasActiveFilters
+                        ? 'No assets match these filters'
+                        : 'No assets yet'
+                    }}
+                  </p>
+                  <p class="mx-auto mt-1.5 max-w-sm text-sm text-slate-400">
+                    {{
+                      hasActiveFilters
+                        ? 'Try adjusting or clearing your filters to see more assets.'
+                        : 'Upload files to start building your library.'
+                    }}
+                  </p>
+                  <template v-if="hasCapability('assets:upload')">
+                    <button
+                      type="button"
+                      class="mt-5 inline-flex items-center gap-2 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-700"
+                      @click="openUpload()"
+                    >
+                      <Upload :size="16" />
+                      Upload assets
+                    </button>
+                    <p class="mt-3 text-xs text-slate-400">
+                      You can also drag and drop files anywhere on this page.
+                    </p>
+                  </template>
+                </div>
+              </div>
           <div
             v-else-if="shape === 'native'"
             class="grid"

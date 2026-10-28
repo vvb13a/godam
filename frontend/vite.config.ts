@@ -35,6 +35,13 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
+      // Vite also serves app modules under /src/, so only proxy /src/{uuid}
+      // asset-delivery requests and leave /src/main.ts etc. to Vite.
+      '^/src/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?:\\?|$)':
+        {
+          target: 'http://localhost:8080',
+          changeOrigin: true,
+        },
       '/convert': {
         target: 'http://localhost:8080',
         changeOrigin: true,

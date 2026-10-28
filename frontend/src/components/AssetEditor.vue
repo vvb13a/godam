@@ -9,7 +9,7 @@ import {
   darkImageEditorTheme,
   lightImageEditorTheme,
 } from '../lib/imageEditorTheme'
-import { currentLibrary } from '../lib/library'
+import { currentLibrary, library } from '../lib/library'
 import { theme as appTheme } from '../lib/theme'
 import type { Asset } from '../types'
 import AudioPlayer from './AudioPlayer.vue'
@@ -90,6 +90,31 @@ function contentUrl(): string {
   return api.cacheBust(api.assetContentUrl(props.asset.id))
 }
 
+// Image assets power both the watermark picker and Filerobot's image gallery.
+// Cache the full list until the library version changes so opening or stepping
+// through image editors does not refetch the whole library each time.
+let imageAssetsCache: { version: number; items: Asset[] } | null = null
+let imageAssetsPromise: Promise<Asset[]> | null = null
+
+function loadImageAssets(): Promise<Asset[]> {
+  const version = library.version
+  if (imageAssetsCache?.version === version) {
+    return Promise.resolve(imageAssetsCache.items)
+  }
+  if (imageAssetsPromise) return imageAssetsPromise
+  imageAssetsPromise = api
+    .listAllAssets({ types: ['image'] })
+    .then((items) => {
+      imageAssetsCache = { version, items }
+      return items
+    })
+    .catch(() => [])
+    .finally(() => {
+      imageAssetsPromise = null
+    })
+  return imageAssetsPromise
+}
+
 // The library's default watermark asset, shown in the watermark gallery so it
 // can be reused with one click.
 function watermarkGallery(): { url: string; previewUrl: string }[] {
@@ -107,7 +132,7 @@ async function openWatermarkPicker(
   watermarkPickerVisible.value = true
   watermarkLoading.value = true
   try {
-    const all = await api.listAllAssets({ types: ['image'] })
+    const all = await loadImageAssets()
     watermarkAssets.value = all.filter((a) => a.mime_type.startsWith('image/'))
   } catch {
     watermarkAssets.value = []
@@ -127,7 +152,7 @@ async function libraryImageGallery(): Promise<
   { originalUrl: string; previewUrl: string }[]
 > {
   try {
-    const all = await api.listAllAssets({ types: ['image'] })
+    const all = await loadImageAssets()
     return all
       .filter(
         (a) => a.mime_type.startsWith('image/') && a.id !== props.asset.id,
