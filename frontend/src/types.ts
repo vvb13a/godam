@@ -122,19 +122,36 @@ export interface Instance {
 
 export type Library = Instance
 
-export interface SmartCollectionFilter {
-  type?: string
-  sort?: string
+export interface ViewFilter {
+  types: string[]
+  colors: string[]
+  mimeTypes: string[]
+  search: string
+  sort: string
+  attributes: Record<string, string[]>
+  minSize: number | null
+  maxSize: number | null
+  minDuration: number | null
+  maxDuration: number | null
+  minPages: number | null
+  maxPages: number | null
+  minWidth: number | null
+  maxWidth: number | null
+  minHeight: number | null
+  maxHeight: number | null
+  addedAfter: string | null
+  addedBefore: string | null
+  modifiedAfter: string | null
+  modifiedBefore: string | null
 }
 
-export interface SmartCollection {
+export interface View {
   id: string
   name: string
   description: string
   color: string
   sort: number
-  filter: SmartCollectionFilter
-  asset_count: number
+  filter: ViewFilter
   created_at: string
   updated_at: string
 }

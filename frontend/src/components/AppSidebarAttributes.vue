@@ -70,7 +70,6 @@ import {
 import { currentLibrary, library, refreshLibrary } from '../lib/library'
 import { libraryColorHex } from '../lib/libraryColors'
 import { panels, toggleLeftPanel } from '../lib/panels'
-import { clearSmartSelection } from '../lib/smartSelection'
 import { openUpload } from '../lib/upload'
 import type {
   AttributeFacet,
@@ -80,6 +79,7 @@ import type {
 } from '../types'
 import AttributeTree from './AttributeTree.vue'
 import PillBadge from './PillBadge.vue'
+import Views from './Views.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -397,13 +397,11 @@ const selectedTypes = computed({
   get: () => filterState.types,
   set: (values: string[]) => {
     if (typeLocked.value) return
-    clearSmartSelection()
-    filterState.types = values
+      filterState.types = values
   },
 })
 
 function setAttributeValues(key: string, values: string[] | null): void {
-  clearSmartSelection()
   if (values?.length) filterState.attributes[key] = values
   else delete filterState.attributes[key]
 }
@@ -465,8 +463,7 @@ function numberFilter(key: NumberFilterKey) {
   return computed<number | null>({
     get: () => filterState[key],
     set: (value) => {
-      clearSmartSelection()
-      filterState[key] = value
+          filterState[key] = value
     },
   })
 }
@@ -507,8 +504,7 @@ function dateTimeFilter(key: DateTimeFilterKey) {
   return computed<Date | null>({
     get: () => parseDateTime(filterState[key]),
     set: (value) => {
-      clearSmartSelection()
-      filterState[key] = value ? value.toISOString().slice(0, 16) : null
+          filterState[key] = value ? value.toISOString().slice(0, 16) : null
     },
   })
 }
@@ -935,6 +931,8 @@ void loadAttributeTrees()
         </div>
 
         <div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
+          <Views />
+
           <section v-if="lockedGrants.length">
             <p
               class="mb-1.5 text-[10px] font-semibold tracking-wide text-slate-400 uppercase"

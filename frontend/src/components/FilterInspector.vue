@@ -2,14 +2,14 @@
 import Message from 'primevue/message'
 import { Filter } from '@primeicons/vue'
 import { computed, ref, watch } from 'vue'
-import * as api from '../api/client'
 import { formatDateTime, formatRelative, formatSize } from '../lib/format'
 import { LIBRARY_COLORS, libraryColorHex } from '../lib/libraryColors'
-import type { Asset, SmartCollection } from '../types'
+import { updateView } from '../lib/views'
+import type { Asset, View } from '../types'
 import AssetPreviewGrid from './AssetPreviewGrid.vue'
 
 const props = defineProps<{
-  smartCollection?: SmartCollection
+  view?: View
   assets: Asset[]
   size: number
   total?: number
@@ -35,21 +35,21 @@ const countLabel = computed(() => {
 // Exactly one subject is passed. Normalising to one shape keeps the template
 // free of branching on the subject type.
 const subject = computed(() => {
-  if (props.smartCollection) {
-    const smart = props.smartCollection
+  if (props.view) {
+    const view = props.view
     return {
-      kind: 'Smart collection',
-      id: smart.id,
-      name: smart.name,
-      description: smart.description ?? '',
-      color: libraryColorHex(smart.color),
-      createdAt: smart.created_at,
-      updatedAt: smart.updated_at,
+      kind: 'View',
+      id: view.id,
+      name: view.name,
+      description: view.description ?? '',
+      color: libraryColorHex(view.color),
+      createdAt: view.created_at,
+      updatedAt: view.updated_at,
       icon: Filter,
     }
   }
   return {
-    kind: 'Smart collection',
+    kind: 'View',
     id: '',
     name: '',
     description: '',
@@ -60,13 +60,13 @@ const subject = computed(() => {
   }
 })
 
-// Smart collections carry a user-editable colour.
-const canColor = computed(() => Boolean(props.smartCollection))
+// Views carry a user-editable colour.
+const canColor = computed(() => Boolean(props.view))
 
 const currentColor = computed(() => subject.value.color)
 
-// Reset the form when the subject changes (a different smart collection is
-// selected, or the stored values change after a save + library refresh).
+// Reset the form when the subject changes (a different view is selected, or
+// the stored values change after an edit).
 watch(
   () => `${subject.value.id}\u0000${subject.value.name}\u0000${subject.value.description}`,
   () => {
@@ -100,13 +100,12 @@ async function persist(color?: string): Promise<void> {
   busy.value = true
   error.value = null
   try {
-    if (props.smartCollection) {
-      await api.updateSmartCollection(
-        props.smartCollection.id,
-        nextName,
-        color ?? props.smartCollection.color,
-        nextDescription,
-      )
+    if (props.view) {
+      updateView(props.view.id, {
+        name: nextName,
+        description: nextDescription,
+        color: color ?? props.view.color,
+      })
     }
     emit('changed')
   } catch (e) {

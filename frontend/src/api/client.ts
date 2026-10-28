@@ -10,8 +10,6 @@ import type {
   LibraryBackupStatus,
   Preset,
   PresetParameters,
-  SmartCollection,
-  SmartCollectionFilter,
   Stats,
   UploadLimits,
   User,
@@ -848,53 +846,4 @@ export function replaceAssetContent(
     `/api/assets/${encodeURIComponent(assetId)}/content`,
     { method: 'PUT', body: form },
   )
-}
-
-// ---- Smart collections ----
-
-export function listSmartCollections(): Promise<SmartCollection[]> {
-  return getJSON<SmartCollection[]>('/api/smart-collections')
-}
-
-export function createSmartCollection(
-  name: string,
-  color: string,
-  filter: SmartCollectionFilter,
-  description = '',
-): Promise<SmartCollection> {
-  return sendJSON<SmartCollection>('/api/smart-collections', 'POST', {
-    name,
-    description,
-    color,
-    filter,
-  })
-}
-
-export function updateSmartCollection(
-  id: string,
-  name: string,
-  color: string,
-  description: string,
-): Promise<SmartCollection> {
-  return sendJSON<SmartCollection>(
-    `/api/smart-collections/${encodeURIComponent(id)}`,
-    'PUT',
-    { name, description, color },
-  )
-}
-
-export function reorderSmartCollections(
-  items: { id: string; sort: number }[],
-): Promise<void> {
-  return requestVoid('/api/smart-collections/sort', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ items }),
-  })
-}
-
-export function deleteSmartCollection(id: string): Promise<void> {
-  return requestVoid(`/api/smart-collections/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  })
 }

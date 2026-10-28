@@ -6,7 +6,6 @@ import { useConfirm } from 'primevue/useconfirm'
 import { CloudUpload } from '@primeicons/vue'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterView } from 'vue-router'
-import AppSidebar from './components/AppSidebar.vue'
 import AppSidebarAttributes from './components/AppSidebarAttributes.vue'
 import AttributesDialog from './components/AttributesDialog.vue'
 import CommandPalette from './components/CommandPalette.vue'
@@ -19,7 +18,6 @@ import { auth } from './lib/auth'
 import { hasCapability } from './lib/capabilities'
 import { commandMenu } from './lib/command'
 import { editorDirty, setLeaveConfirm } from './lib/editorState'
-import { sidebarPrefs } from './lib/sidebar'
 import { embed, startEmbedBridge } from './lib/embed'
 import { initLibrary, library, resetLibrary } from './lib/library'
 import { applyUploadSettings, openUpload, upload } from './lib/upload'
@@ -228,8 +226,7 @@ onBeforeUnmount(() => {
 
     <template v-else>
       <div class="flex min-h-0 min-w-0 flex-1 py-4">
-        <AppSidebarAttributes v-if="sidebarPrefs.mode === 'attributes'" />
-        <AppSidebar v-else />
+        <AppSidebarAttributes />
         <main class="min-h-0 flex-1 overflow-hidden">
           <RouterView />
         </main>

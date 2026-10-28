@@ -15,16 +15,15 @@ import (
 
 // Deps carries the services the HTTP handlers operate on.
 type Deps struct {
-	Assets           *service.AssetService
-	Conversions      *service.ConversionService
-	Presets          *service.PresetService
-	AssetsBaseURL    string
-	SmartCollections *service.SmartCollectionService
-	Instance         *service.InstanceService
-	Stats            *service.StatsService
-	Backups          *service.BackupService
-	System           *service.SystemService
-	ManagementToken  string
+	Assets          *service.AssetService
+	Conversions     *service.ConversionService
+	Presets         *service.PresetService
+	AssetsBaseURL   string
+	Instance        *service.InstanceService
+	Stats           *service.StatsService
+	Backups         *service.BackupService
+	System          *service.SystemService
+	ManagementToken string
 
 	// JWTSecret enables scoped embed tokens. Issuer and Audience are optional
 	// and enforced when set.
@@ -142,13 +141,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/assets/{id}/content", s.withCapability(domain.CapabilityAssetsUpdate, s.handleReplaceAssetContent))
 	s.mux.HandleFunc("GET /api/assets/{id}/preview", s.withCapability(domain.CapabilityAssetsRead, s.handleAssetPreview))
 	s.mux.HandleFunc("POST /api/assets/{id}/preview", s.withCapability(domain.CapabilityAssetsUpdate, s.handleRegeneratePreview))
-
-	s.mux.HandleFunc("GET /api/smart-collections", s.withCapability(domain.CapabilityAssetsRead, s.handleListSmartCollections))
-	s.mux.HandleFunc("POST /api/smart-collections", s.withCapability(domain.CapabilityLibraryUpdate, s.handleCreateSmartCollection))
-	s.mux.HandleFunc("PUT /api/smart-collections/sort", s.withCapability(domain.CapabilityLibraryUpdate, s.handleReorderSmartCollections))
-	s.mux.HandleFunc("PUT /api/smart-collections/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleUpdateSmartCollection))
-	s.mux.HandleFunc("DELETE /api/smart-collections/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleDeleteSmartCollection))
-
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -294,13 +286,4 @@ func assetVisibleToActor(asset *domain.Asset, actor *domain.Actor) bool {
 		}
 	}
 	return true
-}
-
-func (s *Server) ownedSmartCollection(w http.ResponseWriter, r *http.Request, id string) (*domain.SmartCollection, bool) {
-	collection, err := s.deps.SmartCollections.GetByID(r.Context(), id)
-	if err != nil {
-		writeError(w, err)
-		return nil, false
-	}
-	return collection, true
 }

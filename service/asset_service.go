@@ -96,6 +96,19 @@ const (
 	minColorFilterPct    = 10.0
 )
 
+// documentMimes mirrors the frontend's document media category so listing
+// filters count the same assets the view shows.
+var documentMimes = []string{
+	"application/pdf",
+	"application/msword",
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	"application/vnd.ms-excel",
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	"application/vnd.ms-powerpoint",
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	"application/rtf",
+}
+
 type assetSortSpec struct {
 	key       string
 	column    string

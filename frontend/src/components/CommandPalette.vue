@@ -13,7 +13,6 @@ import {
   ListCheck,
   Palette,
   Search,
-  SlidersH,
   Times,
   Trash,
   Upload,
@@ -30,23 +29,27 @@ import { openBackupSettings } from '../lib/backupSettings'
 import { notifyConversionCacheChanged } from '../lib/conversionCache'
 import { hasCapability } from '../lib/capabilities'
 import { commandMenu } from '../lib/command'
-import { clearAllFilters, filterState } from '../lib/filters'
-import { library, loadStats, notifyLibraryChanged } from '../lib/library'
+import {
+  applyFilterState,
+  clearAllFilters,
+  filterState,
+  hasSavableView,
+  snapshotFilterState,
+} from '../lib/filters'
+import { loadStats, notifyLibraryChanged } from '../lib/library'
 import { libraryColorHex } from '../lib/libraryColors'
 import { openPresetsDialog } from '../lib/presetsDialog'
-import { SIDEBAR_TOGGLES, sidebarPrefs } from '../lib/sidebar'
-import { clearSmartSelection, selectSmartCollection } from '../lib/smartSelection'
 import { THEME_OPTIONS, setThemeMode } from '../lib/theme'
 import { openUpload } from '../lib/upload'
 import { openUploadSettings } from '../lib/uploadSettings'
 import { ATTRIBUTE_UNASSIGNED } from '../types'
-import type { SmartCollectionFilter } from '../types'
+import { createView, views } from '../lib/views'
 import Kbd from './Kbd.vue'
 
 type Scope =
   | 'all'
   | 'commands'
-  | 'smart'
+  | 'views'
   | 'attributes'
   | 'create'
 
@@ -73,7 +76,7 @@ void loadAttributeCatalog()
 const scopes: { value: Scope; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'commands', label: 'Commands' },
-  { value: 'smart', label: 'Smart' },
+  { value: 'views', label: 'Views' },
   { value: 'attributes', label: 'Attributes' },
   { value: 'create', label: 'Create' },
 ]
@@ -102,7 +105,6 @@ function onShow(): void {
 
 function run(to: RouteLocationRaw): void {
   commandMenu.visible = false
-  clearSmartSelection()
   void router.push(to)
 }
 
@@ -110,35 +112,11 @@ function close(): void {
   commandMenu.visible = false
 }
 
-function navigateFilter(filter: SmartCollectionFilter): void {
-  clearAllFilters()
-  if (filter.type) filterState.types = [filter.type]
-  filterState.sort = filter.sort || 'date-desc'
-  void router.push({ name: 'library' })
-}
+const hasFilters = computed(() => hasSavableView())
 
-const hasFilters = computed(() => filterState.types.length > 0)
-
-function currentFilter(): SmartCollectionFilter {
-  const filter: SmartCollectionFilter = {}
-  if (filterState.types.length === 1) filter.type = filterState.types[0]
-  if (filterState.sort !== 'date-desc') filter.sort = filterState.sort
-  return filter
-}
-
-async function createSmartCollection(name: string): Promise<void> {
+function createNewView(name: string): void {
   close()
-  try {
-    await api.createSmartCollection(name, 'f97316', currentFilter())
-    notifyLibraryChanged()
-  } catch (e) {
-    toast.add({
-      severity: 'error',
-      summary: 'Could not create smart collection',
-      detail: e instanceof Error ? e.message : String(e),
-      life: 4000,
-    })
-  }
+  createView(name, snapshotFilterState())
 }
 
 async function purgeCache(): Promise<void> {
@@ -324,15 +302,6 @@ const groups = computed<PaletteGroup[]>(() => {
     })
   }
   commands.push(
-    ...SIDEBAR_TOGGLES.map((toggle) => ({
-      label: `${sidebarPrefs[toggle.key] ? 'Hide' : 'Show'} ${toggle.label}`,
-      icon: SlidersH,
-      keywords: ['sidebar', 'panel', 'toggle', toggle.label],
-      command: () => {
-        close()
-        sidebarPrefs[toggle.key] = !sidebarPrefs[toggle.key]
-      },
-    })),
     ...THEME_OPTIONS.map((option) => ({
       label: `Theme: ${option.label}`,
       icon: Palette,
@@ -369,19 +338,19 @@ const groups = computed<PaletteGroup[]>(() => {
     { label: 'Commands', scope: 'commands', items: commands },
   ]
 
-  if (library.smartCollections.length) {
+  if (views.items.length) {
     result.push({
-      label: 'Smart Collections',
-      scope: 'smart',
-      items: library.smartCollections.map((smart) => ({
-        label: smart.name,
+      label: 'Views',
+      scope: 'views',
+      items: views.items.map((view) => ({
+        label: view.name,
         icon: Filter,
-        keywords: ['smart', 'filter'],
-        color: libraryColorHex(smart.color),
+        keywords: ['view', 'filter'],
+        color: libraryColorHex(view.color),
         command: () => {
           close()
-          navigateFilter(smart.filter)
-          selectSmartCollection(smart.id, smart.filter)
+          applyFilterState(view.filter)
+          run({ name: 'library' })
         },
       })),
     })
@@ -420,10 +389,10 @@ const model = computed<PaletteGroup[]>(() => {
     const items: PaletteItem[] = []
     if (hasFilters.value) {
       items.push({
-        label: `Create smart collection "${value}"`,
+        label: `Create view "${value}"`,
         icon: Filter,
-        keywords: [value, 'create', 'new', 'smart', 'filter'],
-        command: () => void createSmartCollection(value),
+        keywords: [value, 'create', 'new', 'view', 'filter'],
+        command: () => createNewView(value),
       })
     }
     return [{ label: 'Create', scope: 'create', items }]
@@ -434,7 +403,7 @@ const model = computed<PaletteGroup[]>(() => {
 
 const emptyMessage = computed(() =>
   scope.value === 'create'
-    ? 'Type a name to create a smart collection.'
+    ? 'Type a name to create a view.'
     : 'No results.',
 )
 

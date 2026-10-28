@@ -82,10 +82,6 @@ async function removeCover(): Promise<void> {
               {{ stats ? formatSize(stats.conversion_bytes) : '—' }}
             </dd>
           </div>
-          <div class="flex justify-between gap-4">
-            <dt class="text-slate-400">Smart collections</dt>
-            <dd class="text-right">{{ library.smartCollections.length }}</dd>
-          </div>
         </dl>
       </section>
 

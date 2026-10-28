@@ -1,9 +1,8 @@
 # Attribute & Microservice API TODO
 
 Goal: make attributes the host-owned organization model, remove DAM-owned
-taxonomy (server-stored smart collections), and close the remaining gaps so
-godam exposes a complete DAM microservice API while keeping the embedded
-picker/library UI.
+taxonomy, and close the remaining gaps so godam exposes a complete DAM
+microservice API while keeping the embedded picker/library UI.
 
 The rule: godam stores values, indexes them, filters them, and enforces
 `active` / `locked` / `hidden`. The host owns keys, values, vocabulary, labels,
@@ -99,8 +98,8 @@ per-user presentation state stays client-side or with the host.
       counts only account for enforced scopes and parent path).
 - [ ] Lazy loading/performance for large attribute trees.
 - [ ] Drag assets from the grid onto attribute keys/values in the sidebar.
-- [ ] Quicklinks/starring/pinning for attribute keys/values.
-- [ ] Shared saved views (server-stored smart collections have no equivalent yet).
+- [ ] Starring/pinning for attribute keys/values.
+- [ ] Shared/cross-device views (views are per-browser localStorage snapshots).
 - [ ] Command palette filter/navigation by attribute values (currently bulk
       assignment only).
 - [ ] Client-side preference namespacing by instance/token identity.
@@ -119,8 +118,8 @@ per-user presentation state stays client-side or with the host.
       and `Asset.Tags`.
 - [x] Remove collections, joins, services, routes, UI, JWT filter grants, and
       `Asset.Collections`.
-- [ ] Move smart collections to client-side saved attribute views.
-- [ ] Update quicklinks to pin attribute keys/values/views.
+- [x] Move saved views to client-side localStorage filter snapshots.
+- [x] Remove quicklinks.
 - [x] Make presets library-wide now that collection scoping is gone.
 - [x] Remove taxonomy stats from `/api/stats`.
 - [x] Remove `tag`, `untagged`, `collection`, and `uncategorized` from
@@ -161,7 +160,7 @@ per-user presentation state stays client-side or with the host.
 - Host-definition precedence and metadata tenancy model.
 - Whether unassigned can be assigned by APIs or remains filter-only.
 - Stable value identity/merge strategy.
-- Shared saved views and quicklink ownership.
+- Shared/cross-device view ownership.
 - Whether presets need attribute scoping now that they are library-wide.
 - Default renderer and whether per-user choice can override a host-locked render.
 - Direct/trusted upload stamping contract.
@@ -170,10 +169,9 @@ per-user presentation state stays client-side or with the host.
 
 1. Typed formats and any required query operators.
 2. Host-supplied definitions, precedence, and tenancy scoping.
-3. Tree/UX refinements plus drag-assignment and quicklinks/saved views.
+3. Tree/UX refinements plus drag-assignment and saved views.
 4. Preset, stats, and export integration.
-5. Migrate smart collections into client-side saved views, then remove server
-   taxonomy.
+5. Remove the remaining server taxonomy, if any, after client-side views.
 6. Limits, audit/versioning, frontend tests, and deprecation cleanup.
 
 ## References

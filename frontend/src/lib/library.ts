@@ -1,12 +1,6 @@
 import { reactive } from 'vue'
 import * as api from '../api/client'
-import type {
-  Instance,
-  Preset,
-  SmartCollection,
-  Stats,
-  UploadLimits,
-} from '../types'
+import type { Instance, Preset, Stats, UploadLimits } from '../types'
 
 // library is the single instance this godam process serves. The name is kept
 // for the UI modules; there is no library list or active-library selector.
@@ -21,7 +15,6 @@ export const library = reactive({
   upload_attribute_keys: true,
   upload_attribute_values: true,
   loaded: false,
-  smartCollections: [] as SmartCollection[],
   presets: [] as Preset[],
   stats: null as Stats | null,
   version: 0,
@@ -45,10 +38,6 @@ export async function loadInstance(markLoaded = true): Promise<void> {
   if (markLoaded) library.loaded = true
 }
 
-export async function loadSmartCollections(): Promise<void> {
-  library.smartCollections = await api.listSmartCollections()
-}
-
 export async function loadPresets(): Promise<void> {
   library.presets = await api.listPresets()
 }
@@ -58,7 +47,6 @@ export async function loadStats(): Promise<void> {
 }
 
 export function clearScopedData(): void {
-  library.smartCollections = []
   library.presets = []
   library.stats = null
 }
@@ -76,11 +64,7 @@ export function resetLibrary(): void {
 }
 
 async function loadScopedData(): Promise<void> {
-  await Promise.all([
-    loadSmartCollections(),
-    loadPresets(),
-    loadStats(),
-  ])
+  await Promise.all([loadPresets(), loadStats()])
 }
 
 export async function refreshLibrary(): Promise<void> {

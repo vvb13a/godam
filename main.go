@@ -23,15 +23,14 @@ const defaultAddr = ":8080"
 var version = "dev"
 
 var (
-	appConfig              *service.Config
-	assetService           *service.AssetService
-	conversionService      *service.ConversionService
-	presetService          *service.PresetService
-	smartCollectionService *service.SmartCollectionService
-	instanceService        *service.InstanceService
-	statsService           *service.StatsService
-	backupService          *service.BackupService
-	systemService          *service.SystemService
+	appConfig         *service.Config
+	assetService      *service.AssetService
+	conversionService *service.ConversionService
+	presetService     *service.PresetService
+	instanceService   *service.InstanceService
+	statsService      *service.StatsService
+	backupService     *service.BackupService
+	systemService     *service.SystemService
 )
 
 func main() {
@@ -42,19 +41,18 @@ func main() {
 	initDependencies()
 	go assetService.BackfillColors(context.Background())
 	runServer(addr, api.Deps{
-		Assets:           assetService,
-		Conversions:      conversionService,
-		Presets:          presetService,
-		AssetsBaseURL:    appConfig.AssetsBaseURL(),
-		SmartCollections: smartCollectionService,
-		Instance:         instanceService,
-		Stats:            statsService,
-		Backups:          backupService,
-		System:           systemService,
-		ManagementToken:  os.Getenv("GODAM_MANAGEMENT_TOKEN"),
-		JWTSecret:        os.Getenv("GODAM_JWT_SECRET"),
-		JWTIssuer:        os.Getenv("GODAM_JWT_ISSUER"),
-		JWTAudience:      os.Getenv("GODAM_JWT_AUDIENCE"),
+		Assets:          assetService,
+		Conversions:     conversionService,
+		Presets:         presetService,
+		AssetsBaseURL:   appConfig.AssetsBaseURL(),
+		Instance:        instanceService,
+		Stats:           statsService,
+		Backups:         backupService,
+		System:          systemService,
+		ManagementToken: os.Getenv("GODAM_MANAGEMENT_TOKEN"),
+		JWTSecret:       os.Getenv("GODAM_JWT_SECRET"),
+		JWTIssuer:       os.Getenv("GODAM_JWT_ISSUER"),
+		JWTAudience:     os.Getenv("GODAM_JWT_AUDIENCE"),
 	})
 }
 
@@ -133,7 +131,6 @@ func initDependencies() {
 	}
 
 	// 3. Application services (gorm persistence, no repository adapters).
-	smartCollectionService = service.NewSmartCollectionService(db)
 	presetService = service.NewPresetService(db)
 	statsService = service.NewStatsService(db, conversionStore)
 	secretBox, err := service.NewSecretBox(filepath.Join(filepath.Dir(dbPath), "backup.key"))

@@ -1,7 +1,6 @@
 import { reactive } from 'vue'
 import { embed } from './embed'
-import { clearSmartSelection } from './smartSelection'
-import type { EmbedScope } from '../types'
+import type { EmbedScope, ViewFilter } from '../types'
 
 export const filterState = reactive({
   types: [] as string[],
@@ -103,7 +102,6 @@ function clearFacetFilters(): void {
 }
 
 export function clearAllFilters(): void {
-  clearSmartSelection()
   clearFacetFilters()
 }
 
@@ -114,7 +112,6 @@ export function isAttributeLocked(key: string): boolean {
 
 export function toggleAttribute(key: string, value: string): void {
   if (isAttributeLocked(key)) return
-  clearSmartSelection()
   const current = filterState.attributes[key] ?? []
   const next = current.includes(value)
     ? current.filter((item) => item !== value)
@@ -125,7 +122,6 @@ export function toggleAttribute(key: string, value: string): void {
 
 export function toggleType(value: string): void {
   if (typeLocked()) return
-  clearSmartSelection()
   const current = filterState.types
   const next = current.includes(value)
     ? current.filter((item) => item !== value)
@@ -134,7 +130,6 @@ export function toggleType(value: string): void {
 }
 
 export function toggleColor(value: string): void {
-  clearSmartSelection()
   const current = filterState.colors
   const next = current.includes(value)
     ? current.filter((item) => item !== value)
@@ -144,19 +139,16 @@ export function toggleColor(value: string): void {
 
 export function clearTypeValue(value: string): void {
   if (typeLocked()) return
-  clearSmartSelection()
   filterState.types = filterState.types.filter((item) => item !== value)
 }
 
 export function clearAttributeFilter(key: string): void {
   if (isAttributeLocked(key)) return
-  clearSmartSelection()
   delete filterState.attributes[key]
 }
 
 export function clearAttributeValue(key: string, value: string): void {
   if (isAttributeLocked(key)) return
-  clearSmartSelection()
   const next = (filterState.attributes[key] ?? []).filter(
     (item) => item !== value,
   )
@@ -233,4 +225,102 @@ export function hasActiveFilterState(): boolean {
     filterState.modifiedAfter !== null ||
     filterState.modifiedBefore !== null
   )
+}
+
+// snapshotFilterState returns a detached copy of every filter value so a view
+// can store the complete state at the moment it was saved.
+export function snapshotFilterState(): ViewFilter {
+  return {
+    types: [...filterState.types],
+    colors: [...filterState.colors],
+    mimeTypes: [...filterState.mimeTypes],
+    search: filterState.search,
+    sort: filterState.sort,
+    attributes: Object.fromEntries(
+      Object.entries(filterState.attributes).map(([key, values]) => [
+        key,
+        [...values],
+      ]),
+    ),
+    minSize: filterState.minSize,
+    maxSize: filterState.maxSize,
+    minDuration: filterState.minDuration,
+    maxDuration: filterState.maxDuration,
+    minPages: filterState.minPages,
+    maxPages: filterState.maxPages,
+    minWidth: filterState.minWidth,
+    maxWidth: filterState.maxWidth,
+    minHeight: filterState.minHeight,
+    maxHeight: filterState.maxHeight,
+    addedAfter: filterState.addedAfter,
+    addedBefore: filterState.addedBefore,
+    modifiedAfter: filterState.modifiedAfter,
+    modifiedBefore: filterState.modifiedBefore,
+  }
+}
+
+// applyFilterState replaces the entire current filter with a saved snapshot.
+// Locked token filters are still enforced over the snapshot.
+export function applyFilterState(snapshot: ViewFilter): void {
+  filterState.types = typeLocked()
+    ? filterValues('type')
+    : [...snapshot.types]
+  filterState.mimeTypes = mimeLocked()
+    ? filterValues('mime')
+    : [...snapshot.mimeTypes]
+  filterState.colors = [...snapshot.colors]
+  filterState.search = searchLocked()
+    ? (filterValues('search')[0] ?? '')
+    : snapshot.search
+  if (!((embed.active && embed.sortLocked) || isFilterLocked('sort'))) {
+    filterState.sort = snapshot.sort
+  }
+  filterState.attributes = Object.fromEntries(
+    Object.entries(snapshot.attributes).map(([key, values]) => [
+      key,
+      [...values],
+    ]),
+  )
+  Object.assign(filterState.attributes, enforcedAttributes())
+  filterState.minSize = snapshot.minSize
+  filterState.maxSize = snapshot.maxSize
+  filterState.minDuration = snapshot.minDuration
+  filterState.maxDuration = snapshot.maxDuration
+  filterState.minPages = snapshot.minPages
+  filterState.maxPages = snapshot.maxPages
+  filterState.minWidth = snapshot.minWidth
+  filterState.maxWidth = snapshot.maxWidth
+  filterState.minHeight = snapshot.minHeight
+  filterState.maxHeight = snapshot.maxHeight
+  filterState.addedAfter = snapshot.addedAfter
+  filterState.addedBefore = snapshot.addedBefore
+  filterState.modifiedAfter = snapshot.modifiedAfter
+  filterState.modifiedBefore = snapshot.modifiedBefore
+}
+
+// filterStateMatches reports whether the current filter exactly matches the
+// saved snapshot, ignoring the order of list values.
+export function filterStateMatches(snapshot: ViewFilter): boolean {
+  const normalize = (filter: ViewFilter): string => {
+    const attributes = Object.keys(filter.attributes)
+      .sort()
+      .reduce<Record<string, string[]>>((acc, key) => {
+        acc[key] = [...filter.attributes[key]].sort()
+        return acc
+      }, {})
+    return JSON.stringify({
+      ...filter,
+      types: [...filter.types].sort(),
+      colors: [...filter.colors].sort(),
+      mimeTypes: [...filter.mimeTypes].sort(),
+      attributes,
+    })
+  }
+  return normalize(snapshotFilterState()) === normalize(snapshot)
+}
+
+// hasSavableView reports whether the current state is worth saving as a view:
+// any filter is active, or the sort differs from the default.
+export function hasSavableView(): boolean {
+  return hasActiveFilterState() || filterState.sort !== 'date-desc'
 }
