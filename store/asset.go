@@ -7,8 +7,7 @@ import (
 )
 
 // Asset mirrors the "assets" table. It holds the storage location and the
-// metadata extracted at upload time. Collections are joined through the
-// asset_collections table and loaded with a Preload.
+// metadata extracted at upload time.
 type Asset struct {
 	ID             string    `gorm:"column:id;primaryKey;type:text"`
 	UploadedByName string    `gorm:"column:uploaded_by_name;type:text;not null;default:''"`
@@ -28,8 +27,6 @@ type Asset struct {
 	RawMetadata    string    `gorm:"column:raw_metadata;type:text"`
 	CreatedAt      time.Time `gorm:"column:created_at"`
 	UpdatedAt      time.Time `gorm:"column:updated_at"`
-
-	Collections []Collection `gorm:"many2many:asset_collections;"`
 
 	Colors []AssetColor `gorm:"foreignKey:AssetID"`
 
@@ -90,10 +87,6 @@ func AssetModel(a *domain.Asset) *Asset {
 }
 
 func (m *Asset) ToDomain() *domain.Asset {
-	collections := make([]domain.Collection, 0, len(m.Collections))
-	for i := range m.Collections {
-		collections = append(collections, *m.Collections[i].ToDomain())
-	}
 	colors := make([]domain.AssetColor, 0, len(m.Colors))
 	for i := range m.Colors {
 		colors = append(colors, m.Colors[i].ToDomain())
@@ -129,10 +122,9 @@ func (m *Asset) ToDomain() *domain.Asset {
 			PageCount:   m.PageCount,
 			RawJSON:     m.RawMetadata,
 		},
-		Attributes:  attributes,
-		Colors:      colors,
-		Collections: collections,
-		CreatedAt:   m.CreatedAt,
-		UpdatedAt:   m.UpdatedAt,
+		Attributes: attributes,
+		Colors:     colors,
+		CreatedAt:  m.CreatedAt,
+		UpdatedAt:  m.UpdatedAt,
 	}
 }

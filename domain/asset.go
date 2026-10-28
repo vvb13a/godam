@@ -22,7 +22,6 @@ type Asset struct {
 	Metadata       Metadata         `json:"metadata"`
 	Attributes     []AssetAttribute `json:"attributes,omitempty"`
 	Colors         []AssetColor     `json:"colors,omitempty"`
-	Collections    []Collection     `json:"collections,omitempty"`
 	CreatedAt      time.Time        `json:"created_at"`
 	UpdatedAt      time.Time        `json:"updated_at"`
 }
@@ -34,17 +33,12 @@ type AssetColor struct {
 	Percentage float64 `json:"percentage"`
 }
 
-// AssetFilter narrows an asset listing. List-valued filters (collections,
-// types, colors and MIME types) use OR within the list; different filters
-// combine with AND. Uncategorized includes assets with no collection in the
-// corresponding OR group. Search matches title, note and filename. Sort is a
-// frontend sort key; Cursor is the opaque keyset position.
+// AssetFilter narrows an asset listing. List-valued filters (types, colors and
+// MIME types) use OR within the list; different filters combine with AND.
+// Search matches title, note and filename. Sort is a frontend sort key; Cursor
+// is the opaque keyset position.
 
 type AssetFilter struct {
-	CollectionIDs  []string
-	PresetID       string
-	PresetExclude  bool
-	Uncategorized  bool
 	Search         string
 	Types          []string
 	Colors         []string

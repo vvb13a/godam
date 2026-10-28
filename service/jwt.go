@@ -314,9 +314,6 @@ func (s jwtScope) toDomain(username string) (domain.Scope, error) {
 			return domain.Scope{}, err
 		}
 		values := normalizeAttributeValues(filter.Values)
-		if name == "uncategorized" {
-			values = normalizeBoolFilterValues(values)
-		}
 		if name == "type" || name == "mime" {
 			values = normalizeMimeTypes(values)
 		}
@@ -457,18 +454,6 @@ func uploadFormatForMimeType(mimeType string) string {
 	return ""
 }
 
-func normalizeBoolFilterValues(values []string) []string {
-	if len(values) == 0 {
-		return []string{"true"}
-	}
-	for _, value := range values {
-		if strings.EqualFold(strings.TrimSpace(value), "true") {
-			return []string{"true"}
-		}
-	}
-	return nil
-}
-
 func hasWildcard(values []string) bool {
 	for _, value := range values {
 		if value == "*" || value == "*/*" {
@@ -480,8 +465,6 @@ func hasWildcard(values []string) bool {
 
 func normalizeFilterName(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "collection", "collections", "collection_id", "collection_ids":
-		return "collection"
 	case "type", "types":
 		return "type"
 	case "mime", "mimes", "mime_type", "mime_types":
@@ -490,8 +473,6 @@ func normalizeFilterName(value string) string {
 		return "search"
 	case "sort", "order", "sorting":
 		return "sort"
-	case "uncategorized":
-		return "uncategorized"
 	}
 	return ""
 }

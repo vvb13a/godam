@@ -19,7 +19,6 @@ type Deps struct {
 	Conversions      *service.ConversionService
 	Presets          *service.PresetService
 	AssetsBaseURL    string
-	Collections      *service.CollectionService
 	SmartCollections *service.SmartCollectionService
 	Instance         *service.InstanceService
 	Stats            *service.StatsService
@@ -132,7 +131,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/assets/uploads/{id}/chunks", s.withCapability(domain.CapabilityAssetsUpload, s.handleUploadChunk))
 	s.mux.HandleFunc("POST /api/assets/uploads/{id}/complete", s.withCapability(domain.CapabilityAssetsUpload, s.handleCompleteUpload))
 	s.mux.HandleFunc("DELETE /api/assets/uploads/{id}", s.withCapability(domain.CapabilityAssetsUpload, s.handleCancelUpload))
-	s.mux.HandleFunc("POST /api/assets/collections", s.withCapability(domain.CapabilityAssetsUpdate, s.handleAddAssetsToCollection))
 	s.mux.HandleFunc("POST /api/assets/attributes", s.withCapability(domain.CapabilityAttributesSelect, s.handleApplyAssetsAttributes))
 	s.mux.HandleFunc("GET /api/assets/zip", s.withCapability(domain.CapabilityAssetsRead, s.handleDownloadAssetsZip))
 	s.mux.HandleFunc("GET /api/assets/{id}", s.withCapability(domain.CapabilityAssetsRead, s.handleGetAsset))
@@ -144,14 +142,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/assets/{id}/content", s.withCapability(domain.CapabilityAssetsUpdate, s.handleReplaceAssetContent))
 	s.mux.HandleFunc("GET /api/assets/{id}/preview", s.withCapability(domain.CapabilityAssetsRead, s.handleAssetPreview))
 	s.mux.HandleFunc("POST /api/assets/{id}/preview", s.withCapability(domain.CapabilityAssetsUpdate, s.handleRegeneratePreview))
-	s.mux.HandleFunc("POST /api/assets/{id}/collections", s.withCapability(domain.CapabilityAssetsUpdate, s.handleAddToCollection))
-	s.mux.HandleFunc("DELETE /api/assets/{id}/collections/{collectionId}", s.withCapability(domain.CapabilityAssetsUpdate, s.handleRemoveFromCollection))
-
-	s.mux.HandleFunc("GET /api/collections", s.withCapability(domain.CapabilityAssetsRead, s.handleListCollections))
-	s.mux.HandleFunc("POST /api/collections", s.withCapability(domain.CapabilityLibraryUpdate, s.handleCreateCollection))
-	s.mux.HandleFunc("PUT /api/collections/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleUpdateCollection))
-	s.mux.HandleFunc("PUT /api/collections/{id}/move", s.withCapability(domain.CapabilityLibraryUpdate, s.handleMoveCollection))
-	s.mux.HandleFunc("DELETE /api/collections/{id}", s.withCapability(domain.CapabilityLibraryUpdate, s.handleDeleteCollection))
 
 	s.mux.HandleFunc("GET /api/smart-collections", s.withCapability(domain.CapabilityAssetsRead, s.handleListSmartCollections))
 	s.mux.HandleFunc("POST /api/smart-collections", s.withCapability(domain.CapabilityLibraryUpdate, s.handleCreateSmartCollection))
@@ -188,8 +178,6 @@ func writeError(w http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 	case errors.Is(err, service.ErrNotImage):
 		status = http.StatusUnsupportedMediaType
-	case errors.Is(err, service.ErrPresetNotAllowed):
-		status = http.StatusForbidden
 	case errors.Is(err, service.ErrConversionFailed):
 		status = http.StatusBadGateway
 	case errors.Is(err, storage.ErrDriverNotFound):
@@ -306,15 +294,6 @@ func assetVisibleToActor(asset *domain.Asset, actor *domain.Actor) bool {
 		}
 	}
 	return true
-}
-
-func (s *Server) ownedCollection(w http.ResponseWriter, r *http.Request, id string) (*domain.Collection, bool) {
-	collection, err := s.deps.Collections.GetByID(r.Context(), id)
-	if err != nil {
-		writeError(w, err)
-		return nil, false
-	}
-	return collection, true
 }
 
 func (s *Server) ownedSmartCollection(w http.ResponseWriter, r *http.Request, id string) (*domain.SmartCollection, bool) {

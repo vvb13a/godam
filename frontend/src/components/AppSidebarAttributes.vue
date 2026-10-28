@@ -59,7 +59,6 @@ import { embed } from '../lib/embed'
 import {
   clearAllFilters,
   clearAttributeValue,
-  clearCollectionFilter,
   clearTypeValue,
   filterState,
   hasActiveFilterState,
@@ -623,10 +622,6 @@ const sortFieldLabel = computed(
     'Last uploaded',
 )
 
-const uploadCollectionId = computed(() =>
-  filterState.collections.length === 1 ? filterState.collections[0] : null,
-)
-
 const searchInput = ref(filterState.search)
 let searchTimer: number | null = null
 
@@ -680,28 +675,6 @@ const chips = computed<Chip[]>(() => {
         clear: () => clearAttributeValue(key, value),
       })
     }
-  }
-  for (const id of filterState.collections) {
-    out.push({
-      key: `collection:${id}`,
-      label:
-        library.collections.find((item) => item.id === id)?.name ?? 'Collection',
-      locked:
-        (embed.active && embed.collectionLocked) ||
-        isFilterLocked('collection'),
-      clear: () => clearCollectionFilter(id),
-    })
-  }
-  if (filterState.uncategorized) {
-    out.push({
-      key: 'uncategorized',
-      label: 'Uncategorized',
-      locked: isFilterLocked('uncategorized'),
-      clear: () => {
-        if (isFilterLocked('uncategorized')) return
-        filterState.uncategorized = false
-      },
-    })
   }
   for (const value of filterState.types) {
     out.push({
@@ -1626,7 +1599,7 @@ void loadAttributeTrees()
               v-if="hasCapability('assets:upload')"
               type="button"
               class="inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-brand-700"
-              @click="openUpload([], uploadCollectionId)"
+              @click="openUpload()"
             >
               <Upload :size="15" />
               Upload

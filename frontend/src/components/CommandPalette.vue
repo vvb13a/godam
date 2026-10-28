@@ -9,9 +9,6 @@ import {
   CloudUpload,
   Cog,
   Filter,
-  Folder,
-  FolderOpen,
-  FolderPlus,
   Images,
   ListCheck,
   Palette,
@@ -31,14 +28,9 @@ import { effectiveAttributeSort, sortAttributeValues } from '../lib/attributeSor
 import { notifyAttributesChanged, openAttributesDialog } from '../lib/attributesDialog'
 import { openBackupSettings } from '../lib/backupSettings'
 import { notifyConversionCacheChanged } from '../lib/conversionCache'
-import { openCollectionsDialog } from '../lib/collectionsDialog'
 import { hasCapability } from '../lib/capabilities'
 import { commandMenu } from '../lib/command'
-import {
-  applyCollectionFilter,
-  clearAllFilters,
-  filterState,
-} from '../lib/filters'
+import { clearAllFilters, filterState } from '../lib/filters'
 import { library, loadStats, notifyLibraryChanged } from '../lib/library'
 import { libraryColorHex } from '../lib/libraryColors'
 import { openPresetsDialog } from '../lib/presetsDialog'
@@ -54,7 +46,6 @@ import Kbd from './Kbd.vue'
 type Scope =
   | 'all'
   | 'commands'
-  | 'collections'
   | 'smart'
   | 'attributes'
   | 'create'
@@ -82,7 +73,6 @@ void loadAttributeCatalog()
 const scopes: { value: Scope; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'commands', label: 'Commands' },
-  { value: 'collections', label: 'Collections' },
   { value: 'smart', label: 'Smart' },
   { value: 'attributes', label: 'Attributes' },
   { value: 'create', label: 'Create' },
@@ -122,47 +112,18 @@ function close(): void {
 
 function navigateFilter(filter: SmartCollectionFilter): void {
   clearAllFilters()
-  if (filter.collection) filterState.collections = [filter.collection]
   if (filter.type) filterState.types = [filter.type]
   filterState.sort = filter.sort || 'date-desc'
   void router.push({ name: 'library' })
 }
 
-const hasFilters = computed(
-  () =>
-    filterState.collections.length > 0 ||
-    filterState.types.length > 0,
-)
-
-function currentCollectionId(): string | null {
-  return filterState.collections.length === 1
-    ? filterState.collections[0]
-    : null
-}
+const hasFilters = computed(() => filterState.types.length > 0)
 
 function currentFilter(): SmartCollectionFilter {
   const filter: SmartCollectionFilter = {}
-  if (filterState.collections.length === 1) {
-    filter.collection = filterState.collections[0]
-  }
   if (filterState.types.length === 1) filter.type = filterState.types[0]
   if (filterState.sort !== 'date-desc') filter.sort = filterState.sort
   return filter
-}
-
-async function createCollection(name: string): Promise<void> {
-  close()
-  try {
-    await api.createCollection(name, 'f97316', null)
-    notifyLibraryChanged()
-  } catch (e) {
-    toast.add({
-      severity: 'error',
-      summary: 'Could not create collection',
-      detail: e instanceof Error ? e.message : String(e),
-      life: 4000,
-    })
-  }
 }
 
 async function createSmartCollection(name: string): Promise<void> {
@@ -293,18 +254,7 @@ const groups = computed<PaletteGroup[]>(() => {
       keywords: ['upload', 'add', 'import', 'files', 'assets'],
       command: () => {
         close()
-        openUpload([], currentCollectionId())
-      },
-    })
-  }
-  if (hasCapability('library:update')) {
-    commands.push({
-      label: 'Manage collections',
-      icon: Folder,
-      keywords: ['collections', 'folders', 'manage', 'select'],
-      command: () => {
-        close()
-        openCollectionsDialog()
+        openUpload()
       },
     })
   }
@@ -419,27 +369,6 @@ const groups = computed<PaletteGroup[]>(() => {
     { label: 'Commands', scope: 'commands', items: commands },
   ]
 
-  if (library.collections.length) {
-    result.push({
-      label: 'Collections',
-      scope: 'collections',
-      items: library.collections.map((collection) => ({
-        label: collection.name,
-        keywords: ['collection', 'folder'],
-        folderIcon: library.collections.some(
-          (item) => item.parent_id === collection.id,
-        )
-          ? FolderOpen
-          : Folder,
-        color: libraryColorHex(collection.color),
-        command: () => {
-          applyCollectionFilter(collection.id)
-          run({ name: 'library' })
-        },
-      })),
-    })
-  }
-
   if (library.smartCollections.length) {
     result.push({
       label: 'Smart Collections',
@@ -488,14 +417,7 @@ const model = computed<PaletteGroup[]>(() => {
   if (scope.value === 'create') {
     const value = search.value.trim()
     if (!value) return []
-    const items: PaletteItem[] = [
-      {
-        label: `Create collection "${value}"`,
-        icon: FolderPlus,
-        keywords: [value, 'create', 'new', 'collection'],
-        command: () => void createCollection(value),
-      },
-    ]
+    const items: PaletteItem[] = []
     if (hasFilters.value) {
       items.push({
         label: `Create smart collection "${value}"`,
@@ -512,7 +434,7 @@ const model = computed<PaletteGroup[]>(() => {
 
 const emptyMessage = computed(() =>
   scope.value === 'create'
-    ? 'Type a name to create a collection or smart collection.'
+    ? 'Type a name to create a smart collection.'
     : 'No results.',
 )
 

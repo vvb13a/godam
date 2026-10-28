@@ -23,12 +23,10 @@ const (
 // FilterNames is the canonical set of listing filters that a token can grant or
 // deny. Attribute filters are scoped separately.
 var FilterNames = []string{
-	"collection",
 	"type",
 	"mime",
 	"search",
 	"sort",
-	"uncategorized",
 	"color",
 	"size",
 	"duration",
@@ -68,8 +66,8 @@ type Scope struct {
 	UploadSettings   []UploadSetting        `json:"upload_settings,omitempty"`
 }
 
-// Filter returns the grant for a filter name. Canonical names are collection,
-// type, mime, search, sort, and uncategorized.
+// Filter returns the grant for a filter name. Canonical names are type, mime,
+// search, and sort.
 func (s Scope) Filter(name string) (FilterGrant, bool) {
 	grant, ok := s.Filters[name]
 	return grant, ok

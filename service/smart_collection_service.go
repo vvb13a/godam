@@ -61,22 +61,10 @@ func (s *SmartCollectionService) List(ctx context.Context) ([]domain.SmartCollec
 }
 
 // countAssets returns how many assets in the library match a saved filter. The
-// special collection value "uncategorized" and the broad media categories
-// mirror the asset list's filtering.
+// broad media categories mirror the asset list's filtering.
 func (s *SmartCollectionService) countAssets(ctx context.Context, filter domain.SmartCollectionFilter) (int, error) {
 	query := s.db.WithContext(ctx).Model(&store.Asset{}).
 		Where("role = ?", domain.AssetRoleOriginal)
-
-	switch filter.Collection {
-	case "":
-	case "uncategorized":
-		query = query.Where("id NOT IN (SELECT asset_id FROM asset_collections)")
-	default:
-		query = query.Where(
-			"id IN (SELECT asset_id FROM asset_collections WHERE collection_id = ?)",
-			filter.Collection,
-		)
-	}
 
 	switch filter.Type {
 	case "":

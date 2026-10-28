@@ -3,7 +3,6 @@ import type {
   AttributeFacet,
   AttributeTree,
   Instance,
-  Collection,
   Conversion,
   ImgProxyCatalog,
   Library,
@@ -185,10 +184,6 @@ export function getStats(): Promise<Stats> {
 }
 
 export interface AssetListParams {
-  collectionIds?: string[]
-  uncategorized?: boolean
-  presetId?: string
-  presetExclude?: boolean
   search?: string
   types?: string[]
   colors?: string[]
@@ -449,12 +444,6 @@ export function deleteAttributeKey(key: string): Promise<void> {
 
 export function listAssets(params: AssetListParams): Promise<AssetPage> {
   const query = new URLSearchParams()
-  if (params.collectionIds?.length) {
-    query.set('collection_ids', params.collectionIds.join(','))
-  }
-  if (params.uncategorized) query.set('uncategorized', 'true')
-  if (params.presetId) query.set('preset_id', params.presetId)
-  if (params.presetExclude) query.set('preset_exclude', 'true')
   if (params.search) query.set('search', params.search)
   if (params.types?.length) query.set('types', params.types.join(','))
   if (params.colors?.length) query.set('colors', params.colors.join(','))
@@ -539,8 +528,6 @@ export interface PresetInput {
   label: string
   name: string
   parameters: PresetParameters
-  library_wide: boolean
-  collection_ids: string[]
 }
 
 export function createPreset(input: PresetInput): Promise<Preset> {
@@ -861,109 +848,6 @@ export function replaceAssetContent(
     `/api/assets/${encodeURIComponent(assetId)}/content`,
     { method: 'PUT', body: form },
   )
-}
-
-// ---- Asset collections ----
-
-export function addToCollection(
-  assetId: string,
-  collectionId: string,
-): Promise<Asset> {
-  return sendJSON<Asset>(
-    `/api/assets/${encodeURIComponent(assetId)}/collections`,
-    'POST',
-    { collection_id: collectionId },
-  )
-}
-
-export function removeFromCollection(
-  assetId: string,
-  collectionId: string,
-): Promise<Asset> {
-  return requestJSON<Asset>(
-    `/api/assets/${encodeURIComponent(assetId)}/collections/${encodeURIComponent(collectionId)}`,
-    { method: 'DELETE' },
-  )
-}
-
-// applyAssetsCollections adds or replaces the collection membership of many
-// assets in one request.
-export function applyAssetsCollections(
-  assetIds: string[],
-  collectionIds: string[],
-  mode: 'add' | 'replace',
-): Promise<void> {
-  return requestVoid('/api/assets/collections', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      asset_ids: assetIds,
-      collection_ids: collectionIds,
-      mode,
-    }),
-  })
-}
-
-// addAssetsToCollection links many assets to one collection in a single request.
-export function addAssetsToCollection(
-  collectionId: string,
-  assetIds: string[],
-): Promise<void> {
-  return requestVoid('/api/assets/collections', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ collection_id: collectionId, asset_ids: assetIds }),
-  })
-}
-
-// ---- Collections ----
-
-export function listCollections(): Promise<Collection[]> {
-  return getJSON<Collection[]>('/api/collections')
-}
-
-export function createCollection(
-  name: string,
-  color: string,
-  parentId: string | null,
-): Promise<Collection> {
-  return sendJSON<Collection>('/api/collections', 'POST', {
-    name,
-    color,
-    parent_id: parentId,
-  })
-}
-
-export function updateCollection(
-  id: string,
-  name: string,
-  color: string,
-  description: string,
-): Promise<Collection> {
-  return sendJSON<Collection>(
-    `/api/collections/${encodeURIComponent(id)}`,
-    'PUT',
-    { name, description, color },
-  )
-}
-
-// moveCollection reparents/reorders a folder after a drag-and-drop.
-export function moveCollection(
-  id: string,
-  parentId: string | null,
-  position: number,
-): Promise<void> {
-  return requestVoid(`/api/collections/${encodeURIComponent(id)}/move`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ parent_id: parentId, position }),
-  })
-}
-
-export function deleteCollection(id: string): Promise<void> {
-  return requestVoid(`/api/collections/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  })
 }
 
 // ---- Smart collections ----

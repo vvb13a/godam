@@ -3,7 +3,7 @@ import type { SmartCollectionFilter } from '../types'
 
 // Client-side only state: the smart collection the user last opened from the
 // sidebar. Smart collections are just saved filters, so there is no URL param;
-// the Inspector shows this collection while the current filters still match it,
+// the Inspector shows this smart collection while the current filters still match it,
 // and any other filter change clears the selection.
 export const smartSelection = reactive<{
   id: string | null

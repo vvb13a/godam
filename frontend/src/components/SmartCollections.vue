@@ -118,27 +118,17 @@ const displayItems = computed(() => dragList.value ?? sortedItems.value)
 // A smart collection is a saved filter combination for the library view.
 function currentFilter(): SmartCollectionFilter {
   const filter: SmartCollectionFilter = {}
-  if (filterState.collections.length === 1) {
-    filter.collection = filterState.collections[0]
-  }
   if (filterState.types.length === 1) filter.type = filterState.types[0]
   if (filterState.sort !== 'date-desc') filter.sort = filterState.sort
   return filter
 }
 
-const hasFilters = computed(
-  () =>
-    filterState.collections.length > 0 ||
-    filterState.types.length > 0,
-)
+const hasFilters = computed(() => filterState.types.length > 0)
 
 function isFilterActive(f: SmartCollectionFilter): boolean {
   return (
-    filterState.collections.length <= 1 &&
     filterState.types.length <= 1 &&
-    !filterState.uncategorized &&
     !filterState.search &&
-    (f.collection ?? '') === (filterState.collections[0] ?? '') &&
     (f.type ?? '') === (filterState.types[0] ?? '') &&
     (f.sort || 'date-desc') === filterState.sort
   )
@@ -151,7 +141,6 @@ function isActive(item: SmartCollection): boolean {
 function navigateFilter(f: SmartCollectionFilter): void {
   if (editingId.value) return
   clearAllFilters()
-  if (f.collection) filterState.collections = [f.collection]
   if (f.type) filterState.types = [f.type]
   filterState.sort = f.sort || 'date-desc'
   void router.push({ name: 'library' })

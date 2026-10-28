@@ -6,14 +6,12 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from 'primevue/usetoast'
 import * as api from '../api/client'
-import { embed as embedState } from '../lib/embed'
 import { currentLibrary, library, refreshLibrary } from '../lib/library'
 import { panels, toggleLeftPanel } from '../lib/panels'
 import { hasCapability } from '../lib/capabilities'
 import { leaveEditor } from '../lib/editorState'
 import { clearAllFilters, hasActiveFilterState } from '../lib/filters'
 import { sidebarPrefs, type SidebarToggleKey } from '../lib/sidebar'
-import CollectionTree from './CollectionTree.vue'
 import Quicklinks from './Quicklinks.vue'
 import SmartCollections from './SmartCollections.vue'
 
@@ -83,21 +81,13 @@ async function commitRename(): Promise<void> {
   }
 }
 
-const pickerRestricted = computed(
-  () => embedState.active && embedState.mode !== 'library',
-)
-const collectionsLocked = computed(
-  () => pickerRestricted.value && embedState.collectionLocked,
-)
 const SECTION_COMPONENTS = {
   quicklinks: Quicklinks,
-  collections: CollectionTree,
   smartCollections: SmartCollections,
 }
 
 const SECTION_SPACE: Record<SidebarToggleKey, number> = {
   quicklinks: 18,
-  collections: 34,
   smartCollections: 22,
 }
 
@@ -105,10 +95,8 @@ const sectionVisible = (key: SidebarToggleKey): boolean => {
   switch (key) {
     case 'quicklinks':
       return sidebarPrefs.quicklinks
-    case 'collections':
-      return sidebarPrefs.collections && !collectionsLocked.value
     case 'smartCollections':
-      return sidebarPrefs.smartCollections && !collectionsLocked.value
+      return sidebarPrefs.smartCollections
   }
 }
 

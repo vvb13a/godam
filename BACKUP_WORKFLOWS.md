@@ -10,8 +10,8 @@ already implemented, and how to add the remaining pieces.
 The guiding principle is:
 
 > The SQLite database is the catalog. Storage files alone are not a portable
-> import; the database owns asset IDs, storage keys, metadata, attributes,
-> collections, and libraries.
+> import; the database owns asset IDs, storage keys, metadata, attributes, and
+> libraries.
 
 There are three distinct workflows:
 
@@ -105,8 +105,7 @@ godam-assets.zip
       "archive_path": "assets/.../image.jpg",
       "title": "...",
       "note": "...",
-      "attributes": { "tenant": ["acme"] },
-      "collections": ["folder-a"]
+      "attributes": { "tenant": ["acme"] }
     }
   ]
 }
@@ -140,7 +139,6 @@ Add `POST /api/libraries/{id}/import` accepting an uploaded ZIP:
      empty/identical instance and explicit ID preservation is requested).
    - Store the original through the normal upload path so previews, metadata,
      and backup jobs are generated consistently.
-   - Map collections by name; create missing ones if allowed.
 4. Return a report: imported, skipped, failed, and why.
 5. Make the import idempotent where possible (checksum + filename + library).
 
@@ -213,8 +211,8 @@ asset_versions
 
 and point `assets.current_version_id` at the active row.
 
-Metadata/attribute/collection edits do **not** need versions; DB snapshots
-capture those changes.
+Metadata/attribute edits do **not** need versions; DB snapshots capture those
+changes.
 
 #### 2. Make remote backup keys versioned
 

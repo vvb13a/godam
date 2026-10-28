@@ -37,8 +37,6 @@ host stores those IDs and renders them with godam's delivery URLs.
 | `token` | HS256 JWT. Required for token auth; it may also be sent as `Authorization: Bearer …` on API calls. |
 | `hostOrigin` | Origin allowed to receive `postMessage` events, e.g. `https://app.example.com`. Defaults to `*`; set this in production. |
 | `selected` | Comma-separated asset IDs to preselect. |
-| `collection` | Optional host-side picker restriction. Token defaults/locks take precedence. |
-| `lock` | Legacy host-side lock for `collection`, e.g. `collection`. |
 
 ### postMessage protocol
 
@@ -81,7 +79,6 @@ is an HS256 JWT signed with the same secret. godam validates the signature,
   "exp": 1740000900,
   "scope": {
     "filters": {
-      "collection": { "values": ["collection-id"], "mode": "locked" },
       "type": { "values": ["image"], "mode": "active" },
       "mime": { "values": ["image/png", "image/webp"], "mode": "active" },
       "search": { "values": ["brand"], "mode": "active" },
@@ -117,9 +114,8 @@ is an HS256 JWT signed with the same secret. godam validates the signature,
 ### Filters
 
 `scope.filters` controls which listing filters are available, plus their default
-and enforcement behaviour. Supported keys are `collection`, `type`, `mime`,
-`search`, `sort`, `uncategorized`, `color`, `size`, `duration`, `pages`,
-`dimensions`, `added`, and `modified`.
+and enforcement behaviour. Supported keys are `type`, `mime`, `search`, `sort`,
+`color`, `size`, `duration`, `pages`, `dimensions`, `added`, and `modified`.
 
 Each entry has an optional `values` (string or array) and a `mode`:
 
@@ -146,8 +142,7 @@ then override only the ones that need a different mode:
 
 `"filters": "*"` is shorthand for allowing every filter with no defaults.
 `allowed` and `denied` do not accept `values`; use `active`, `locked`, or
-`hidden` when supplying values. `collection` values are IDs. `uncategorized`
-may omit `values`; its presence means `true`.
+`hidden` when supplying values.
 
 ### Host-owned attributes
 
@@ -375,14 +370,14 @@ Management and configuration routes require explicit capabilities in
 | --- | --- |
 | `assets:read` | List, view, preview, download assets |
 | `assets:upload` | Upload files and use upload sessions |
-| `assets:update` | Edit assets, collections, previews |
+| `assets:update` | Edit assets, attributes, previews |
 | `assets:delete` | Delete assets |
 | `settings:storage` | Read/change storage and backup settings |
 | `settings:presets` | Read/change presets and preset previews |
 | `settings:upload` | Change library upload settings |
 | `conversions:warm` | Warm conversions |
 | `conversions:purge` | Purge the conversion cache |
-| `library:update` | Rename the library, set cover/watermark, manage collections |
+| `library:update` | Rename the library, set cover/watermark |
 | `settings:attributes` | Manage attribute labels, ordering, rendering, nesting, search, selection, and values |
 | `attributes:select` | Change attribute values per asset, including bulk add/replace |
 | `attributes:create_keys` | Create new attribute keys through the attributes API |
@@ -531,7 +526,6 @@ A scoped example for a "brand images only" picker:
   "exp": 1740000900,
   "scope": {
     "filters": {
-      "collection": { "values": ["brand-collection-id"], "mode": "locked" },
       "type": { "values": ["image"], "mode": "locked" },
       "sort": { "values": ["date-desc"], "mode": "locked" }
     },
@@ -603,7 +597,7 @@ tokens.
 ### 4. Persist and render selections
 
 Store the returned asset IDs in the consuming application's own data model. Asset
-IDs are stable strings; godam owns the files, metadata, attributes, and collections.
+IDs are stable strings; godam owns the files, metadata, and attributes.
 
 Render thumbnails and originals with the public delivery URLs, or use the
 authenticated preview/content endpoints when the token is still valid. Do not

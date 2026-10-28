@@ -3,11 +3,10 @@ package domain
 import "time"
 
 // SmartCollectionFilter is a saved asset-view filter. Empty fields mean "no
-// constraint". Collection holds a collection id or "uncategorized".
+// constraint".
 type SmartCollectionFilter struct {
-	Collection string `json:"collection,omitempty"`
-	Type       string `json:"type,omitempty"`
-	Sort       string `json:"sort,omitempty"`
+	Type string `json:"type,omitempty"`
+	Sort string `json:"sort,omitempty"`
 }
 
 // SmartCollection is a named, coloured filter preset within a library.

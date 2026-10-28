@@ -34,8 +34,8 @@ var (
 )
 
 // AssetService owns the asset lifecycle: upload, metadata extraction, preview
-// generation, storage and the collection relations. Persistence goes through
-// the gorm-backed store package.
+// generation, and storage. Persistence goes through the gorm-backed store
+// package.
 type AssetService struct {
 	cfg        *Config
 	db         *gorm.DB
@@ -75,7 +75,6 @@ func NewAssetService(
 func (s *AssetService) GetByID(ctx context.Context, id string) (*domain.Asset, error) {
 	var m store.Asset
 	err := s.db.WithContext(ctx).
-		Preload("Collections").
 		Preload("Colors", func(db *gorm.DB) *gorm.DB {
 			return db.Order("position ASC")
 		}).
@@ -142,36 +141,6 @@ func escapeLike(value string) string {
 
 func (s *AssetService) applyAssetFilters(query *gorm.DB, filter domain.AssetFilter) *gorm.DB {
 	query = query.Where("assets.role = ?", domain.AssetRoleOriginal)
-	if len(filter.CollectionIDs) > 0 || filter.Uncategorized {
-		clauses := make([]string, 0, 2)
-		args := make([]any, 0, 1)
-		if len(filter.CollectionIDs) > 0 {
-			clauses = append(clauses,
-				"assets.id IN (SELECT asset_id FROM asset_collections WHERE collection_id IN ?)")
-			args = append(args, filter.CollectionIDs)
-		}
-		if filter.Uncategorized {
-			clauses = append(clauses,
-				"assets.id NOT IN (SELECT asset_id FROM asset_collections)")
-		}
-		query = query.Where("("+strings.Join(clauses, " OR ")+")", args...)
-	}
-
-	if filter.PresetID != "" {
-		allowed := `(
-			EXISTS (SELECT 1 FROM presets p WHERE p.id = ? AND p.library_wide = 1)
-			OR assets.id IN (
-				SELECT ac.asset_id FROM asset_collections ac
-				JOIN preset_collections pc ON pc.collection_id = ac.collection_id
-				WHERE pc.preset_id = ?
-			)
-		)`
-		if filter.PresetExclude {
-			query = query.Where("NOT "+allowed, filter.PresetID, filter.PresetID)
-		} else {
-			query = query.Where(allowed, filter.PresetID, filter.PresetID)
-		}
-	}
 
 	if len(filter.Colors) > 0 {
 		colors := make([]string, 0, len(filter.Colors))
@@ -2469,72 +2438,6 @@ func (s *AssetService) Download(ctx context.Context, assetID, destPath string, t
 
 	_, err = io.Copy(out, rc)
 	return err
-}
-
-// AddToCollection adds an asset to a collection.
-func (s *AssetService) AddToCollection(ctx context.Context, assetID, collectionID string) error {
-	var asset store.Asset
-	if err := s.db.WithContext(ctx).Select("id").First(&asset, "id = ?", assetID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return domain.ErrNotFound
-		}
-		return err
-	}
-	var collection store.Collection
-	if err := s.db.WithContext(ctx).Select("id").First(&collection, "id = ?", collectionID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return domain.ErrNotFound
-		}
-		return err
-	}
-	return s.db.WithContext(ctx).
-		Exec("INSERT OR IGNORE INTO asset_collections (asset_id, collection_id) VALUES (?, ?)", assetID, collectionID).Error
-}
-
-func (s *AssetService) RemoveFromCollection(ctx context.Context, assetID, collectionID string) error {
-	return s.db.WithContext(ctx).
-		Exec("DELETE FROM asset_collections WHERE asset_id = ? AND collection_id = ?", assetID, collectionID).Error
-}
-
-// AddToCollectionBulk adds many assets to one collection in a single statement.
-func (s *AssetService) AddToCollectionBulk(ctx context.Context, collectionID string, assetIDs []string) error {
-	return s.ApplyCollectionsBulk(ctx, assetIDs, []string{collectionID}, "add")
-}
-
-// ApplyCollectionsBulk adds or replaces collection membership for many assets.
-// "replace" makes collectionIDs the exact collection set of every given asset.
-func (s *AssetService) ApplyCollectionsBulk(ctx context.Context, assetIDs, collectionIDs []string, mode string) error {
-	if len(assetIDs) == 0 {
-		return nil
-	}
-	if mode == "replace" {
-		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := tx.Exec(
-				`DELETE FROM asset_collections WHERE asset_id IN ?`,
-				assetIDs,
-			).Error; err != nil {
-				return err
-			}
-			if len(collectionIDs) == 0 {
-				return nil
-			}
-			return tx.Exec(
-				`INSERT OR IGNORE INTO asset_collections (asset_id, collection_id)
-				 SELECT a.id, c.id FROM assets a, collections c
-				 WHERE a.id IN ? AND c.id IN ?`,
-				assetIDs, collectionIDs,
-			).Error
-		})
-	}
-	if len(collectionIDs) == 0 {
-		return nil
-	}
-	return s.db.WithContext(ctx).Exec(
-		`INSERT OR IGNORE INTO asset_collections (asset_id, collection_id)
-		 SELECT a.id, c.id FROM assets a, collections c
-		 WHERE a.id IN ? AND c.id IN ?`,
-		assetIDs, collectionIDs,
-	).Error
 }
 
 func (s *AssetService) Delete(ctx context.Context, id string) error {

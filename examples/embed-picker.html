@@ -513,29 +513,10 @@
             <input x-model="damOrigin" />
           </label>
 
-          <p class="eyebrow" style="margin-top: 1rem">Picker restrictions</p>
-          <label>
-            collection id
-            <input x-model="restrictCollection" placeholder="(none)" />
-          </label>
-          <label>
-            tag id
-            <input x-model="restrictTag" placeholder="(none)" />
-          </label>
-          <label>
-            lock
-            <select x-model="lock">
-              <option value="">not locked</option>
-              <option value="collection">collection</option>
-              <option value="tag">tag</option>
-              <option value="collection,tag">both</option>
-            </select>
-          </label>
-
           <p class="sidebar-note">
             Log into godam once on this origin so the iframe has a session.
             Switch from <code>:5174</code> to <code>:8080</code> when using the
-            Go-served build. Restrictions apply to the picker only.
+            Go-served build.
           </p>
         </div>
       </aside>
@@ -769,10 +750,6 @@
           page: 'library',
           damOrigin: 'http://localhost:5174',
 
-          restrictCollection: '',
-          restrictTag: '',
-          lock: '',
-
           article: {
             title: 'New product line lands in stores',
             slug: 'new-product-line',
@@ -822,18 +799,6 @@
             url.searchParams.set('mode', this.dialogMode)
             if (this.dialogPreselect.length) {
               url.searchParams.set('selected', this.dialogPreselect.join(','))
-            }
-            if (this.restrictCollection.trim()) {
-              url.searchParams.set(
-                'collection',
-                this.restrictCollection.trim(),
-              )
-            }
-            if (this.restrictTag.trim()) {
-              url.searchParams.set('tag', this.restrictTag.trim())
-            }
-            if (this.lock) {
-              url.searchParams.set('lock', this.lock)
             }
             if (this.hostOrigin) {
               url.searchParams.set('hostOrigin', this.hostOrigin)

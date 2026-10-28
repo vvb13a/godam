@@ -1,7 +1,6 @@
 import { reactive } from 'vue'
 import * as api from '../api/client'
 import type {
-  Collection,
   Instance,
   Preset,
   SmartCollection,
@@ -22,7 +21,6 @@ export const library = reactive({
   upload_attribute_keys: true,
   upload_attribute_values: true,
   loaded: false,
-  collections: [] as Collection[],
   smartCollections: [] as SmartCollection[],
   presets: [] as Preset[],
   stats: null as Stats | null,
@@ -47,10 +45,6 @@ export async function loadInstance(markLoaded = true): Promise<void> {
   if (markLoaded) library.loaded = true
 }
 
-export async function loadCollections(): Promise<void> {
-  library.collections = await api.listCollections()
-}
-
 export async function loadSmartCollections(): Promise<void> {
   library.smartCollections = await api.listSmartCollections()
 }
@@ -64,7 +58,6 @@ export async function loadStats(): Promise<void> {
 }
 
 export function clearScopedData(): void {
-  library.collections = []
   library.smartCollections = []
   library.presets = []
   library.stats = null
@@ -84,7 +77,6 @@ export function resetLibrary(): void {
 
 async function loadScopedData(): Promise<void> {
   await Promise.all([
-    loadCollections(),
     loadSmartCollections(),
     loadPresets(),
     loadStats(),

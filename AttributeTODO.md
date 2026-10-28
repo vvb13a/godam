@@ -1,9 +1,9 @@
 # Attribute & Microservice API TODO
 
 Goal: make attributes the host-owned organization model, remove DAM-owned
-taxonomy (collections, server-stored smart collections), and close the
-remaining gaps so godam exposes a complete DAM microservice API while keeping
-the embedded picker/library UI.
+taxonomy (server-stored smart collections), and close the remaining gaps so
+godam exposes a complete DAM microservice API while keeping the embedded
+picker/library UI.
 
 The rule: godam stores values, indexes them, filters them, and enforces
 `active` / `locked` / `hidden`. The host owns keys, values, vocabulary, labels,
@@ -98,8 +98,7 @@ per-user presentation state stays client-side or with the host.
 - [ ] Tree counts conditioned on other active sidebar filters (current tree
       counts only account for enforced scopes and parent path).
 - [ ] Lazy loading/performance for large attribute trees.
-- [ ] Drag assets from the grid onto attribute keys/values in the sidebar
-      (collections support this today).
+- [ ] Drag assets from the grid onto attribute keys/values in the sidebar.
 - [ ] Quicklinks/starring/pinning for attribute keys/values.
 - [ ] Shared saved views (server-stored smart collections have no equivalent yet).
 - [ ] Command palette filter/navigation by attribute values (currently bulk
@@ -118,17 +117,15 @@ per-user presentation state stays client-side or with the host.
 
 - [x] Remove tags, tag groups, joins, services, routes, UI, JWT filter grants,
       and `Asset.Tags`.
-- [ ] Remove collections, joins, services, routes, UI, JWT filter grants, and
+- [x] Remove collections, joins, services, routes, UI, JWT filter grants, and
       `Asset.Collections`.
 - [ ] Move smart collections to client-side saved attribute views.
 - [ ] Update quicklinks to pin attribute keys/values/views.
-- [ ] Replace preset collection scoping (`domain/preset.go:11`) with attribute
-      scoping or library-wide presets.
-- [ ] Replace taxonomy stats with attribute aggregates or remove them from
-      `/api/stats`.
-- [x] Remove `tag` and `untagged` from `FilterNames` and embed params.
-- [ ] Include attributes in asset export/import manifests (currently manifests
-      include collections).
+- [x] Make presets library-wide now that collection scoping is gone.
+- [x] Remove taxonomy stats from `/api/stats`.
+- [x] Remove `tag`, `untagged`, `collection`, and `uncategorized` from
+      `FilterNames` and embed params.
+- [ ] Include attributes in asset export/import manifests.
 - [ ] Decide old-snapshot restore behavior and provide a deprecation window.
 - [ ] Update `CONSUMING.md`, sample consuming app, and integration tests.
 
@@ -165,7 +162,7 @@ per-user presentation state stays client-side or with the host.
 - Whether unassigned can be assigned by APIs or remains filter-only.
 - Stable value identity/merge strategy.
 - Shared saved views and quicklink ownership.
-- Preset scoping after collections are removed.
+- Whether presets need attribute scoping now that they are library-wide.
 - Default renderer and whether per-user choice can override a host-locked render.
 - Direct/trusted upload stamping contract.
 
@@ -175,7 +172,8 @@ per-user presentation state stays client-side or with the host.
 2. Host-supplied definitions, precedence, and tenancy scoping.
 3. Tree/UX refinements plus drag-assignment and quicklinks/saved views.
 4. Preset, stats, and export integration.
-5. Migrate collections into attributes, then remove taxonomy.
+5. Migrate smart collections into client-side saved views, then remove server
+   taxonomy.
 6. Limits, audit/versioning, frontend tests, and deprecation cleanup.
 
 ## References

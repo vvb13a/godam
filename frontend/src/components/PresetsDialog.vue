@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import ConfirmDialog from 'primevue/confirmdialog'
 import Dialog from 'primevue/dialog'
-import MultiSelect from 'primevue/multiselect'
 import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 import { Plus, Search, Trash } from '@primeicons/vue'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import * as api from '../api/client'
 import { formatDateTime, formatRelative } from '../lib/format'
-import { library, notifyLibraryChanged } from '../lib/library'
+import { notifyLibraryChanged } from '../lib/library'
 import { presetsDialog } from '../lib/presetsDialog'
 import type {
   Asset,
@@ -35,8 +34,6 @@ const form = reactive({
   label: '',
   name: '',
   format: 'webp',
-  libraryWide: true,
-  collectionIds: [] as string[],
   options: {} as Record<string, string[]>,
 })
 const rawArgs = reactive<Record<string, string>>({})
@@ -291,8 +288,6 @@ function resetForm(): void {
   form.label = ''
   form.name = ''
   form.format = catalog.value.formats[0] ?? 'webp'
-  form.libraryWide = true
-  form.collectionIds = []
   for (const key of Object.keys(form.options)) delete form.options[key]
   for (const key of Object.keys(rawArgs)) delete rawArgs[key]
   for (const key of Object.keys(textArgs)) delete textArgs[key]
@@ -311,8 +306,6 @@ function selectPreset(preset: Preset): void {
   form.label = preset.label
   form.name = preset.name
   form.format = preset.parameters.format
-  form.libraryWide = preset.library_wide
-  form.collectionIds = [...(preset.collection_ids ?? [])]
   for (const key of Object.keys(form.options)) delete form.options[key]
   for (const key of Object.keys(rawArgs)) delete rawArgs[key]
   for (const key of Object.keys(textArgs)) delete textArgs[key]
@@ -436,8 +429,6 @@ async function save(): Promise<void> {
       label: form.label.trim(),
       name: form.name.trim(),
       parameters,
-      library_wide: form.libraryWide,
-      collection_ids: form.libraryWide ? [] : form.collectionIds,
     }
     const saved = form.id
       ? await api.updatePreset(form.id, input)
@@ -659,38 +650,6 @@ watch(
                   Add a manipulation to preview
                 </span>
               </div>
-            </div>
-
-            <div class="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
-              <label class="flex cursor-pointer items-center gap-2 text-sm font-medium">
-                <input v-model="form.libraryWide" type="checkbox" />
-                Library-wide
-              </label>
-              <p class="text-xs text-slate-400">
-                Available to every asset, unless you scope it to collections.
-              </p>
-              <div v-if="!form.libraryWide">
-                <label class="mb-1 block text-[11px] text-slate-400">
-                  Collections
-                </label>
-                <MultiSelect
-                  v-model="form.collectionIds"
-                  :options="library.collections"
-                  option-label="name"
-                  option-value="id"
-                  display="chip"
-                  filter
-                  showClear
-                  placeholder="No collections"
-                  class="w-full"
-                />
-              </div>
-              <p
-                v-if="!form.libraryWide && !form.collectionIds.length"
-                class="text-xs text-brand-700 dark:text-brand-400"
-              >
-                No asset can use this preset until it is assigned to a collection.
-              </p>
             </div>
 
             <div class="flex flex-wrap items-center gap-2">

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/vvb13a/godam/domain"
 )
@@ -24,7 +23,7 @@ func TestPresetServiceCRUD(t *testing.T) {
 	ctx := context.Background()
 	presets := NewPresetService(db)
 
-	created, err := presets.Create(ctx, "Thumbnail", "thumbnail", testPresetParameters(), true, nil)
+	created, err := presets.Create(ctx, "Thumbnail", "thumbnail", testPresetParameters())
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -32,7 +31,7 @@ func TestPresetServiceCRUD(t *testing.T) {
 		t.Fatalf("created = %+v", created)
 	}
 
-	if _, err := presets.Create(ctx, "Duplicate", "thumbnail", testPresetParameters(), true, nil); !errors.Is(err, ErrPresetNameTaken) {
+	if _, err := presets.Create(ctx, "Duplicate", "thumbnail", testPresetParameters()); !errors.Is(err, ErrPresetNameTaken) {
 		t.Fatalf("duplicate error = %v", err)
 	}
 
@@ -41,7 +40,7 @@ func TestPresetServiceCRUD(t *testing.T) {
 		t.Fatalf("get by name: %+v err=%v", found, err)
 	}
 
-	updated, err := presets.Update(ctx, created.ID, "Small thumbnail", "small", testPresetParameters(), true, nil)
+	updated, err := presets.Update(ctx, created.ID, "Small thumbnail", "small", testPresetParameters())
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -67,13 +66,13 @@ func TestPresetServiceValidation(t *testing.T) {
 	presets := NewPresetService(db)
 	ctx := context.Background()
 
-	if _, err := presets.Create(ctx, "", "empty-label", testPresetParameters(), true, nil); !errors.Is(err, ErrInvalidInput) {
+	if _, err := presets.Create(ctx, "", "empty-label", testPresetParameters()); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("empty label error = %v", err)
 	}
-	if _, err := presets.Create(ctx, "Label", "Bad Name", testPresetParameters(), true, nil); !errors.Is(err, ErrInvalidInput) {
+	if _, err := presets.Create(ctx, "Label", "Bad Name", testPresetParameters()); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("bad name error = %v", err)
 	}
-	if _, err := presets.Create(ctx, "Label", "800x600", testPresetParameters(), true, nil); !errors.Is(err, ErrInvalidInput) {
+	if _, err := presets.Create(ctx, "Label", "800x600", testPresetParameters()); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("reserved name error = %v", err)
 	}
 }
@@ -82,72 +81,19 @@ func TestPresetAvailability(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 	presets := NewPresetService(db)
-	collections := NewCollectionService(db)
 
-	collection, err := collections.Create(ctx, nil, "Campaign", "", "")
+	created, err := presets.Create(ctx, "Thumbnail", "thumbnail", testPresetParameters())
 	if err != nil {
-		t.Fatalf("create collection: %v", err)
+		t.Fatalf("create preset: %v", err)
 	}
-
-	now := time.Now().UTC()
-	for _, id := range []string{"asset-1", "asset-2"} {
-		if err := db.Exec(
-			`INSERT INTO assets (id, filename, storage_driver, storage_key, mime_type, byte_size, created_at, updated_at)
-			 VALUES (?, ?, 'local', ?, 'image/jpeg', 1, ?, ?)`,
-			id, id+".jpg", "uploads/"+id+".jpg", now, now,
-		).Error; err != nil {
-			t.Fatalf("insert asset: %v", err)
-		}
-	}
-	if err := db.Exec(`INSERT INTO asset_collections (asset_id, collection_id) VALUES (?, ?)`, "asset-1", collection.ID).Error; err != nil {
-		t.Fatalf("link collection: %v", err)
-	}
-	if err := db.Exec(`INSERT INTO asset_collections (asset_id, collection_id) VALUES (?, ?)`, "asset-2", collection.ID).Error; err != nil {
-		t.Fatalf("link collection: %v", err)
-	}
-
-	restricted, err := presets.Create(ctx, "Restricted", "restricted", testPresetParameters(), false, []string{collection.ID})
-	if err != nil {
-		t.Fatalf("create restricted preset: %v", err)
-	}
-	if len(restricted.CollectionIDs) != 1 {
-		t.Fatalf("targets = %+v", restricted)
-	}
-
 	for _, assetID := range []string{"asset-1", "asset-2"} {
-		allowed, err := presets.AllowsAsset(ctx, restricted.ID, assetID)
+		allowed, err := presets.AllowsAsset(ctx, created.ID, assetID)
 		if err != nil || !allowed {
 			t.Fatalf("%s should be allowed: %v", assetID, err)
 		}
 	}
-	if allowed, err := presets.AllowsAsset(ctx, restricted.ID, "asset-3"); err != nil || allowed {
-		t.Fatalf("asset-3 should not be allowed: allowed=%v err=%v", allowed, err)
-	}
-
-	for _, assetID := range []string{"asset-1", "asset-2"} {
-		allowed, err := presets.AllowedForAsset(ctx, assetID)
-		if err != nil {
-			t.Fatalf("allowed for %s: %v", assetID, err)
-		}
-		found := false
-		for _, preset := range allowed {
-			if preset.ID == restricted.ID {
-				found = true
-			}
-		}
-		if !found {
-			t.Fatalf("restricted preset missing from %s", assetID)
-		}
-	}
-	if allowed, err := presets.AllowedForAsset(ctx, "asset-3"); err != nil || len(allowed) != 0 {
-		t.Fatalf("asset-3 presets = %+v err=%v", allowed, err)
-	}
-
-	global, err := presets.Create(ctx, "Global", "global", testPresetParameters(), true, nil)
-	if err != nil {
-		t.Fatalf("create global preset: %v", err)
-	}
-	if allowed, err := presets.AllowsAsset(ctx, global.ID, "asset-3"); err != nil || !allowed {
-		t.Fatalf("global preset should allow any asset: allowed=%v err=%v", allowed, err)
+	allowed, err := presets.AllowedForAsset(ctx, "asset-1")
+	if err != nil || len(allowed) != 1 || allowed[0].ID != created.ID {
+		t.Fatalf("allowed presets = %+v err=%v", allowed, err)
 	}
 }

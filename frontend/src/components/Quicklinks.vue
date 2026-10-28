@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import ContextMenu from 'primevue/contextmenu'
 import type { MenuItem } from 'primevue/menuitem'
-import { ExternalLink, Folder, Filter, Times } from '@primeicons/vue'
+import { ExternalLink, Filter, Times } from '@primeicons/vue'
 import type { Component } from 'vue'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -26,15 +26,6 @@ interface ResolvedQuicklink extends Quicklink {
 
 const items = computed<ResolvedQuicklink[]>(() =>
   quicklinks.items.map((item) => {
-    if (item.type === 'collection') {
-      const collection = library.collections.find((c) => c.id === item.id)
-      return {
-        ...item,
-        name: collection?.name ?? item.name,
-        color: collection?.color ? `#${collection.color}` : item.color,
-        count: collection?.asset_count,
-      }
-    }
     const smart = library.smartCollections.find((c) => c.id === item.id)
     return {
       ...item,
@@ -45,32 +36,22 @@ const items = computed<ResolvedQuicklink[]>(() =>
   }),
 )
 
-function iconFor(type: QuicklinkType): Component {
-  return type === 'collection' ? Folder : Filter
+function iconFor(_type: QuicklinkType): Component {
+  return Filter
 }
 
 function isActive(item: ResolvedQuicklink): boolean {
-  if (item.type === 'collection') {
-    return filterState.collections.includes(item.id)
-  }
   return smartSelection.id === item.id
 }
 
 function navigateFilter(filter: SmartCollectionFilter): void {
   clearAllFilters()
-  if (filter.collection) filterState.collections = [filter.collection]
   if (filter.type) filterState.types = [filter.type]
   filterState.sort = filter.sort || 'date-desc'
   void router.push({ name: 'library' })
 }
 
 function open(item: ResolvedQuicklink): void {
-  if (item.type === 'collection') {
-    clearAllFilters()
-    filterState.collections = [item.id]
-    void router.push({ name: 'library' })
-    return
-  }
   const smart = library.smartCollections.find((c) => c.id === item.id)
   if (!smart) return
   navigateFilter(smart.filter)
@@ -124,7 +105,7 @@ const menuItems = computed<QuicklinkMenuItem[]>(() => {
         v-if="!items.length"
         class="px-2 py-2 text-xs leading-relaxed text-slate-400"
       >
-        Pin collections or smart collections from their context menus.
+        Pin smart collections from their context menus.
       </p>
       <div
         v-for="item in items"

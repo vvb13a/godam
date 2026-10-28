@@ -79,19 +79,9 @@ func (s *StatsService) GetScoped(ctx context.Context, attributes map[string][]st
 		return query
 	}
 
-	var assets, collections int64
+	var assets int64
 	if err := originals().Count(&assets).Error; err != nil {
 		return nil, fmt.Errorf("count assets: %w", err)
-	}
-	if err := db.Model(&store.Collection{}).Count(&collections).Error; err != nil {
-		return nil, fmt.Errorf("count collections: %w", err)
-	}
-
-	var uncategorized int64
-	if err := originals().
-		Where("id NOT IN (SELECT asset_id FROM asset_collections)").
-		Count(&uncategorized).Error; err != nil {
-		return nil, fmt.Errorf("count uncategorized: %w", err)
 	}
 
 	var storageBytes int64
@@ -130,8 +120,6 @@ func (s *StatsService) GetScoped(ctx context.Context, attributes map[string][]st
 
 	return &domain.Stats{
 		Assets:          int(assets),
-		Collections:     int(collections),
-		Uncategorized:   int(uncategorized),
 		StorageBytes:    storageBytes,
 		Conversions:     conversionStats.Count,
 		ConversionBytes: conversionStats.Bytes,

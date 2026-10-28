@@ -9,25 +9,20 @@ import (
 
 func TestApplyScopeToAssetFilterEnforcesLockedOnly(t *testing.T) {
 	scope := domain.Scope{Filters: map[string]domain.FilterGrant{
-		"collection": {Values: []string{"locked-collection"}, Mode: domain.ScopeModeLocked},
-		"type":       {Values: []string{"image"}, Mode: domain.ScopeModeActive},
-		"mime":       {Values: []string{"image/png"}, Mode: domain.ScopeModeActive},
-		"search":     {Values: []string{"brand"}, Mode: domain.ScopeModeLocked},
-		"sort":       {Values: []string{"name-asc"}, Mode: domain.ScopeModeActive},
+		"type":   {Values: []string{"image"}, Mode: domain.ScopeModeActive},
+		"mime":   {Values: []string{"image/png"}, Mode: domain.ScopeModeActive},
+		"search": {Values: []string{"brand"}, Mode: domain.ScopeModeLocked},
+		"sort":   {Values: []string{"name-asc"}, Mode: domain.ScopeModeActive},
 	}}
 
 	filter := domain.AssetFilter{
-		CollectionIDs: []string{"attacker-collection"},
-		Types:         []string{"video"},
-		MimeTypes:     []string{"video/mp4"},
-		Search:        "other",
-		Sort:          "date-asc",
+		Types:     []string{"video"},
+		MimeTypes: []string{"video/mp4"},
+		Search:    "other",
+		Sort:      "date-asc",
 	}
 	applyScopeToAssetFilter(&filter, scope)
 
-	if len(filter.CollectionIDs) != 1 || filter.CollectionIDs[0] != "locked-collection" {
-		t.Fatalf("locked collection was not enforced: %v", filter.CollectionIDs)
-	}
 	if filter.Search != "brand" {
 		t.Fatalf("locked search was not enforced: %q", filter.Search)
 	}
@@ -44,38 +39,12 @@ func TestApplyScopeToAssetFilterEnforcesLockedOnly(t *testing.T) {
 
 func TestApplyScopeActiveFiltersAreNotRestored(t *testing.T) {
 	scope := domain.Scope{Filters: map[string]domain.FilterGrant{
-		"collection": {Values: []string{"default-collection"}, Mode: domain.ScopeModeActive},
-		"type":       {Values: []string{"image"}, Mode: domain.ScopeModeActive},
+		"type": {Values: []string{"image"}, Mode: domain.ScopeModeActive},
 	}}
 	filter := domain.AssetFilter{}
 	applyScopeToAssetFilter(&filter, scope)
-	if len(filter.CollectionIDs) != 0 || len(filter.Types) != 0 {
+	if len(filter.Types) != 0 {
 		t.Fatalf("active defaults were restored after the client cleared them: %+v", filter)
-	}
-}
-
-func TestApplyScopeLockedCollectionRejectsUncategorized(t *testing.T) {
-	scope := domain.Scope{Filters: map[string]domain.FilterGrant{
-		"collection": {Values: []string{"collection-1"}, Mode: domain.ScopeModeLocked},
-	}}
-	filter := domain.AssetFilter{Uncategorized: true}
-	applyScopeToAssetFilter(&filter, scope)
-	if filter.Uncategorized {
-		t.Fatal("uncategorized must not broaden a locked collection")
-	}
-	if len(filter.CollectionIDs) != 1 || filter.CollectionIDs[0] != "collection-1" {
-		t.Fatalf("locked collection was not enforced: %v", filter.CollectionIDs)
-	}
-}
-
-func TestApplyScopeHiddenUncategorizedFilter(t *testing.T) {
-	scope := domain.Scope{Filters: map[string]domain.FilterGrant{
-		"uncategorized": {Values: []string{"true"}, Mode: domain.ScopeModeHidden},
-	}}
-	filter := domain.AssetFilter{}
-	applyScopeToAssetFilter(&filter, scope)
-	if !filter.Uncategorized {
-		t.Fatal("hidden uncategorized filter was not applied")
 	}
 }
 

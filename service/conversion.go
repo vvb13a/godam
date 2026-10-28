@@ -112,10 +112,9 @@ func (s *ConversionService) ConvertPreset(ctx context.Context, assetID, segment 
 	return s.ConvertPresetSource(ctx, assetID, assetID, segment)
 }
 
-// ConvertPresetSource checks preset availability against scopeAssetID but
-// renders sourceAssetID. This keeps non-library-wide presets scoped to the
-// parent asset when the visual source is a derived visual asset.
-func (s *ConversionService) ConvertPresetSource(ctx context.Context, scopeAssetID, sourceAssetID, segment string) (*ConversionResult, error) {
+// ConvertPresetSource renders sourceAssetID. The leading argument is retained
+// for callers that resolve a preset through a related asset.
+func (s *ConversionService) ConvertPresetSource(ctx context.Context, _, sourceAssetID, segment string) (*ConversionResult, error) {
 	name, format, err := splitConversionSegment(segment)
 	if err != nil {
 		return nil, err
@@ -129,15 +128,6 @@ func (s *ConversionService) ConvertPresetSource(ctx context.Context, scopeAssetI
 	preset, err := s.presets.GetByName(ctx, name)
 	if err != nil {
 		return nil, err
-	}
-	if !preset.LibraryWide {
-		allowed, err := s.presets.AllowsAsset(ctx, preset.ID, scopeAssetID)
-		if err != nil {
-			return nil, err
-		}
-		if !allowed {
-			return nil, fmt.Errorf("%w: %s", ErrPresetNotAllowed, name)
-		}
 	}
 	if format != preset.Parameters.Format {
 		return nil, fmt.Errorf("%w: preset %q produces %s, not %s", ErrInvalidInput, name, preset.Parameters.Format, format)

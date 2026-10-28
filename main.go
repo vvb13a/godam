@@ -27,7 +27,6 @@ var (
 	assetService           *service.AssetService
 	conversionService      *service.ConversionService
 	presetService          *service.PresetService
-	collectionService      *service.CollectionService
 	smartCollectionService *service.SmartCollectionService
 	instanceService        *service.InstanceService
 	statsService           *service.StatsService
@@ -47,7 +46,6 @@ func main() {
 		Conversions:      conversionService,
 		Presets:          presetService,
 		AssetsBaseURL:    appConfig.AssetsBaseURL(),
-		Collections:      collectionService,
 		SmartCollections: smartCollectionService,
 		Instance:         instanceService,
 		Stats:            statsService,
@@ -135,7 +133,6 @@ func initDependencies() {
 	}
 
 	// 3. Application services (gorm persistence, no repository adapters).
-	collectionService = service.NewCollectionService(db)
 	smartCollectionService = service.NewSmartCollectionService(db)
 	presetService = service.NewPresetService(db)
 	statsService = service.NewStatsService(db, conversionStore)

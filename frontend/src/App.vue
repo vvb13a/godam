@@ -9,7 +9,6 @@ import { RouterView } from 'vue-router'
 import AppSidebar from './components/AppSidebar.vue'
 import AppSidebarAttributes from './components/AppSidebarAttributes.vue'
 import AttributesDialog from './components/AttributesDialog.vue'
-import CollectionsDialog from './components/CollectionsDialog.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import LibraryBackupDialog from './components/LibraryBackupDialog.vue'
 import LibraryUploadSettingsDialog from './components/LibraryUploadSettingsDialog.vue'
@@ -20,7 +19,6 @@ import { auth } from './lib/auth'
 import { hasCapability } from './lib/capabilities'
 import { commandMenu } from './lib/command'
 import { editorDirty, setLeaveConfirm } from './lib/editorState'
-import { filterState } from './lib/filters'
 import { sidebarPrefs } from './lib/sidebar'
 import { embed, startEmbedBridge } from './lib/embed'
 import { initLibrary, library, resetLibrary } from './lib/library'
@@ -65,12 +63,6 @@ function hasFiles(event: DragEvent): boolean {
   return !!types && Array.from(types).includes('Files')
 }
 
-function currentCollectionId(): string | null {
-  return filterState.collections.length === 1
-    ? filterState.collections[0]
-    : null
-}
-
 function resetGlobalDrag(): void {
   dragDepth = 0
   dragging.value = false
@@ -113,7 +105,7 @@ function onDrop(event: DragEvent): void {
     ? Array.from(event.dataTransfer.files)
     : []
   if (files.length) {
-    openUpload(files, currentCollectionId())
+    openUpload(files)
   }
 }
 
@@ -264,7 +256,6 @@ onBeforeUnmount(() => {
     <UploadDialog />
     <CommandPalette />
     <AttributesDialog />
-    <CollectionsDialog />
     <PresetsDialog />
     <WarmPresetsProgress />
     <LibraryUploadSettingsDialog />

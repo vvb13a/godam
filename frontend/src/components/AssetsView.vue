@@ -24,7 +24,6 @@ import {
   EyeSlash,
   ExternalLink,
   Filter,
-  Folder,
   GripVertical,
   Images,
   ListCheck,
@@ -53,14 +52,11 @@ import {
   clearAllFilters,
   clearAttributeFilter,
   clearAttributeValue,
-  clearCollectionFilter,
-  filterSettings,
   filterState,
   initFilterState,
   isFilterDenied,
   resetSort,
   toggleAttribute,
-  type FacetClickMode,
 } from '../lib/filters'
 import { confirmDeleteMenuItem } from '../lib/menu'
 import {
@@ -87,11 +83,6 @@ import {
   type SidebarMode,
   type SidebarToggleKey,
 } from '../lib/sidebar'
-import {
-  openAssetCollections,
-  openBulkAssetCollections,
-  openCollectionsDialog,
-} from '../lib/collectionsDialog'
 import { openPresetsDialog } from '../lib/presetsDialog'
 import { clearSmartSelection, smartSelection } from '../lib/smartSelection'
 import { openUpload } from '../lib/upload'
@@ -104,15 +95,9 @@ import {
   type ThemeMode,
 } from '../lib/theme'
 import { ATTRIBUTE_UNASSIGNED } from '../types'
-import type {
-  Asset,
-  AttributeFacet,
-  Collection,
-  SmartCollection,
-} from '../types'
+import type { Asset, AttributeFacet, SmartCollection } from '../types'
 import AssetCard from './AssetCard.vue'
 import AssetEditor from './AssetEditor.vue'
-import CollectionFilterPopover from './CollectionFilterPopover.vue'
 import FilterInspector from './FilterInspector.vue'
 import Inspector from './Inspector.vue'
 import LibraryInspector from './LibraryInspector.vue'
@@ -152,9 +137,6 @@ const anchorId = ref<string | null>(null)
 
 const embedPicker = computed(() => embed.active && embed.mode !== 'library')
 const embedSingle = computed(() => embed.active && embed.mode === 'single')
-const embedCollectionLocked = computed(
-  () => embedPicker.value && embed.collectionLocked,
-)
 const embedTypeLocked = computed(() => embed.active && embed.typeLocked)
 const embedMimeLocked = computed(() => embed.active && embed.mimeLocked)
 const embedSearchLocked = computed(() => embed.active && embed.searchLocked)
@@ -515,7 +497,6 @@ function dateFilter(key: DateFilterKey) {
 }
 
 type OptionalFilterKey =
-  | 'preset'
   | 'color'
   | 'mime'
   | 'size'
@@ -526,7 +507,6 @@ type OptionalFilterKey =
   | 'modified'
 
 const OPTIONAL_FILTERS: { key: OptionalFilterKey; label: string }[] = [
-  { key: 'preset', label: 'Preset' },
   { key: 'color', label: 'Color' },
   { key: 'mime', label: 'MIME type' },
   { key: 'size', label: 'Size' },
@@ -539,8 +519,6 @@ const OPTIONAL_FILTERS: { key: OptionalFilterKey; label: string }[] = [
 
 function hasFilterValue(key: OptionalFilterKey): boolean {
   switch (key) {
-    case 'preset':
-      return Boolean(filterState.preset) || filterState.presetExclude
     case 'color':
       return filterState.colors.length > 0
     case 'mime':
@@ -579,7 +557,6 @@ const availableOptionalFilters = computed(() =>
   OPTIONAL_FILTERS.filter((filter) => !visibleFilters.value.includes(filter.key)),
 )
 const filtersPopover = ref<InstanceType<typeof Popover> | null>(null)
-const collectionFilterOpen = ref(false)
 const searchOpen = ref(false)
 const searchWrapper = ref<HTMLElement | null>(null)
 
@@ -587,9 +564,7 @@ function toggleFilters(event: Event): void {
   filtersPopover.value?.toggle(event)
 }
 
-function onFiltersHide(): void {
-  collectionFilterOpen.value = false
-}
+function onFiltersHide(): void {}
 
 function toggleSearch(): void {
   searchOpen.value = !searchOpen.value
@@ -641,10 +616,6 @@ function onAddFilter(value: unknown): void {
 function removeFilter(key: OptionalFilterKey): void {
   clearSmartSelection()
   switch (key) {
-    case 'preset':
-      filterState.preset = ''
-      filterState.presetExclude = false
-      break
     case 'color':
       filterState.colors = []
       break
@@ -681,13 +652,6 @@ function removeFilter(key: OptionalFilterKey): void {
   visibleFilters.value = visibleFilters.value.filter((item) => item !== key)
 }
 
-const collectionFilter = computed<string[]>({
-  get: () => filterState.collections,
-  set: (values) => {
-    clearSmartSelection()
-    filterState.collections = values
-  },
-})
 const typeFilter = computed<string[]>({
   get: () => filterState.types,
   set: (values) => {
@@ -712,20 +676,6 @@ const mimeFilter = computed<string[]>({
   set: (values) => {
     clearSmartSelection()
     filterState.mimeTypes = values
-  },
-})
-const presetFilter = computed<string>({
-  get: () => filterState.preset,
-  set: (value) => {
-    clearSmartSelection()
-    filterState.preset = value
-  },
-})
-const presetExclude = computed<boolean>({
-  get: () => filterState.presetExclude,
-  set: (value) => {
-    clearSmartSelection()
-    filterState.presetExclude = value
   },
 })
 const sort = computed({
@@ -766,19 +716,6 @@ const addedAfter = dateFilter('addedAfter')
 const addedBefore = dateFilter('addedBefore')
 const modifiedAfter = dateFilter('modifiedAfter')
 const modifiedBefore = dateFilter('modifiedBefore')
-
-const uploadCollectionId = computed(() =>
-  collectionFilter.value.length === 1 ? collectionFilter.value[0] : null,
-)
-const uncategorizedView = computed(() => filterState.uncategorized)
-
-const presetOptions = computed(() =>
-  library.presets.map((preset) => ({
-    value: preset.id,
-    label: preset.label,
-    name: preset.name,
-  })),
-)
 
 const DOCUMENT_MIMES = new Set([
   'application/pdf',
@@ -885,35 +822,15 @@ const canManage = computed(() =>
     'settings:presets',
     'settings:upload',
     'settings:storage',
-    'library:update',
     'settings:attributes',
   ]),
 )
-
-const filterClickMode = computed<FacetClickMode>({
-  get: () => filterSettings.clickMode,
-  set: (mode) => {
-    filterSettings.clickMode = mode
-  },
-})
-
-const FILTER_CLICK_OPTIONS: { label: string; value: FacetClickMode }[] = [
-  { label: 'Add', value: 'add' },
-  { label: 'Replace', value: 'replace' },
-]
 
 interface FilterChip {
   key: string
   label: string
   locked?: boolean
   clear: () => void
-}
-
-function collectionName(id: string): string {
-  return (
-    library.collections.find((collection) => collection.id === id)?.name ??
-    'Collection'
-  )
 }
 
 function typeName(value: string): string {
@@ -925,10 +842,6 @@ function typeName(value: string): string {
 
 function colorName(value: string): string {
   return COLOR_OPTIONS.find((color) => color.value === value)?.label ?? value
-}
-
-function presetName(id: string): string {
-  return presetOptions.value.find((preset) => preset.value === id)?.label ?? 'Preset'
 }
 
 function rangeLabel(
@@ -957,25 +870,7 @@ function dateRangeLabel(
 
 const filterChips = computed<FilterChip[]>(() => {
   const chips: FilterChip[] = []
-  const collectionLocked = embed.active && embed.collectionLocked
 
-  for (const id of filterState.collections) {
-    chips.push({
-      key: `collection:${id}`,
-      label: `Collection: ${collectionName(id)}`,
-      locked: collectionLocked,
-      clear: () => clearCollectionFilter(id),
-    })
-  }
-  if (filterState.uncategorized) {
-    chips.push({
-      key: 'uncategorized',
-      label: 'Uncategorized',
-      clear: () => {
-        filterState.uncategorized = false
-      },
-    })
-  }
   for (const [key, values] of Object.entries(filterState.attributes)) {
     const grant = auth.user?.scope?.attributes?.find(
       (item) => item.key === key,
@@ -1025,18 +920,6 @@ const filterChips = computed<FilterChip[]>(() => {
         filterState.mimeTypes = filterState.mimeTypes.filter(
           (item) => item !== value,
         )
-      },
-    })
-  }
-  if (filterState.preset) {
-    chips.push({
-      key: 'preset',
-      label: `Preset: ${presetName(filterState.preset)}${
-        filterState.presetExclude ? ' (not allowed)' : ''
-      }`,
-      clear: () => {
-        filterState.preset = ''
-        filterState.presetExclude = false
       },
     })
   }
@@ -1194,20 +1077,6 @@ const singleAsset = computed(() => {
   return assets.value.find((asset) => asset.id === id) ?? null
 })
 
-// The Inspector falls back to describing the active collection when no asset
-// is selected. Only a concrete id counts; the virtual 'uncategorized' filter
-// has no entity to describe.
-const activeCollection = computed<Collection | null>(() => {
-  if (filterState.collections.length !== 1 || filterState.uncategorized) {
-    return null
-  }
-  return (
-    library.collections.find(
-      (item) => item.id === filterState.collections[0],
-    ) ?? null
-  )
-})
-
 // A smart collection is only "active" when it was explicitly opened from the
 // sidebar (tracked as client-side state); manually setting the same filters
 // does not select it. It also drops out once the filters no longer match.
@@ -1216,16 +1085,13 @@ const activeSmartCollection = computed<SmartCollection | null>(() => {
   const filter = smartSelection.filter
   if (!id || !filter) return null
   if (
-    filterState.collections.length > 1 ||
     filterState.types.length > 1 ||
-    filterState.uncategorized ||
     filterState.search ||
     OPTIONAL_FILTERS.some((item) => hasFilterValue(item.key))
   ) {
     return null
   }
   const matches =
-    (filter.collection ?? '') === (filterState.collections[0] ?? '') &&
     (filter.type ?? '') === (filterState.types[0] ?? '') &&
     (filter.sort || 'date-desc') === filterState.sort
   if (!matches) return null
@@ -1256,13 +1122,10 @@ const visibleAssets = computed(() => assets.value)
 
 const hasActiveFilters = computed(
   () =>
-    collectionFilter.value.length > 0 ||
-    filterState.uncategorized ||
     typeFilter.value.length > 0 ||
     Object.keys(filterState.attributes).length > 0 ||
     colorFilter.value.length > 0 ||
     mimeFilter.value.length > 0 ||
-    Boolean(presetFilter.value) ||
     minSize.value !== null ||
     maxSize.value !== null ||
     minDuration.value !== null ||
@@ -1560,16 +1423,6 @@ const menuItems = computed<MenuItem[]>(() => {
         },
       })
     }
-    if (hasCapability('assets:update')) {
-      items.push({
-        label: 'Collections',
-        icon: Folder,
-        command: () => {
-          const asset = selectedAssets.value[0]
-          if (asset) openAssetCollections(asset.id)
-        },
-      })
-    }
     if (
       hasCapability('attributes:select') &&
       attributeBulkItems.value.length
@@ -1617,24 +1470,6 @@ const menuItems = computed<MenuItem[]>(() => {
         },
       })
     }
-    if (hasCapability('assets:update')) {
-      items.push({
-        label: 'Collections',
-        icon: Folder,
-        items: [
-          {
-            label: 'Replace',
-            command: () =>
-              openBulkAssetCollections(selectedIds.value.slice(), 'replace'),
-          },
-          {
-            label: 'Add',
-            command: () =>
-              openBulkAssetCollections(selectedIds.value.slice(), 'add'),
-          },
-        ],
-      })
-    }
     if (
       hasCapability('attributes:select') &&
       attributeBulkItems.value.length
@@ -1667,8 +1502,6 @@ function assetParams(): api.AssetListParams {
     types: typeFilter.value.length ? typeFilter.value : undefined,
     colors: colorFilter.value.length ? colorFilter.value : undefined,
     mimeTypes: mimeFilter.value.length ? mimeFilter.value : undefined,
-    presetId: presetFilter.value || undefined,
-    presetExclude: presetFilter.value ? presetExclude.value : undefined,
     minDuration: minDuration.value ?? undefined,
     maxDuration: maxDuration.value ?? undefined,
     minPages: minPages.value ?? undefined,
@@ -1692,11 +1525,6 @@ function assetParams(): api.AssetListParams {
     sort: isFilterDenied('sort') ? undefined : sort.value || undefined,
     limit: 100,
   }
-  if (filterState.uncategorized) params.uncategorized = true
-  if (filterState.collections.length) {
-    params.collectionIds = [...filterState.collections]
-  }
-
   if (Object.keys(filterState.attributes).length) {
     params.attributes = { ...filterState.attributes }
   }
@@ -2177,7 +2005,7 @@ function openManage(action: () => void): void {
   action()
 }
 
-// onChanged replaces the affected asset client-side (title/note/collections
+// onChanged replaces the affected asset client-side (title/note/attributes
 // changed), avoiding a full library/asset reload.
 function onChanged(asset: Asset): void {
   const index = assets.value.findIndex((item) => item.id === asset.id)
@@ -2185,8 +2013,8 @@ function onChanged(asset: Asset): void {
   if (selectedDetail.value?.id === asset.id) selectedDetail.value = asset
 }
 
-// Refreshes the sidebar/library after a collection is edited in the Inspector,
-// so the tree and this panel all pick up the new values.
+// Refreshes the sidebar/library after a smart collection is edited in the
+// Inspector, so this panel picks up the new values.
 function onSubjectChanged(): void {
   notifyLibraryChanged()
 }
@@ -2403,7 +2231,6 @@ onBeforeUnmount(() => {
               ></span>
               <span
                 v-if="
-                  embedCollectionLocked ||
                   embedTypeLocked ||
                   embedMimeLocked ||
                   embedSearchLocked ||
@@ -2454,7 +2281,7 @@ onBeforeUnmount(() => {
               class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
               title="Upload"
               aria-label="Upload"
-              @click="openUpload([], uploadCollectionId)"
+              @click="openUpload()"
             >
               <Upload :size="16" />
             </button>
@@ -2615,7 +2442,7 @@ onBeforeUnmount(() => {
             v-if="!isAttributesSidebar"
             ref="filtersPopover"
             :pt="{ content: { class: '!p-0' } }"
-            :dismissable="!collectionFilterOpen"
+            dismissable
             @hide="onFiltersHide"
           >
             <div class="w-[34rem] max-w-[calc(100vw-2rem)]">
@@ -2633,17 +2460,6 @@ onBeforeUnmount(() => {
               </div>
               <div class="max-h-[70vh] space-y-2 overflow-y-auto p-3">
                 <div class="grid grid-cols-2 gap-2">
-                  <CollectionFilterPopover
-                    v-model="collectionFilter"
-                    :disabled="embedCollectionLocked || uncategorizedView"
-                    :locked-title="
-                      uncategorizedView
-                        ? 'Uncategorized is automatically applied in this view'
-                        : 'This collection is locked by the host application'
-                    "
-                    @show="collectionFilterOpen = true"
-                    @hide="collectionFilterOpen = false"
-                  />
                   <MultiSelect
                     v-model="typeFilter"
                     :options="TYPE_CATEGORIES"
@@ -2713,57 +2529,6 @@ onBeforeUnmount(() => {
                   v-if="visibleFilters.length"
                   class="grid grid-cols-2 gap-2"
                 >
-                  <div
-                    v-if="visibleFilters.includes('preset')"
-                    class="col-span-2 rounded-md border border-slate-200 p-2 dark:border-slate-800"
-                  >
-                    <div class="mb-1 flex items-center justify-between">
-                      <span class="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Preset</span>
-                      <button
-                        type="button"
-                        class="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800"
-                        title="Remove preset filter"
-                        @click="removeFilter('preset')"
-                      >
-                        <Times :size="12" />
-                      </button>
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <Select
-                        v-model="presetFilter"
-                        :options="presetOptions"
-                        option-label="label"
-                        option-value="value"
-                        placeholder="Preset"
-                        filter
-                        showClear
-                        class="min-w-0 flex-1"
-                      >
-                        <template #option="slotProps">
-                          <span class="flex w-full items-center gap-2">
-                            <span class="min-w-0 flex-1 truncate">
-                              {{ slotProps.option.label }}
-                            </span>
-                            <span class="shrink-0 font-mono text-[11px] text-slate-400">
-                              {{ slotProps.option.name }}
-                            </span>
-                          </span>
-                        </template>
-                      </Select>
-                      <label
-                        class="flex shrink-0 items-center gap-1 text-[11px] text-slate-500"
-                        title="Show assets that are not allowed to use the selected preset"
-                      >
-                        <input
-                          v-model="presetExclude"
-                          type="checkbox"
-                          :disabled="!presetFilter"
-                        />
-                        Not allowed
-                      </label>
-                    </div>
-                  </div>
-
                   <div
                     v-if="visibleFilters.includes('color')"
                     class="rounded-md border border-slate-200 p-2 dark:border-slate-800"
@@ -3246,20 +3011,6 @@ onBeforeUnmount(() => {
                 >
                   Filter clicks
                 </p>
-                <SelectButton
-                  v-model="filterClickMode"
-                  :options="FILTER_CLICK_OPTIONS"
-                  option-label="label"
-                  option-value="value"
-                  :allow-empty="false"
-                  size="small"
-                  fluid
-                  class="w-full"
-                />
-                <p class="mt-2 text-xs text-slate-400">
-                  How clicking a collection in the sidebar changes the current
-                  filters.
-                </p>
               </div>
 
               <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
@@ -3330,15 +3081,6 @@ onBeforeUnmount(() => {
               >
                 <Images :size="14" />
                 <span>Presets</span>
-              </button>
-              <button
-                v-if="hasCapability('library:update')"
-                type="button"
-                class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-                @click="openManage(openCollectionsDialog)"
-              >
-                <Folder :size="14" />
-                <span>Collections</span>
               </button>
               <button
                 v-if="hasCapability('settings:attributes')"
@@ -3549,8 +3291,7 @@ onBeforeUnmount(() => {
               @close="clearSelection"
             />
             <FilterInspector
-              v-else-if="activeSmartCollection || activeCollection"
-              :collection="activeCollection ?? undefined"
+              v-else-if="activeSmartCollection"
               :smart-collection="activeSmartCollection ?? undefined"
               :assets="visibleAssets"
               :size="filteredSize"

@@ -3,31 +3,22 @@ import { reactive, watch } from 'vue'
 // SidebarPrefs controls which optional panels the layout shows and their order.
 // It is a per-device preference (like the asset grid display settings)
 // persisted to localStorage.
-export type SidebarToggleKey =
-  | 'quicklinks'
-  | 'collections'
-  | 'smartCollections'
+export type SidebarToggleKey = 'quicklinks' | 'smartCollections'
 
 export type SidebarMode = 'classic' | 'attributes'
 
 export interface SidebarPrefs {
   quicklinks: boolean
-  collections: boolean
   smartCollections: boolean
   order: SidebarToggleKey[]
   mode: SidebarMode
 }
 
 const SIDEBAR_STORAGE_KEY = 'godam:sidebar'
-const SIDEBAR_KEYS: SidebarToggleKey[] = [
-  'quicklinks',
-  'collections',
-  'smartCollections',
-]
+const SIDEBAR_KEYS: SidebarToggleKey[] = ['quicklinks', 'smartCollections']
 
 const DEFAULT_PREFS: SidebarPrefs = {
   quicklinks: true,
-  collections: true,
   smartCollections: true,
   order: [...SIDEBAR_KEYS],
   mode: 'classic',
@@ -82,6 +73,5 @@ export interface SidebarToggle {
 
 export const SIDEBAR_TOGGLES: SidebarToggle[] = [
   { key: 'quicklinks', label: 'Quicklinks' },
-  { key: 'collections', label: 'Collections' },
   { key: 'smartCollections', label: 'Smart Collections' },
 ]

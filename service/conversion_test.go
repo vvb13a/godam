@@ -3,7 +3,6 @@ package service
 import (
 	"bytes"
 	"context"
-	"errors"
 	"image"
 	"image/png"
 	"io"
@@ -127,7 +126,7 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 			{Name: "resize", Args: []string{"fit", "200", "0"}},
 			{Name: "quality", Args: []string{"82"}},
 		},
-	}, true, nil)
+	})
 	if err != nil {
 		t.Fatalf("create preset: %v", err)
 	}
@@ -147,22 +146,6 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 	}
 	if _, err := svc.ConvertPreset(ctx, asset.ID, "thumb.png"); err == nil {
 		t.Fatal("expected preset format mismatch to fail")
-	}
-
-	other, err := NewCollectionService(db).Create(ctx, nil, "Other", "", "")
-	if err != nil {
-		t.Fatalf("create other collection: %v", err)
-	}
-	if _, err := presets.Create(ctx, "Restricted", "restricted", domain.PresetParameters{
-		Format: "webp",
-		Options: []domain.PresetOption{
-			{Name: "resize", Args: []string{"fit", "100", "0"}},
-		},
-	}, false, []string{other.ID}); err != nil {
-		t.Fatalf("create restricted preset: %v", err)
-	}
-	if _, err := svc.ConvertPreset(ctx, asset.ID, "restricted.webp"); !errors.Is(err, ErrPresetNotAllowed) {
-		t.Fatalf("expected restricted preset to be denied, got %v", err)
 	}
 
 	beforePreview, err := svc.List(ctx, asset.ID)

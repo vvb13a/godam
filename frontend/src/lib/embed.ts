@@ -10,8 +10,6 @@ export const embed = reactive({
   hostOrigin: '*',
   token: '',
   scope: null as EmbedScope | null,
-  collectionId: '',
-  collectionLocked: false,
   typeLocked: false,
   mimeLocked: false,
   searchLocked: false,
@@ -40,9 +38,6 @@ export function configureEmbed(query: Record<string, unknown>): void {
   embed.hostOrigin = param(query.hostOrigin) || '*'
   embed.token = param(query.token)
   if (embed.token) setAuthToken(embed.token)
-  embed.collectionId = param(query.collection)
-  const lock = embed.mode === 'library' ? '' : param(query.lock)
-  embed.collectionLocked = lock.split(',').includes('collection')
   embed.preselectedIds = param(query.selected)
     .split(',')
     .map((id) => id.trim())
@@ -60,7 +55,6 @@ export function applyEmbedScope(scope: EmbedScope): void {
     const mode = filters[name]?.mode
     return mode === 'locked' || mode === 'hidden'
   }
-  embed.collectionLocked = embed.collectionLocked || locked('collection')
   embed.typeLocked = locked('type')
   embed.mimeLocked = locked('mime')
   embed.searchLocked = locked('search')
@@ -72,11 +66,6 @@ export function embedQuery(): Record<string, string> {
   if (embed.mode !== 'library') query.mode = embed.mode
   if (embed.hostOrigin !== '*') query.hostOrigin = embed.hostOrigin
   if (embed.token) query.token = embed.token
-  const lock = embed.collectionLocked ? 'collection' : ''
-  if (lock) query.lock = lock
-  if (embed.collectionLocked && embed.collectionId) {
-    query.collection = embed.collectionId
-  }
   return query
 }
 

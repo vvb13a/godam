@@ -1,45 +1,12 @@
-import { reactive, watch } from 'vue'
+import { reactive } from 'vue'
 import { embed } from './embed'
 import { clearSmartSelection } from './smartSelection'
 import type { EmbedScope } from '../types'
 
-export type FacetClickMode = 'add' | 'replace'
-
-const FILTER_SETTINGS_KEY = 'godam:filter-settings'
-
-function loadClickMode(): FacetClickMode {
-  try {
-    const raw = localStorage.getItem(FILTER_SETTINGS_KEY)
-    return raw === 'add' || raw === 'replace' ? raw : 'replace'
-  } catch {
-    return 'replace'
-  }
-}
-
-export const filterSettings = reactive({
-  clickMode: loadClickMode(),
-})
-
-watch(
-  filterSettings,
-  (value) => {
-    try {
-      localStorage.setItem(FILTER_SETTINGS_KEY, value.clickMode)
-    } catch {
-      // Storage can be unavailable; the preference is non-critical.
-    }
-  },
-  { deep: true },
-)
-
 export const filterState = reactive({
-  collections: [] as string[],
   types: [] as string[],
   colors: [] as string[],
   mimeTypes: [] as string[],
-  uncategorized: false,
-  preset: '',
-  presetExclude: false,
   search: '',
   sort: 'date-desc',
   attributes: {} as Record<string, string[]>,
@@ -59,8 +26,6 @@ export const filterState = reactive({
   modifiedBefore: null as string | null,
 })
 
-const collectionLocked = (): boolean =>
-  (embed.active && embed.collectionLocked) || filterLocked('collection')
 const typeLocked = (): boolean =>
   (embed.active && embed.typeLocked) || filterLocked('type')
 const mimeLocked = (): boolean =>
@@ -84,10 +49,6 @@ function scopeFilter(name: string) {
 
 function filterValues(name: string): string[] {
   return scopeFilter(name)?.values ?? []
-}
-
-function filterTrue(name: string): boolean {
-  return filterValues(name).some((value) => value.toLowerCase() === 'true')
 }
 
 function filterLocked(name: string): boolean {
@@ -121,14 +82,10 @@ export function isFilterVisible(name: string): boolean {
 
 function clearFacetFilters(): void {
   filterState.attributes = enforcedAttributes()
-  if (!collectionLocked()) filterState.collections = []
   if (!typeLocked()) filterState.types = []
   if (!mimeLocked()) filterState.mimeTypes = []
   if (!searchLocked()) filterState.search = ''
   filterState.colors = []
-  if (!filterLocked('uncategorized')) filterState.uncategorized = false
-  filterState.preset = ''
-  filterState.presetExclude = false
   filterState.minSize = null
   filterState.maxSize = null
   filterState.minDuration = null
@@ -148,14 +105,6 @@ function clearFacetFilters(): void {
 export function clearAllFilters(): void {
   clearSmartSelection()
   clearFacetFilters()
-}
-
-export function clearCollectionFilter(id: string): void {
-  if (collectionLocked()) return
-  clearSmartSelection()
-  filterState.collections = filterState.collections.filter(
-    (item) => item !== id,
-  )
 }
 
 export function isAttributeLocked(key: string): boolean {
@@ -215,43 +164,6 @@ export function clearAttributeValue(key: string, value: string): void {
   else delete filterState.attributes[key]
 }
 
-export function toggleCollection(id: string): void {
-  if (collectionLocked()) return
-  clearSmartSelection()
-  if (filterState.collections.includes(id)) {
-    clearCollectionFilter(id)
-    return
-  }
-  if (filterSettings.clickMode === 'replace') clearFacetFilters()
-  filterState.collections = [
-    ...filterState.collections.filter((item) => item !== id),
-    id,
-  ]
-  filterState.uncategorized = false
-}
-
-export function applyCollectionFilter(id: string): void {
-  if (collectionLocked()) return
-  clearSmartSelection()
-  if (filterSettings.clickMode === 'replace') clearFacetFilters()
-  if (!filterState.collections.includes(id)) {
-    filterState.collections = [...filterState.collections, id]
-  }
-  filterState.uncategorized = false
-}
-
-export function toggleUncategorized(): void {
-  if (collectionLocked() || filterLocked('uncategorized')) return
-  clearSmartSelection()
-  if (filterState.uncategorized) {
-    filterState.uncategorized = false
-    return
-  }
-  if (filterSettings.clickMode === 'replace') clearFacetFilters()
-  filterState.uncategorized = true
-  filterState.collections = []
-}
-
 export function resetSort(): void {
   if ((embed.active && embed.sortLocked) || isFilterLocked('sort')) return
   filterState.sort = 'date-desc'
@@ -273,14 +185,6 @@ export function initFilterState(scope?: EmbedScope): void {
     }
   }
 
-  if (embed.collectionId) filterState.collections = [embed.collectionId]
-
-  const collection = filterValues('collection')
-  if (collection.length) {
-    if (filterLocked('collection') || filterState.collections.length === 0) {
-      filterState.collections = [...collection]
-    }
-  }
   const type = filterValues('type')
   if (type.length) {
     if (filterLocked('type') || filterState.types.length === 0) {
@@ -293,7 +197,6 @@ export function initFilterState(scope?: EmbedScope): void {
       filterState.mimeTypes = [...mimeTypes]
     }
   }
-  if (filterTrue('uncategorized')) filterState.uncategorized = true
   const search = filterValues('search')[0]
   if (search) {
     if (filterLocked('search') || !filterState.search) {
@@ -310,13 +213,10 @@ export function initFilterState(scope?: EmbedScope): void {
 
 export function hasActiveFilterState(): boolean {
   return (
-    filterState.collections.length > 0 ||
     filterState.types.length > 0 ||
     Object.keys(filterState.attributes).length > 0 ||
     filterState.colors.length > 0 ||
     filterState.mimeTypes.length > 0 ||
-    filterState.uncategorized ||
-    Boolean(filterState.preset) ||
     Boolean(filterState.search.trim()) ||
     filterState.minSize !== null ||
     filterState.maxSize !== null ||

@@ -122,20 +122,7 @@ export interface Instance {
 
 export type Library = Instance
 
-export interface Collection {
-  id: string
-  parent_id?: string
-  name: string
-  description: string
-  color: string
-  sort: number
-  created_at: string
-  updated_at: string
-  asset_count: number
-}
-
 export interface SmartCollectionFilter {
-  collection?: string
   type?: string
   sort?: string
 }
@@ -179,7 +166,6 @@ export interface Asset {
   byte_size: number
   metadata: AssetMetadata
   colors?: AssetColor[]
-  collections?: Collection[]
   created_at: string
   updated_at: string
 }
@@ -212,8 +198,6 @@ export interface Preset {
   label: string
   name: string
   parameters: PresetParameters
-  library_wide: boolean
-  collection_ids: string[]
   created_at: string
   modified_at: string
 }
@@ -268,8 +252,6 @@ export interface TypeCount {
 
 export interface Stats {
   assets: number
-  collections: number
-  uncategorized: number
   storage_bytes: number
   conversions: number
   conversion_bytes: number

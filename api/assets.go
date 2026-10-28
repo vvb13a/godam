@@ -21,22 +21,10 @@ import (
 // keyset order.
 func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	presetID := q.Get("preset_id")
-	if presetID == "" {
-		// Allow ?preset=<name> for shareable URLs; the service filter works on ids.
-		if name := q.Get("preset"); name != "" && s.deps.Presets != nil {
-			if preset, err := s.deps.Presets.GetByName(r.Context(), name); err == nil {
-				presetID = preset.ID
-			}
-		}
-	}
 	filter := domain.AssetFilter{
-		PresetID:       presetID,
-		PresetExclude:  q.Get("preset_exclude") == "true",
 		Search:         q.Get("search"),
 		Sort:           q.Get("sort"),
 		Cursor:         q.Get("cursor"),
-		CollectionIDs:  append(parseCSV(q.Get("collection_ids")), parseCSV(q.Get("collection_id"))...),
 		Types:          append(parseCSV(q.Get("types")), parseCSV(q.Get("type"))...),
 		Colors:         append(parseCSV(q.Get("colors")), parseCSV(q.Get("color"))...),
 		MimeTypes:      append(parseCSV(q.Get("mime_types")), parseCSV(q.Get("mime"))...),
@@ -60,7 +48,6 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 			filter.Limit = limit
 		}
 	}
-	filter.Uncategorized = q.Get("uncategorized") == "true"
 
 	if raw := q.Get("attributes"); raw != "" {
 		attributes, err := parseAttributeFilters(raw)
@@ -167,8 +154,6 @@ func parseDatePtr(raw string, endOfDay bool) *time.Time {
 // filterRequested reports whether a request supplies a canonical filter.
 func filterRequested(name string, q url.Values) bool {
 	switch name {
-	case "collection":
-		return q.Get("collection_ids") != "" || q.Get("collection_id") != ""
 	case "type":
 		return q.Get("types") != "" || q.Get("type") != ""
 	case "mime":
@@ -177,8 +162,6 @@ func filterRequested(name string, q url.Values) bool {
 		return strings.TrimSpace(q.Get("search")) != ""
 	case "sort":
 		return strings.TrimSpace(q.Get("sort")) != ""
-	case "uncategorized":
-		return q.Get("uncategorized") == "true"
 	case "color":
 		return q.Get("colors") != "" || q.Get("color") != ""
 	case "size":
@@ -211,12 +194,6 @@ func deniedFilterName(scope domain.Scope, q url.Values) string {
 // hidden filters are enforced server-side. Active values are defaults for the
 // embed UI, so the client can clear them without the server restoring them.
 func applyScopeToAssetFilter(filter *domain.AssetFilter, scope domain.Scope) {
-	if collection, _ := scope.Filter("collection"); scope.Locked("collection") {
-		filter.CollectionIDs = append([]string{}, collection.Values...)
-		// A locked collection must not be broadened by uncategorized.
-		filter.Uncategorized = false
-	}
-
 	if typeFilter, _ := scope.Filter("type"); scope.Locked("type") {
 		filter.Types = append([]string{}, typeFilter.Values...)
 	}
@@ -231,18 +208,6 @@ func applyScopeToAssetFilter(filter *domain.AssetFilter, scope domain.Scope) {
 	if sortFilter, ok := scope.Filter("sort"); scope.Locked("sort") && ok && len(sortFilter.Values) > 0 {
 		filter.Sort = strings.TrimSpace(sortFilter.Values[0])
 	}
-	if uncategorized, ok := scope.Filter("uncategorized"); scope.Locked("uncategorized") && ok {
-		filter.Uncategorized = filterGrantTrue(uncategorized)
-	}
-}
-
-func filterGrantTrue(grant domain.FilterGrant) bool {
-	for _, value := range grant.Values {
-		if strings.EqualFold(strings.TrimSpace(value), "true") {
-			return true
-		}
-	}
-	return false
 }
 
 func parseAttributeFilters(raw string) (map[string][]string, error) {
@@ -1042,96 +1007,6 @@ func (s *Server) handleRegeneratePreview(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	asset, err := s.deps.Assets.RegeneratePreview(r.Context(), id)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, asset)
-}
-
-type collectionRelationRequest struct {
-	CollectionID string `json:"collection_id"`
-}
-
-func (s *Server) handleAddToCollection(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if _, ok := s.ownedAsset(w, r, id); !ok {
-		return
-	}
-	var req collectionRelationRequest
-	if !decodeJSON(w, r, &req) {
-		return
-	}
-	if req.CollectionID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "collection_id is required"})
-		return
-	}
-	if err := s.deps.Assets.AddToCollection(r.Context(), id, req.CollectionID); err != nil {
-		writeError(w, err)
-		return
-	}
-	s.respondAsset(w, r, id)
-}
-
-func (s *Server) handleRemoveFromCollection(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if _, ok := s.ownedAsset(w, r, id); !ok {
-		return
-	}
-	if err := s.deps.Assets.RemoveFromCollection(r.Context(), id, r.PathValue("collectionId")); err != nil {
-		writeError(w, err)
-		return
-	}
-	s.respondAsset(w, r, id)
-}
-
-type bulkCollectionRequest struct {
-	CollectionID  string   `json:"collection_id"`
-	CollectionIDs []string `json:"collection_ids"`
-	AssetIDs      []string `json:"asset_ids"`
-	Mode          string   `json:"mode"`
-}
-
-// handleAddAssetsToCollection applies a collection set to many assets in one
-// request. The legacy single collection_id form adds that collection; the
-// collection_ids + mode form supports bulk add and replace.
-func (s *Server) handleAddAssetsToCollection(w http.ResponseWriter, r *http.Request) {
-	var req bulkCollectionRequest
-	if !decodeJSON(w, r, &req) {
-		return
-	}
-	ids := req.CollectionIDs
-	if req.CollectionID != "" {
-		ids = append(ids, req.CollectionID)
-	}
-	mode := req.Mode
-	if mode == "" {
-		mode = "add"
-	}
-	if mode != "add" && mode != "replace" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "mode must be add or replace"})
-		return
-	}
-	if mode == "add" && len(ids) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "collection_id or collection_ids is required"})
-		return
-	}
-	for _, id := range ids {
-		if _, ok := s.ownedCollection(w, r, id); !ok {
-			return
-		}
-	}
-	if err := s.deps.Assets.ApplyCollectionsBulk(r.Context(), req.AssetIDs, ids, mode); err != nil {
-		writeError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// respondAsset writes the current state of an asset, so relation mutations
-// return the updated membership without a follow-up request.
-func (s *Server) respondAsset(w http.ResponseWriter, r *http.Request, id string) {
-	asset, err := s.deps.Assets.GetByID(r.Context(), id)
 	if err != nil {
 		writeError(w, err)
 		return

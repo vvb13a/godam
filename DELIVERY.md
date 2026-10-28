@@ -26,9 +26,9 @@ Upload / replace / regenerate creates visual assets for:
 Derived visual assets are capped at 1920 on the long edge. Larger delivery
 sizes are produced by imgproxy on demand; no 400px derivative is stored.
 
-Visual assets are excluded from listings, search, stats, zip downloads, backup,
-and collection counts. They are deleted with their parent and regenerated in
-place, so the visual asset ID stays stable. A missing visual asset is generated
+Visual assets are excluded from listings, search, stats, zip downloads, and
+backup. They are deleted with their parent and regenerated in place, so the
+visual asset ID stays stable. A missing visual asset is generated
 lazily on the first `/img` or authenticated preview request.
 
 imgproxy is the conversion source of truth. Extraction of audio/video/pdf is
@@ -240,7 +240,7 @@ They are no longer read or written and can be deleted.
 - `/convert` is also unauthenticated (pre-existing).
 - Asset UUIDs are the only thing protecting public routes; they are not an
   access-control boundary.
-- There is no per-asset or per-collection visibility/publish flag.
+- There is no per-asset visibility/publish flag.
 - There are no signed or expiring original URLs.
 - `/src` publicly exposes audio/video/pdf originals. This is the highest-risk
   part of the current contract.
@@ -257,8 +257,8 @@ visibility and signing should be layered on before exposing private libraries.
 ## Known limitations / follow-ups
 
 - Add cache busting keyed by asset `updated_at` and preset `modified_at`.
-- Add asset/collection visibility (`private`/`public`) and enforce it in `/img`
-  and `/src`; default private.
+- Add asset visibility (`private`/`public`) and enforce it in `/img` and `/src`;
+  default private.
 - Add signed original URLs (expiry, audience) or a CDN token scheme.
 - Extend `/api/imgproxy/sign` to non-image parent assets via `image_of`.
 - Consider CDN/object storage for `/src`; serving large media through godam

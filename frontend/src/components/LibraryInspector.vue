@@ -83,10 +83,6 @@ async function removeCover(): Promise<void> {
             </dd>
           </div>
           <div class="flex justify-between gap-4">
-            <dt class="text-slate-400">Collections</dt>
-            <dd class="text-right">{{ stats?.collections ?? '—' }}</dd>
-          </div>
-          <div class="flex justify-between gap-4">
             <dt class="text-slate-400">Smart collections</dt>
             <dd class="text-right">{{ library.smartCollections.length }}</dd>
           </div>

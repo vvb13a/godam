@@ -24,10 +24,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as api from '../api/client'
 import { hasCapability } from '../lib/capabilities'
 import { formatDuration, formatSize } from '../lib/format'
-import { library, notifyLibraryChanged } from '../lib/library'
-import { libraryColorHex } from '../lib/libraryColors'
+import { notifyLibraryChanged } from '../lib/library'
 import { ACCEPT_STRING } from '../lib/mimeTypes'
-import { openUploadCollections } from '../lib/collectionsDialog'
 import { theme } from '../lib/theme'
 import {
   clearUploadItems,
@@ -41,8 +39,6 @@ import {
 } from '../lib/upload'
 import type { UploadItem } from '../lib/upload'
 import FileTypePreview from './FileTypePreview.vue'
-import type { Collection } from '../types'
-import PillBadge from './PillBadge.vue'
 
 const UPLOAD_CONCURRENCY = 3
 
@@ -62,7 +58,6 @@ const running = ref(false)
 const error = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const cancelers = new Map<string, AbortController>()
-const appliedAssetIds = new Set<string>()
 const runStartedAt = ref(0)
 const runStartBytes = ref(0)
 const nowTick = ref(Date.now())
@@ -280,11 +275,6 @@ const sortedItems = computed(() => {
   return items
 })
 
-const selectedCollections = computed<Collection[]>(() => {
-  const ids = new Set(upload.destinationCollectionIds)
-  return library.collections.filter((collection) => ids.has(collection.id))
-})
-
 watch(
   () => upload.visible,
   (open) => {
@@ -325,8 +315,6 @@ function cleanup(): void {
   }
   cancelers.clear()
   clearUploadItems()
-  appliedAssetIds.clear()
-  upload.destinationCollectionIds = []
   editingId.value = null
   running.value = false
   error.value = null
@@ -451,12 +439,6 @@ function onWindowDrop(event: DragEvent): void {
     ? Array.from(event.dataTransfer.files)
     : []
   if (files.length) addFiles(files)
-}
-
-function removeCollection(collectionId: string): void {
-  upload.destinationCollectionIds = upload.destinationCollectionIds.filter(
-    (id) => id !== collectionId,
-  )
 }
 
 
@@ -588,7 +570,6 @@ async function revertItem(item: UploadItem): Promise<void> {
   if (!item.assetId || running.value || !canDeleteAssets.value) return
   try {
     await api.deleteAsset(item.assetId)
-    appliedAssetIds.delete(item.assetId)
     item.assetId = null
     disposeUploadItem(item)
     const index = upload.items.indexOf(item)
@@ -645,7 +626,6 @@ async function revertUploaded(): Promise<void> {
   uploaded.forEach((item, index) => {
     if (results[index]?.status === 'fulfilled') {
       reverted++
-      if (item.assetId) appliedAssetIds.delete(item.assetId)
       item.assetId = null
       disposeUploadItem(item)
       const itemIndex = upload.items.indexOf(item)
@@ -748,16 +728,6 @@ async function processItem(item: UploadItem): Promise<boolean> {
   }
 }
 
-async function applyDestinations(assetIds: string[]): Promise<void> {
-  const fresh = assetIds.filter((id) => !appliedAssetIds.has(id))
-  if (!fresh.length) return
-  const collectionIds = [...upload.destinationCollectionIds]
-  await Promise.all(
-    collectionIds.map((id) => api.addAssetsToCollection(id, fresh)),
-  )
-  for (const id of fresh) appliedAssetIds.add(id)
-}
-
 async function runQueue(): Promise<void> {
   if (running.value) return
   const queue = sortedItems.value.filter(
@@ -796,7 +766,6 @@ async function runQueue(): Promise<void> {
     const workers = Math.min(UPLOAD_CONCURRENCY, queue.length)
     await Promise.all(Array.from({ length: workers }, worker))
     if (completedIds.length) {
-      await applyDestinations(completedIds)
       notifyLibraryChanged()
       toast.add({
         severity: 'success',
@@ -1181,40 +1150,6 @@ function onPrimary(): void {
             </template>
           </p>
         </div>
-
-        <section>
-          <div class="mb-2 flex items-center justify-between">
-            <h3 class="text-sm font-semibold">Collections</h3>
-            <button
-              class="inline-flex text-slate-400 hover:text-brand-700 disabled:opacity-40 dark:hover:text-brand-400"
-              title="Select collections"
-              :disabled="running"
-              @click="openUploadCollections"
-            >
-              <Plus :size="14" />
-            </button>
-          </div>
-          <div class="flex flex-wrap gap-1">
-            <PillBadge
-              v-for="collection in selectedCollections"
-              :key="collection.id"
-              :name="collection.name"
-              :color="libraryColorHex(collection.color)"
-            >
-              <button
-                class="inline-flex text-slate-400 hover:text-red-500 disabled:opacity-40"
-                title="Remove from collection"
-                :disabled="running"
-                @click="removeCollection(collection.id)"
-              >
-                <Times :size="12" />
-              </button>
-            </PillBadge>
-            <span v-if="!selectedCollections.length" class="text-xs text-slate-400">
-              No collections
-            </span>
-          </div>
-        </section>
 
         <Message v-if="error" severity="error">{{ error }}</Message>
 

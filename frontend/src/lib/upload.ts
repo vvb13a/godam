@@ -39,20 +39,13 @@ export interface UploadCallbacks {
 export const upload = reactive({
   visible: false,
   items: [] as UploadItem[],
-  destinationCollectionIds: [] as string[],
 })
 
-// openUpload stages the given files (if any) and opens the dialog. The
-// collection default comes from the view the user is currently in, so uploads
-// are automatically associated with the active collection filter.
-export function openUpload(
-  files: File[] = [],
-  destination: string | null = null,
-): void {
+// openUpload stages the given files (if any) and opens the dialog.
+export function openUpload(files: File[] = []): void {
   for (const file of files) {
     upload.items.push(createUploadItem(file))
   }
-  upload.destinationCollectionIds = destination ? [destination] : []
   upload.visible = true
 }
 

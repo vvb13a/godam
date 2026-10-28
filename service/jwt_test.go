@@ -39,10 +39,6 @@ func TestJWTVerifierMapsScope(t *testing.T) {
 		"exp":      now.Add(time.Hour).Unix(),
 		"scope": map[string]any{
 			"filters": map[string]any{
-				"collection": map[string]any{
-					"values": []string{"collection-1"},
-					"mode":   "locked",
-				},
 				"type": map[string]any{
 					"values": []string{"image"},
 					"mode":   "hidden",
@@ -52,9 +48,6 @@ func TestJWTVerifierMapsScope(t *testing.T) {
 				},
 				"search": map[string]any{"values": "brand"},
 				"sort":   map[string]any{"values": "name-asc"},
-				"uncategorized": map[string]any{
-					"mode": "locked",
-				},
 			},
 			"upload_settings": []map[string]any{
 				{
@@ -76,9 +69,6 @@ func TestJWTVerifierMapsScope(t *testing.T) {
 		t.Fatalf("unexpected actor: %+v", actor)
 	}
 	scope := actor.Scope
-	if grant, _ := scope.Filter("collection"); len(grant.Values) != 1 || grant.Values[0] != "collection-1" || grant.Mode != domain.ScopeModeLocked {
-		t.Fatalf("collection = %+v", grant)
-	}
 	if grant, _ := scope.Filter("type"); !scope.Hidden("type") || grant.Mode != domain.ScopeModeHidden {
 		t.Fatalf("type = %+v", grant)
 	}
@@ -90,12 +80,6 @@ func TestJWTVerifierMapsScope(t *testing.T) {
 	}
 	if grant, _ := scope.Filter("sort"); len(grant.Values) != 1 || grant.Values[0] != "name-asc" {
 		t.Fatalf("sort = %+v", grant)
-	}
-	if grant, _ := scope.Filter("uncategorized"); len(grant.Values) != 1 || grant.Values[0] != "true" {
-		t.Fatalf("uncategorized = %+v", grant)
-	}
-	if !scope.Locked("collection") {
-		t.Fatalf("locked filters = %+v", scope.Filters)
 	}
 	if len(scope.UploadSettings) != 2 {
 		t.Fatalf("upload settings = %+v", scope.UploadSettings)
@@ -206,7 +190,7 @@ func TestJWTVerifierRejectsInvalidScope(t *testing.T) {
 	tests := map[string]map[string]any{
 		"invalid filter mode": {
 			"filters": map[string]any{
-				"collection": map[string]any{"values": []string{"x"}, "mode": "nope"},
+				"type": map[string]any{"values": []string{"x"}, "mode": "nope"},
 			},
 		},
 		"invalid filter name": {

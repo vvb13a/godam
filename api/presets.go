@@ -11,15 +11,9 @@ import (
 )
 
 type presetRequest struct {
-	Label         string                  `json:"label"`
-	Name          string                  `json:"name"`
-	Parameters    domain.PresetParameters `json:"parameters"`
-	LibraryWide   *bool                   `json:"library_wide"`
-	CollectionIDs []string                `json:"collection_ids"`
-}
-
-func (r presetRequest) libraryWide() bool {
-	return r.LibraryWide == nil || *r.LibraryWide
+	Label      string                  `json:"label"`
+	Name       string                  `json:"name"`
+	Parameters domain.PresetParameters `json:"parameters"`
 }
 
 func (s *Server) handleListPresets(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +39,6 @@ func (s *Server) handleCreatePreset(w http.ResponseWriter, r *http.Request) {
 	}
 	preset, err := s.deps.Presets.Create(
 		r.Context(), req.Label, req.Name, req.Parameters,
-		req.libraryWide(), req.CollectionIDs,
 	)
 	if err != nil {
 		writeError(w, err)
@@ -61,7 +54,6 @@ func (s *Server) handleUpdatePreset(w http.ResponseWriter, r *http.Request) {
 	}
 	preset, err := s.deps.Presets.Update(
 		r.Context(), r.PathValue("id"), req.Label, req.Name, req.Parameters,
-		req.libraryWide(), req.CollectionIDs,
 	)
 	if err != nil {
 		writeError(w, err)

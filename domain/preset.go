@@ -9,12 +9,8 @@ type Preset struct {
 	Label      string           `json:"label"`
 	Name       string           `json:"name"`
 	Parameters PresetParameters `json:"parameters"`
-	// LibraryWide makes the preset available to every asset. Otherwise it is
-	// available to assets whose collection is listed in the join table.
-	LibraryWide   bool      `json:"library_wide"`
-	CollectionIDs []string  `json:"collection_ids"`
-	CreatedAt     time.Time `json:"created_at"`
-	ModifiedAt    time.Time `json:"modified_at"`
+	CreatedAt  time.Time        `json:"created_at"`
+	ModifiedAt time.Time        `json:"modified_at"`
 }
 
 // PresetParameters is the JSON document stored in presets.parameters. Format

@@ -3,7 +3,7 @@ import Message from 'primevue/message'
 import MultiSelect from 'primevue/multiselect'
 import Popover from 'primevue/popover'
 import Select from 'primevue/select'
-import { Bolt, ListCheck, Plus, Refresh, Times } from '@primeicons/vue'
+import { Bolt, ListCheck, Refresh, Times } from '@primeicons/vue'
 import { computed, ref, watch } from 'vue'
 import * as api from '../api/client'
 import { auth } from '../lib/auth'
@@ -15,13 +15,11 @@ import { conversionCacheVersion } from '../lib/conversionCache'
 import { formatDateTime, formatDuration, formatRelative, formatSize } from '../lib/format'
 import { hasMediaPreview } from '../lib/mimeTypes'
 import { libraryColorHex } from '../lib/libraryColors'
-import { openAssetCollections } from '../lib/collectionsDialog'
 import { openPresetsDialog } from '../lib/presetsDialog'
 import { warmPresets, warmProgress } from '../lib/warmPresets'
 import { ATTRIBUTE_UNASSIGNED } from '../types'
 import type { Asset, AttributeFacetValue, Conversion } from '../types'
 import FileTypePreview from './FileTypePreview.vue'
-import PillBadge from './PillBadge.vue'
 
 const props = defineProps<{ asset: Asset }>()
 const emit = defineEmits<{ close: []; changed: [asset: Asset] }>()
@@ -30,7 +28,6 @@ const canUpdate = computed(() => hasCapability('assets:update'))
 const canWarm = computed(() => hasCapability('conversions:warm'))
 const canManagePresets = computed(() => hasCapability('settings:presets'))
 
-const busy = ref(false)
 const error = ref<string | null>(null)
 const previewFailed = ref(false)
 
@@ -305,10 +302,6 @@ function conversionLabel(conversion: Conversion): string {
   return `${width} × ${height} · ${conversion.format.toUpperCase()}`
 }
 
-function editCollections(): void {
-  openAssetCollections(props.asset.id)
-}
-
 async function save(): Promise<void> {
   if (!canUpdate.value) return
   const nextTitle = title.value.trim()
@@ -334,22 +327,6 @@ async function save(): Promise<void> {
   }
 }
 
-async function run(action: () => Promise<Asset>): Promise<void> {
-  busy.value = true
-  error.value = null
-  try {
-    const asset = await action()
-    emit('changed', asset)
-  } catch (e) {
-    error.value = toMessage(e)
-  } finally {
-    busy.value = false
-  }
-}
-
-function removeCollection(collectionId: string): void {
-  void run(() => api.removeFromCollection(props.asset.id, collectionId))
-}
 </script>
 
 <template>
@@ -636,39 +613,6 @@ function removeCollection(collectionId: string): void {
             </span>
           </li>
         </ul>
-      </section>
-
-      <section>
-        <div class="mb-2 flex items-center justify-between">
-          <h3 class="text-sm font-semibold">Collections</h3>
-          <button
-            class="inline-flex text-slate-400 hover:text-brand-700 dark:hover:text-brand-400"
-            title="Edit collections"
-            @click="editCollections"
-          >
-            <Plus :size="14" />
-          </button>
-        </div>
-        <div class="flex flex-wrap gap-1">
-          <PillBadge
-            v-for="collection in asset.collections"
-            :key="collection.id"
-            :name="collection.name"
-            :color="libraryColorHex(collection.color)"
-          >
-            <button
-              class="inline-flex text-slate-400 hover:text-red-500"
-              title="Remove from collection"
-              :disabled="busy"
-              @click="removeCollection(collection.id)"
-            >
-              <Times :size="12" />
-            </button>
-          </PillBadge>
-          <span v-if="!asset.collections?.length" class="text-xs text-slate-400">
-            No collections
-          </span>
-        </div>
       </section>
 
       <section>

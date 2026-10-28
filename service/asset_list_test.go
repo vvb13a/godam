@@ -418,20 +418,6 @@ func TestAssetListMultiValueAndRangeFilters(t *testing.T) {
 			t.Fatalf("create %s: %v", rows[i].ID, err)
 		}
 	}
-	for _, collection := range []store.Collection{
-		{ID: "c1", Name: "C1", CreatedAt: base, UpdatedAt: base},
-		{ID: "c2", Name: "C2", CreatedAt: base, UpdatedAt: base},
-	} {
-		if err := db.Create(&collection).Error; err != nil {
-			t.Fatalf("create collection: %v", err)
-		}
-	}
-	for _, link := range []struct{ asset, collection string }{{"a1", "c1"}, {"a2", "c2"}} {
-		if err := db.Exec("INSERT INTO asset_collections (asset_id, collection_id) VALUES (?, ?)", link.asset, link.collection).Error; err != nil {
-			t.Fatalf("link collection: %v", err)
-		}
-	}
-
 	ids := func(filter domain.AssetFilter) map[string]bool {
 		t.Helper()
 		page, err := assets.List(ctx, filter)
@@ -457,8 +443,6 @@ func TestAssetListMultiValueAndRangeFilters(t *testing.T) {
 		}
 	}
 
-	expect(domain.AssetFilter{CollectionIDs: []string{"c1", "c2"}}, "a1", "a2")
-	expect(domain.AssetFilter{CollectionIDs: []string{"c1"}, Uncategorized: true}, "a1", "a3")
 	expect(domain.AssetFilter{Types: []string{"image", "video"}}, "a1")
 	expect(domain.AssetFilter{Types: []string{"image", "document"}}, "a1", "a2", "a3")
 	expect(domain.AssetFilter{MimeTypes: []string{"image/png", "application/pdf"}}, "a1", "a2")
@@ -553,72 +537,4 @@ func TestAssetListScopedTypeFilters(t *testing.T) {
 	expect(domain.AssetFilter{MinWidth: &minWidth}, "vid-long", "audio", "pdf", "text")
 	maxHeight := 300
 	expect(domain.AssetFilter{MaxHeight: &maxHeight}, "img", "vid-short", "audio", "pdf", "text")
-}
-
-func TestAssetListPresetFilter(t *testing.T) {
-	db := newTestDB(t)
-	assets := &AssetService{db: db}
-	ctx := context.Background()
-	base := time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC)
-
-	for _, id := range []string{"a1", "a2", "a3"} {
-		asset := store.Asset{
-			ID: id, Filename: id + ".jpg", MimeType: "image/jpeg", ByteSize: 1,
-			StorageDriver: "local", StorageKey: id, CreatedAt: base, UpdatedAt: base,
-		}
-		if err := db.Create(&asset).Error; err != nil {
-			t.Fatalf("create asset: %v", err)
-		}
-	}
-
-	collection, err := NewCollectionService(db).Create(ctx, nil, "Campaign", "", "")
-	if err != nil {
-		t.Fatalf("create collection: %v", err)
-	}
-	if err := db.Exec(`INSERT INTO asset_collections (asset_id, collection_id) VALUES (?, ?)`, "a1", collection.ID).Error; err != nil {
-		t.Fatalf("link collection: %v", err)
-	}
-
-	presets := NewPresetService(db)
-	restricted, err := presets.Create(ctx, "Restricted", "restricted", testPresetParameters(), false, []string{collection.ID})
-	if err != nil {
-		t.Fatalf("create preset: %v", err)
-	}
-
-	ids := func(filter domain.AssetFilter) []string {
-		t.Helper()
-		page, err := assets.List(ctx, filter)
-		if err != nil {
-			t.Fatalf("list: %v", err)
-		}
-		out := make([]string, 0, len(page.Items))
-		for _, asset := range page.Items {
-			out = append(out, asset.ID)
-		}
-		return out
-	}
-	assertIDs := func(got []string, want ...string) {
-		t.Helper()
-		if len(got) != len(want) {
-			t.Fatalf("ids = %v, want %v", got, want)
-		}
-		seen := map[string]bool{}
-		for _, id := range got {
-			seen[id] = true
-		}
-		for _, id := range want {
-			if !seen[id] {
-				t.Fatalf("ids = %v, want %v", got, want)
-			}
-		}
-	}
-
-	assertIDs(ids(domain.AssetFilter{PresetID: restricted.ID, Sort: "name-asc"}), "a1")
-	assertIDs(ids(domain.AssetFilter{PresetID: restricted.ID, PresetExclude: true, Sort: "name-asc"}), "a2", "a3")
-
-	global, err := presets.Create(ctx, "Global", "global", testPresetParameters(), true, nil)
-	if err != nil {
-		t.Fatalf("create global preset: %v", err)
-	}
-	assertIDs(ids(domain.AssetFilter{PresetID: global.ID, Sort: "name-asc"}), "a1", "a2", "a3")
 }

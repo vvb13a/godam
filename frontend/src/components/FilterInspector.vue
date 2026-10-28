@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import Message from 'primevue/message'
-import { Filter, Folder } from '@primeicons/vue'
+import { Filter } from '@primeicons/vue'
 import { computed, ref, watch } from 'vue'
 import * as api from '../api/client'
 import { formatDateTime, formatRelative, formatSize } from '../lib/format'
 import { LIBRARY_COLORS, libraryColorHex } from '../lib/libraryColors'
-import type { Asset, Collection, SmartCollection } from '../types'
+import type { Asset, SmartCollection } from '../types'
 import AssetPreviewGrid from './AssetPreviewGrid.vue'
 
 const props = defineProps<{
-  collection?: Collection
   smartCollection?: SmartCollection
   assets: Asset[]
   size: number
@@ -49,39 +48,25 @@ const subject = computed(() => {
       icon: Filter,
     }
   }
-  if (props.collection) {
-    return {
-      kind: 'Collection',
-      id: props.collection.id,
-      name: props.collection.name,
-      description: props.collection.description ?? '',
-      color: libraryColorHex(props.collection.color),
-      createdAt: props.collection.created_at,
-      updatedAt: props.collection.updated_at,
-      icon: Folder,
-    }
-  }
   return {
-    kind: 'Collection',
+    kind: 'Smart collection',
     id: '',
     name: '',
     description: '',
     color: '#94a3b8',
     createdAt: '',
     updatedAt: '',
-    icon: Folder,
+    icon: Filter,
   }
 })
 
-// Collections and smart collections carry a user-editable colour.
-const canColor = computed(
-  () => Boolean(props.collection) || Boolean(props.smartCollection),
-)
+// Smart collections carry a user-editable colour.
+const canColor = computed(() => Boolean(props.smartCollection))
 
 const currentColor = computed(() => subject.value.color)
 
-// Reset the form when the subject changes (a different collection is selected,
-// or the stored values change after a save + library refresh).
+// Reset the form when the subject changes (a different smart collection is
+// selected, or the stored values change after a save + library refresh).
 watch(
   () => `${subject.value.id}\u0000${subject.value.name}\u0000${subject.value.description}`,
   () => {
@@ -115,14 +100,7 @@ async function persist(color?: string): Promise<void> {
   busy.value = true
   error.value = null
   try {
-    if (props.collection) {
-      await api.updateCollection(
-        props.collection.id,
-        nextName,
-        color ?? props.collection.color,
-        nextDescription,
-      )
-    } else if (props.smartCollection) {
+    if (props.smartCollection) {
       await api.updateSmartCollection(
         props.smartCollection.id,
         nextName,
