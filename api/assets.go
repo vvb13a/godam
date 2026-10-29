@@ -815,9 +815,23 @@ func (s *Server) handleDeleteAsset(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.ownedAsset(w, r, r.PathValue("id")); !ok {
 		return
 	}
-	if err := s.deps.Assets.Delete(r.Context(), r.PathValue("id")); err != nil {
+	id := r.PathValue("id")
+	var sourceID string
+	if source, err := s.deps.Assets.ResolveDeliveryImage(r.Context(), id); err == nil {
+		sourceID = source.ID
+	}
+	if err := s.deps.Assets.Delete(r.Context(), id); err != nil {
 		writeError(w, err)
 		return
+	}
+	ids := []string{id}
+	if sourceID != "" && sourceID != id {
+		ids = append(ids, sourceID)
+	}
+	for _, assetID := range ids {
+		if err := s.deps.Conversions.InvalidateAsset(r.Context(), assetID); err != nil {
+			log.Printf("invalidate conversions for %s: %v", assetID, err)
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -881,7 +895,7 @@ func (s *Server) handleReplaceAssetContent(w http.ResponseWriter, r *http.Reques
 		writeError(w, err)
 		return
 	}
-	s.invalidateAssetConversions(r.Context(), id)
+	s.refreshAssetConversions(r.Context(), id)
 	writeJSON(w, http.StatusOK, asset)
 }
 
@@ -900,7 +914,7 @@ func (s *Server) handleAssetContent(w http.ResponseWriter, r *http.Request) {
 	defer rc.Close()
 
 	w.Header().Set("Content-Type", asset.MimeType)
-	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("Cache-Control", s.cacheControl("private"))
 	// Media players need range requests (and a known length) to show duration
 	// and seek. ServeContent handles Range/Content-Length for seekable readers
 	// (local storage); other drivers fall back to a plain stream.
@@ -979,17 +993,19 @@ func uniqueArchiveName(name string, used map[string]int) string {
 	return fmt.Sprintf("%s (%d)%s", base, count+1, ext)
 }
 
-// invalidateAssetConversions purges cached conversions for an asset and, for
-// PDFs/video/audio, its derived visual asset. Without this, changed bytes keep
-// serving the old cached preview from the conversion store.
-func (s *Server) invalidateAssetConversions(ctx context.Context, id string) {
-	ids := []string{id}
-	if source, err := s.deps.Assets.ResolveDeliveryImage(ctx, id); err == nil && source.ID != id {
-		ids = append(ids, source.ID)
+// refreshAssetConversions rewrites every cached conversion for an asset from
+// its new bytes. Conversions are keyed by the parent asset ID, so the URL and
+// Caddy filesystem path stay stable while the bytes are replaced atomically.
+func (s *Server) refreshAssetConversions(ctx context.Context, id string) {
+	source, err := s.deps.Assets.ResolveDeliveryImage(ctx, id)
+	if err != nil {
+		log.Printf("resolve delivery image for %s: %v", id, err)
+		return
 	}
-	for _, assetID := range ids {
-		if err := s.deps.Conversions.InvalidateAsset(ctx, assetID); err != nil {
-			log.Printf("invalidate conversions for %s: %v", assetID, err)
+	if err := s.deps.Conversions.RefreshAsset(ctx, id, source.ID); err != nil {
+		log.Printf("refresh conversions for %s: %v", id, err)
+		if err := s.deps.Conversions.InvalidateAsset(ctx, id); err != nil {
+			log.Printf("invalidate conversions for %s: %v", id, err)
 		}
 	}
 }
@@ -1006,7 +1022,7 @@ func (s *Server) handleAssetPreview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	result, err := s.deps.Conversions.PreviewDefault(r.Context(), source.ID)
+	result, err := s.deps.Conversions.PreviewDefault(r.Context(), id, source.ID)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -1014,7 +1030,7 @@ func (s *Server) handleAssetPreview(w http.ResponseWriter, r *http.Request) {
 	defer result.Reader.Close()
 
 	w.Header().Set("Content-Type", result.ContentType)
-	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("Cache-Control", s.cacheControl("private"))
 	_, _ = io.Copy(w, result.Reader)
 }
 
@@ -1035,6 +1051,6 @@ func (s *Server) handleRegeneratePreview(w http.ResponseWriter, r *http.Request)
 		writeError(w, err)
 		return
 	}
-	s.invalidateAssetConversions(r.Context(), id)
+	s.refreshAssetConversions(r.Context(), id)
 	writeJSON(w, http.StatusOK, asset)
 }

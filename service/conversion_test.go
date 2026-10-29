@@ -68,7 +68,7 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 	presets := NewPresetService(db)
 	svc := NewConversionService(assets, presets, proxy, conversions)
 
-	first, err := svc.PreviewDefault(ctx, asset.ID)
+	first, err := svc.PreviewDefault(ctx, asset.ID, asset.ID)
 	if err != nil {
 		t.Fatalf("preview: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 		t.Fatal("first conversion should be a miss")
 	}
 
-	second, err := svc.PreviewDefault(ctx, asset.ID)
+	second, err := svc.PreviewDefault(ctx, asset.ID, asset.ID)
 	if err != nil {
 		t.Fatalf("second preview: %v", err)
 	}
@@ -237,5 +237,69 @@ func TestConversionServiceInvalidateAsset(t *testing.T) {
 	}
 	if len(entries) != 1 {
 		t.Fatalf("asset-two conversions = %+v, want 1", entries)
+	}
+}
+
+func TestConversionServiceRefreshAssetReplacesCache(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	db, err := store.Open(filepath.Join(dir, "refresh.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	asset := store.Asset{
+		ID:            "asset-1",
+		Filename:      "asset.png",
+		StorageDriver: "local",
+		StorageKey:    "uploads/asset-1.png",
+		MimeType:      "image/png",
+		ByteSize:      1,
+		Role:          domain.AssetRoleOriginal,
+	}
+	if err := db.Create(&asset).Error; err != nil {
+		t.Fatalf("create asset: %v", err)
+	}
+
+	imgproxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/webp")
+		_, _ = w.Write([]byte("new-bytes"))
+	}))
+	defer imgproxy.Close()
+	proxy, err := NewImgProxy(imgproxy.URL, "http://godam:8080", "736563726574", "68656c6c6f")
+	if err != nil {
+		t.Fatalf("new imgproxy: %v", err)
+	}
+	conversions, err := storage.NewLocalConversions(filepath.Join(dir, "cache"), "")
+	if err != nil {
+		t.Fatalf("conversion store: %v", err)
+	}
+	presets := NewPresetService(db)
+	if _, err := presets.Create(ctx, "Thumb", "thumb", domain.PresetParameters{
+		Format: "webp",
+		Options: []domain.PresetOption{
+			{Name: "resize", Args: []string{"fit", "200", "0"}},
+		},
+	}); err != nil {
+		t.Fatalf("create preset: %v", err)
+	}
+	if err := conversions.Save(ctx, "asset-1/thumb.webp", strings.NewReader("old-bytes")); err != nil {
+		t.Fatalf("seed conversion: %v", err)
+	}
+
+	svc := NewConversionService(&AssetService{db: db}, presets, proxy, conversions)
+	if err := svc.RefreshAsset(ctx, "asset-1", "asset-1"); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	rc, err := conversions.Open(ctx, "asset-1/thumb.webp")
+	if err != nil {
+		t.Fatalf("open refreshed conversion: %v", err)
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatalf("read refreshed conversion: %v", err)
+	}
+	if string(data) != "new-bytes" {
+		t.Fatalf("refreshed conversion = %q, want new-bytes", data)
 	}
 }

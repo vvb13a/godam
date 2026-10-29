@@ -1,6 +1,9 @@
 package service
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 // Config holds the app-level settings that are not stored per asset: upload
 // limits, allowed MIME types, where assets are written, and how conversions are
@@ -25,6 +28,11 @@ type Config struct {
 	ImgProxyKey  string
 	ImgProxySalt string
 	InternalURL  string
+
+	// DeliveryCacheTTL is how long public and private delivery responses may be
+	// cached. It applies to /img, /src, and the authenticated preview/content
+	// aliases.
+	DeliveryCacheTTL time.Duration
 }
 
 // DeriveAssetsDomain returns the assets subdomain for an application domain.
@@ -68,6 +76,7 @@ func DefaultConfig() *Config {
 			"video/webm":      true,
 			"video/quicktime": true,
 		},
+		DeliveryCacheTTL: 24 * time.Hour,
 	}
 }
 

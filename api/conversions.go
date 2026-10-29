@@ -34,14 +34,14 @@ func (s *Server) serveConversion(w http.ResponseWriter, r *http.Request, scopeAs
 		writeError(w, err)
 		return
 	}
-	writeConversionResult(w, result)
+	s.writeConversionResult(w, result)
 }
 
-func writeConversionResult(w http.ResponseWriter, result *service.ConversionResult) {
+func (s *Server) writeConversionResult(w http.ResponseWriter, result *service.ConversionResult) {
 	defer result.Reader.Close()
 
 	w.Header().Set("Content-Type", result.ContentType)
-	w.Header().Set("Cache-Control", service.ConversionCacheControl)
+	w.Header().Set("Cache-Control", s.cacheControl("public"))
 	if result.CacheHit {
 		w.Header().Set("X-Godam-Conversion", "HIT")
 	} else {

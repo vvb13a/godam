@@ -44,7 +44,7 @@ func (s *Server) handleSourceDelivery(w http.ResponseWriter, r *http.Request) {
 	defer rc.Close()
 
 	w.Header().Set("Content-Type", asset.MimeType)
-	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("Cache-Control", s.cacheControl("public"))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	disposition := "inline"
 	if r.URL.Query().Get("download") == "1" {

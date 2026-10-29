@@ -106,11 +106,15 @@ audio/video/pdf through `image_of`.
 - Only `role='original'` assets with `audio/*`, `video/*`, or
   `application/pdf`.
 - Images and derived visual assets return 404.
-- Serves the stored original with `Content-Type`, inline
-  `Content-Disposition`, and Range support when the storage reader is
+- On a Caddy filesystem hit, `Content-Type` comes from the stored extension and
+  Range requests are handled by the file server.
+- On a fallback hit, godam serves the stored original with `Content-Type`,
+  inline `Content-Disposition`, and Range support when the storage reader is
   seekable.
 - `?download=1` switches to `attachment`.
-- `Cache-Control: public, max-age=3600`.
+- Served directly by Caddy from local asset storage when available; a miss
+  falls back to godam (for non-local storage drivers).
+- `Cache-Control: public, max-age=<GODAM_DELIVERY_CACHE_TTL>`.
 
 ```html
 <a href="/src/ASSET_ID" target="_blank">Open PDF</a>
@@ -120,8 +124,8 @@ audio/video/pdf through `image_of`.
 ### `GET /api/assets/{id}/content` — authenticated original
 
 Session-protected original bytes for the app. Works for every asset type,
-including images. `Cache-Control: private, max-age=3600`; Range support for
-seekable storage.
+including images. `Cache-Control: private, max-age=<GODAM_DELIVERY_CACHE_TTL>`;
+Range support for seekable storage.
 
 ### `GET /api/assets/{id}/preview` — authenticated library preview
 
@@ -130,7 +134,7 @@ The library's own visual preview, not part of the public delivery contract.
 - Resolves through `image_of` exactly like `/img`.
 - Renders the built-in 400px WebP pipeline through imgproxy.
 - Cached in the conversion store under `_library-preview`.
-- `Cache-Control: private, max-age=3600`.
+- `Cache-Control: private, max-age=<GODAM_DELIVERY_CACHE_TTL>`.
 
 `_library-preview` is not a valid preset name, so it cannot be requested through
 `/img` or `/convert`; it is only reachable through this authenticated alias.
@@ -161,11 +165,12 @@ the public site.
 Conversions are stored at:
 
 ```text
-{sourceAssetID}/{cacheName}.{format}
+{parentAssetID}/{cacheName}.{format}
 ```
 
-The source is the resolved image asset: the original image, or the derived
-visual asset for audio/video/pdf.
+The cache key is the asset ID the caller addresses, not the derived visual
+asset ID. That keeps `/img/{id}/...` mappable directly onto the conversion
+filesystem cache even when the pixels come from `image_of`.
 
 - `/img/{id}/{preset}.{ext}` uses the preset name as `cacheName`.
 - `/img/{id}/~{signed}.{ext}` uses the signed token as `cacheName`.
@@ -173,17 +178,31 @@ visual asset for audio/video/pdf.
 - `/convert/{id}/{spec}` uses the same cache entries as `/img`, but only for
   image asset IDs.
 
-The `assets.` subdomain serves cached files directly from Caddy with
-`Cache-Control: public, max-age=86400`. `/img` is served by godam, which reads
-and writes the same conversion store.
+`/img` is served by Caddy directly from the conversion cache. A miss is
+proxied to godam, which renders through imgproxy and writes the conversion
+atomically (temporary file plus rename). The `assets.` subdomain uses the same
+filesystem cache.
 
-There is **no cache busting yet**:
+`/src` is served by Caddy directly from local asset storage where the volume is
+mounted. A miss falls back to godam for non-local storage drivers.
 
-- Replacing an asset or editing a preset can leave stale conversions until the
-  24h TTL expires or the cache is purged.
-- `POST /api/conversions/purge` clears generated conversions.
-- The `?v=updated_at` query on the library preview URL only busts the browser
-  cache; the server conversion cache ignores it.
+All delivery responses use:
+
+```text
+Cache-Control: public, max-age=<GODAM_DELIVERY_CACHE_TTL>
+```
+
+`GODAM_DELIVERY_CACHE_TTL` is in seconds, defaults to `86400` (one day), and is
+clamped to `60..604800` (one minute to seven days).
+
+Content changes warm existing conversions before the mutating request returns.
+Each regenerated conversion is written atomically, so Caddy keeps serving the
+old file until the new one is complete. Poster regeneration and asset
+replacement therefore never leave a partially-written conversion behind.
+
+`POST /api/conversions/purge` clears generated conversions. The
+`?v=updated_at` query on the library preview URL only busts the browser cache;
+the server conversion cache ignores it.
 
 ## Where files live
 
@@ -220,14 +239,16 @@ The library preview and all imgproxy conversions are **cached**, not stored as
 assets:
 
 - Default host:
-  `~/Library/Application Support/godam/storage/conversions/{sourceAssetID}/_library-preview.webp`
-- `make dev`: `.dev/conversions/{sourceAssetID}/_library-preview.webp`
-- Docker: `/conversions/{sourceAssetID}/_library-preview.webp`
+  `~/Library/Application Support/godam/storage/conversions/{parentAssetID}/_library-preview.webp`
+- `make dev`: `.dev/conversions/{parentAssetID}/_library-preview.webp`
+- Docker: `/conversions/{parentAssetID}/_library-preview.webp`
 - Caddy sees the same files at `/srv/conversions/...`
 
-`{sourceAssetID}` is the original image ID, or the derived visual asset ID for
-audio/video/pdf. Public `/img` preset and signed conversions use the same cache
-directory with `{preset}.{format}` or the signed token as the file name.
+`{parentAssetID}` is the asset ID used in the delivery URL. For images that is
+the asset itself; for audio/video/pdf it is the parent original even though the
+pixels come from the derived visual asset. Public `/img` preset and signed
+conversions use the same cache directory with `{preset}.{format}` or the signed
+token as the file name.
 
 ### Legacy previews
 
@@ -256,18 +277,19 @@ visibility and signing should be layered on before exposing private libraries.
 
 ## Known limitations / follow-ups
 
-- Add cache busting keyed by asset `updated_at` and preset `modified_at`.
+- Add cache busting for preset definition changes (currently a preset edit can
+  leave stale conversions until purge).
 - Add asset visibility (`private`/`public`) and enforce it in `/img` and `/src`;
   default private.
 - Add signed original URLs (expiry, audience) or a CDN token scheme.
 - Extend `/api/imgproxy/sign` to non-image parent assets via `image_of`.
-- Consider CDN/object storage for `/src`; serving large media through godam
-  does not scale well.
+- Consider CDN/object storage for `/src`; Caddy serves local originals
+  directly, but other storage drivers still fall back through godam.
 - Range support depends on the storage driver implementing `io.ReadSeeker`;
   verify SFTP/object-storage behavior.
 - imgproxy community cannot extract audio/video/pdf; PDF/MP4 need Pro, audio
   always needs ffmpeg.
 - `/img` currently requires an explicit preset or signed spec. There is no
   public default image route.
-- `Caddy` only accelerates `/convert` cache paths; `/img` is served by godam
-  even though it shares the conversion cache.
+- `/img` and `/src` are accelerated by Caddy only when their cache/storage
+  roots are locally mounted. Non-local storage drivers miss back to godam.

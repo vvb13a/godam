@@ -11,6 +11,42 @@
 	handle /internal/* {
 		respond 404
 	}
+
+	# Public image delivery is served from the conversion filesystem cache.
+	# A miss is proxied to godam, which writes the conversion atomically.
+	handle_path /img/* {
+		root * {$GODAM_CONVERSION_ROOT:/srv/conversions}
+		@cached file {path}
+		handle @cached {
+			header Cache-Control "public, max-age={$GODAM_DELIVERY_CACHE_TTL:86400}"
+			file_server
+		}
+		handle {
+			header Cache-Control "public, max-age={$GODAM_DELIVERY_CACHE_TTL:86400}"
+			rewrite * /internal/img-cache{uri}
+			reverse_proxy {$GODAM_ASSET_UPSTREAM:godam:8080}
+		}
+	}
+
+	# Public original delivery is served directly from local asset storage.
+	# A miss is proxied to godam for non-local storage drivers.
+	handle_path /src/* {
+		root * {$GODAM_SOURCE_ROOT:/srv/assets/uploads}
+		@cached file {path}.mp4 {path}.webm {path}.mov {path}.m4v {path}.pdf {path}.mp3 {path}.wav {path}.m4a {path}.ogg {path}.oga {path}.opus {path}.flac {path}.aac {path}.mkv {path}.avi
+		handle @cached {
+			try_files {path}.mp4 {path}.webm {path}.mov {path}.m4v {path}.pdf {path}.mp3 {path}.wav {path}.m4a {path}.ogg {path}.oga {path}.opus {path}.flac {path}.aac {path}.mkv {path}.avi
+			header Cache-Control "public, max-age={$GODAM_DELIVERY_CACHE_TTL:86400}"
+			header X-Content-Type-Options "nosniff"
+			header ?download=1 Content-Disposition "attachment"
+			file_server
+		}
+		handle {
+			header Cache-Control "public, max-age={$GODAM_DELIVERY_CACHE_TTL:86400}"
+			rewrite * /internal/src-cache{uri}
+			reverse_proxy {$GODAM_ASSET_UPSTREAM:godam:8080}
+		}
+	}
+
 	reverse_proxy {$GODAM_APP_UPSTREAM:godam:8080} {
 		# Preset warm-up streams progress over SSE; don't buffer it.
 		flush_interval -1
@@ -21,7 +57,7 @@
 # volume and falls back to godam (which calls imgproxy) on a cache miss.
 assets.{$GODAM_DOMAIN} {
 	root * {$GODAM_CONVERSION_ROOT:/srv/conversions}
-	header Cache-Control "public, max-age=86400"
+	header Cache-Control "public, max-age={$GODAM_DELIVERY_CACHE_TTL:86400}"
 
 	@miss {
 		not file {path}

@@ -20,10 +20,6 @@ const (
 	// MaxConversionDimension caps a single rendered edge. Presets are validated
 	// against catalog limits as well.
 	MaxConversionDimension = 4096
-	// ConversionCacheControl is deliberately conservative: without cache
-	// busting yet, a long TTL would keep stale conversions around after an
-	// asset is replaced.
-	ConversionCacheControl = "public, max-age=86400"
 )
 
 var (
@@ -112,9 +108,14 @@ func (s *ConversionService) ConvertPreset(ctx context.Context, assetID, segment 
 	return s.ConvertPresetSource(ctx, assetID, assetID, segment)
 }
 
-// ConvertPresetSource renders sourceAssetID. The leading argument is retained
-// for callers that resolve a preset through a related asset.
-func (s *ConversionService) ConvertPresetSource(ctx context.Context, _, sourceAssetID, segment string) (*ConversionResult, error) {
+// ConvertPresetSource renders sourceAssetID while caching under cacheAssetID.
+// This lets /img/{parent}/{preset} reuse the parent's stable cache path even
+// when the pixels come from a derived visual asset.
+func (s *ConversionService) ConvertPresetSource(ctx context.Context, cacheAssetID, sourceAssetID, segment string) (*ConversionResult, error) {
+	return s.convertPresetSource(ctx, cacheAssetID, sourceAssetID, segment, false)
+}
+
+func (s *ConversionService) convertPresetSource(ctx context.Context, cacheAssetID, sourceAssetID, segment string, force bool) (*ConversionResult, error) {
 	name, format, err := splitConversionSegment(segment)
 	if err != nil {
 		return nil, err
@@ -136,7 +137,7 @@ func (s *ConversionService) ConvertPresetSource(ctx context.Context, _, sourceAs
 	if err != nil {
 		return nil, err
 	}
-	return s.convert(ctx, sourceAssetID, processing, format, name)
+	return s.convert(ctx, cacheAssetID, sourceAssetID, processing, format, name, force)
 }
 
 // ConvertSigned verifies an ad-hoc signed pipeline and renders it.
@@ -148,6 +149,10 @@ func (s *ConversionService) ConvertSigned(ctx context.Context, assetID, segment 
 // sourceAssetID. This lets /img/{parent}/{signed} resolve to a derived visual
 // asset while keeping the signature tied to the ID the caller knows.
 func (s *ConversionService) ConvertSignedSource(ctx context.Context, signAssetID, sourceAssetID, segment string) (*ConversionResult, error) {
+	return s.convertSignedSource(ctx, signAssetID, sourceAssetID, segment, false)
+}
+
+func (s *ConversionService) convertSignedSource(ctx context.Context, signAssetID, sourceAssetID, segment string, force bool) (*ConversionResult, error) {
 	cacheName, format, err := splitConversionSegment(segment)
 	if err != nil {
 		return nil, err
@@ -164,7 +169,7 @@ func (s *ConversionService) ConvertSignedSource(ctx context.Context, signAssetID
 	if err != nil {
 		return nil, err
 	}
-	return s.convert(ctx, sourceAssetID, processing, format, cacheName)
+	return s.convert(ctx, signAssetID, sourceAssetID, processing, format, cacheName, force)
 }
 
 var defaultPreviewParameters = domain.PresetParameters{
@@ -176,15 +181,16 @@ var defaultPreviewParameters = domain.PresetParameters{
 }
 
 // PreviewDefault renders the built-in preview used by the delivery and
-// authenticated preview routes. The output is cached like any other conversion.
-func (s *ConversionService) PreviewDefault(ctx context.Context, assetID string) (*ConversionResult, error) {
+// authenticated preview routes. The output is cached under cacheAssetID like
+// any other conversion.
+func (s *ConversionService) PreviewDefault(ctx context.Context, cacheAssetID, sourceAssetID string) (*ConversionResult, error) {
 	processing, err := BuildProcessing(defaultPreviewParameters)
 	if err != nil {
 		return nil, err
 	}
 	// Underscore-prefixed cache names are not valid preset names, so this
 	// library-only preview cannot be addressed through /convert or /img.
-	return s.convert(ctx, assetID, processing, "webp", "_library-preview")
+	return s.convert(ctx, cacheAssetID, sourceAssetID, processing, "webp", "_library-preview", false)
 }
 
 // Preview renders a preset pipeline for an asset without writing the image to
@@ -233,6 +239,53 @@ func (s *ConversionService) InvalidateAsset(ctx context.Context, assetID string)
 	return nil
 }
 
+// RefreshAsset regenerates every conversion already cached for cacheAssetID
+// against sourceAssetID. Each new image is written atomically through the
+// conversion store before the response is returned.
+func (s *ConversionService) RefreshAsset(ctx context.Context, cacheAssetID, sourceAssetID string) error {
+	entries, err := s.store.List(ctx, cacheAssetID)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, entry := range entries {
+		rel := strings.TrimPrefix(entry.Key, cacheAssetID+"/")
+		if rel == entry.Key {
+			continue
+		}
+		name, format, err := splitConversionSegment(rel)
+		if err != nil {
+			continue
+		}
+		var result *ConversionResult
+		switch {
+		case name == "_library-preview":
+			processing, buildErr := BuildProcessing(defaultPreviewParameters)
+			if buildErr != nil {
+				errs = append(errs, buildErr)
+				continue
+			}
+			result, err = s.convert(ctx, cacheAssetID, sourceAssetID, processing, format, name, true)
+		case strings.HasPrefix(name, "~"):
+			result, err = s.convertSignedSource(ctx, cacheAssetID, sourceAssetID, rel, true)
+		default:
+			result, err = s.convertPresetSource(ctx, cacheAssetID, sourceAssetID, rel, true)
+		}
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				_ = s.store.Delete(ctx, entry.Key)
+				continue
+			}
+			errs = append(errs, err)
+			continue
+		}
+		if result != nil {
+			_ = result.Reader.Close()
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // Purge removes every generated conversion from the conversion store.
 func (s *ConversionService) Purge(ctx context.Context) (int, error) {
 	return s.store.Purge(ctx)
@@ -245,7 +298,7 @@ func (s *ConversionService) WarmPreset(ctx context.Context, assetID string, pres
 	if err != nil {
 		return err
 	}
-	result, err := s.convert(ctx, assetID, processing, preset.Parameters.Format, preset.Name)
+	result, err := s.convert(ctx, assetID, assetID, processing, preset.Parameters.Format, preset.Name, false)
 	if err != nil {
 		return err
 	}
@@ -273,8 +326,8 @@ func (s *ConversionService) Sign(ctx context.Context, assetID, format, processin
 	return s.proxy.SignRequest(assetID, format, normalized)
 }
 
-func (s *ConversionService) convert(ctx context.Context, assetID, processing, format, cacheName string) (*ConversionResult, error) {
-	asset, err := s.assets.GetByID(ctx, assetID)
+func (s *ConversionService) convert(ctx context.Context, cacheAssetID, sourceAssetID, processing, format, cacheName string, force bool) (*ConversionResult, error) {
+	asset, err := s.assets.GetByID(ctx, sourceAssetID)
 	if err != nil {
 		return nil, err
 	}
@@ -285,17 +338,19 @@ func (s *ConversionService) convert(ctx context.Context, assetID, processing, fo
 		return nil, fmt.Errorf("%w: empty processing pipeline", ErrInvalidInput)
 	}
 
-	key := fmt.Sprintf("%s/%s.%s", assetID, cacheName, format)
-	if rc, err := s.store.Open(ctx, key); err == nil {
-		return &ConversionResult{
-			Reader:      rc,
-			ContentType: conversionContentTypes[format],
-			Key:         key,
-			CacheHit:    true,
-		}, nil
+	key := fmt.Sprintf("%s/%s.%s", cacheAssetID, cacheName, format)
+	if !force {
+		if rc, err := s.store.Open(ctx, key); err == nil {
+			return &ConversionResult{
+				Reader:      rc,
+				ContentType: conversionContentTypes[format],
+				Key:         key,
+				CacheHit:    true,
+			}, nil
+		}
 	}
 
-	resp, err := s.proxy.Get(ctx, s.proxy.URL(assetID, processing, format))
+	resp, err := s.proxy.Get(ctx, s.proxy.URL(sourceAssetID, processing, format))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrConversionFailed, err)
 	}

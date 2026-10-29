@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/vvb13a/godam/domain"
 	"github.com/vvb13a/godam/service"
@@ -15,15 +16,16 @@ import (
 
 // Deps carries the services the HTTP handlers operate on.
 type Deps struct {
-	Assets          *service.AssetService
-	Conversions     *service.ConversionService
-	Presets         *service.PresetService
-	AssetsBaseURL   string
-	Instance        *service.InstanceService
-	Stats           *service.StatsService
-	Backups         *service.BackupService
-	System          *service.SystemService
-	ManagementToken string
+	Assets           *service.AssetService
+	Conversions      *service.ConversionService
+	Presets          *service.PresetService
+	AssetsBaseURL    string
+	DeliveryCacheTTL time.Duration
+	Instance         *service.InstanceService
+	Stats            *service.StatsService
+	Backups          *service.BackupService
+	System           *service.SystemService
+	ManagementToken  string
 
 	// JWTSecret enables scoped embed tokens. Issuer and Audience are optional
 	// and enforced when set.
@@ -66,6 +68,8 @@ func (s *Server) routes() {
 	// preview stays on the authenticated /api/assets/{id}/preview alias.
 	s.mux.HandleFunc("GET /img/{id}/{spec}", s.handleImageDelivery)
 	s.mux.HandleFunc("GET /src/{id}", s.handleSourceDelivery)
+	s.mux.HandleFunc("GET /internal/img-cache/{id}/{spec}", s.handleImageDelivery)
+	s.mux.HandleFunc("GET /internal/src-cache/{id}", s.handleSourceDelivery)
 
 	// Conversion routes live outside /api so Caddy can fall back to them from
 	// the assets subdomain cache. The internal source route is fetched by

@@ -13,6 +13,7 @@ services:
       GODAM_JWT_ISSUER: ${GODAM_JWT_ISSUER:-}
       GODAM_JWT_AUDIENCE: ${GODAM_JWT_AUDIENCE:-}
       GODAM_MANAGEMENT_TOKEN: ${GODAM_MANAGEMENT_TOKEN:-}
+      GODAM_DELIVERY_CACHE_TTL: ${GODAM_DELIVERY_CACHE_TTL:-86400}
     volumes:
       - godam-data:/data
       - conversions:/conversions
@@ -40,17 +41,24 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    entrypoint: ["/bin/sh", "/usr/local/bin/godam-caddy-entrypoint.sh"]
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
     environment:
       GODAM_DOMAIN: ${GODAM_DOMAIN:?GODAM_DOMAIN is required}
+      GODAM_DELIVERY_CACHE_TTL: ${GODAM_DELIVERY_CACHE_TTL:-86400}
+      GODAM_ASSET_UPSTREAM: godam:8080
+      GODAM_CONVERSION_ROOT: /srv/conversions
+      GODAM_SOURCE_ROOT: /srv/assets/godam/storage/uploads
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./docker/caddy-entrypoint.sh:/usr/local/bin/godam-caddy-entrypoint.sh:ro
       - caddy-data:/data
       - caddy-config:/config
       - conversions:/srv/conversions:ro
+      - godam-data:/srv/assets:ro
     depends_on:
       - godam
 

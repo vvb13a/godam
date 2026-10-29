@@ -15,9 +15,14 @@ services:
       GODAM_APP_UPSTREAM: host.docker.internal:5174
       GODAM_ASSET_UPSTREAM: host.docker.internal:8080
       GODAM_CONVERSION_ROOT: /srv/dev-conversions
+      GODAM_DELIVERY_CACHE_TTL: ${GODAM_DELIVERY_CACHE_TTL:-86400}
+      GODAM_SOURCE_ROOT: /srv/host-assets/uploads
     volumes:
+      - ./docker/caddy-entrypoint.sh:/usr/local/bin/godam-caddy-entrypoint.sh:ro
       # Host godam writes conversions here (GODAM_CONVERSION_DIR).
       - ./.dev/conversions:/srv/dev-conversions
+      # Read-only view of the host asset storage used for /src delivery.
+      - ${GODAM_HOST_STORAGE_DIR:-./.dev/storage}:/srv/host-assets:ro
 
   imgproxy:
     environment:

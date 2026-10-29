@@ -24,6 +24,8 @@ var publicPrefixes = []string{
 	"/img/",
 	"/src/",
 	"/internal/source/",
+	"/internal/img-cache/",
+	"/internal/src-cache/",
 }
 
 func isPublicPath(path string) bool {

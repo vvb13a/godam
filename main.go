@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/vvb13a/godam/api"
 	"github.com/vvb13a/godam/service"
@@ -41,18 +43,19 @@ func main() {
 	initDependencies()
 	go assetService.BackfillColors(context.Background())
 	runServer(addr, api.Deps{
-		Assets:          assetService,
-		Conversions:     conversionService,
-		Presets:         presetService,
-		AssetsBaseURL:   appConfig.AssetsBaseURL(),
-		Instance:        instanceService,
-		Stats:           statsService,
-		Backups:         backupService,
-		System:          systemService,
-		ManagementToken: os.Getenv("GODAM_MANAGEMENT_TOKEN"),
-		JWTSecret:       os.Getenv("GODAM_JWT_SECRET"),
-		JWTIssuer:       os.Getenv("GODAM_JWT_ISSUER"),
-		JWTAudience:     os.Getenv("GODAM_JWT_AUDIENCE"),
+		Assets:           assetService,
+		Conversions:      conversionService,
+		Presets:          presetService,
+		AssetsBaseURL:    appConfig.AssetsBaseURL(),
+		DeliveryCacheTTL: appConfig.DeliveryCacheTTL,
+		Instance:         instanceService,
+		Stats:            statsService,
+		Backups:          backupService,
+		System:           systemService,
+		ManagementToken:  os.Getenv("GODAM_MANAGEMENT_TOKEN"),
+		JWTSecret:        os.Getenv("GODAM_JWT_SECRET"),
+		JWTIssuer:        os.Getenv("GODAM_JWT_ISSUER"),
+		JWTAudience:      os.Getenv("GODAM_JWT_AUDIENCE"),
 	})
 }
 
@@ -181,6 +184,35 @@ func applyEnvConfig(cfg *service.Config) {
 	cfg.ImgProxyKey = strings.TrimSpace(os.Getenv("GODAM_IMGPROXY_KEY"))
 	cfg.ImgProxySalt = strings.TrimSpace(os.Getenv("GODAM_IMGPROXY_SALT"))
 	cfg.InternalURL = envOrDefault("GODAM_INTERNAL_URL", internalURL(os.Getenv("GODAM_ADDR")))
+	cfg.DeliveryCacheTTL = deliveryCacheTTL()
+}
+
+const (
+	defaultDeliveryCacheTTL = 24 * time.Hour
+	minDeliveryCacheTTL     = time.Minute
+	maxDeliveryCacheTTL     = 7 * 24 * time.Hour
+)
+
+// deliveryCacheTTL reads the delivery cache lifetime in seconds. Invalid
+// values fall back to the default; valid values are clamped to 60s–7d.
+func deliveryCacheTTL() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("GODAM_DELIVERY_CACHE_TTL"))
+	if raw == "" {
+		return defaultDeliveryCacheTTL
+	}
+	seconds, err := strconv.Atoi(raw)
+	if err != nil {
+		log.Printf("invalid GODAM_DELIVERY_CACHE_TTL %q; using %s", raw, defaultDeliveryCacheTTL)
+		return defaultDeliveryCacheTTL
+	}
+	ttl := time.Duration(seconds) * time.Second
+	if ttl < minDeliveryCacheTTL {
+		return minDeliveryCacheTTL
+	}
+	if ttl > maxDeliveryCacheTTL {
+		return maxDeliveryCacheTTL
+	}
+	return ttl
 }
 
 func newConversionStore(cfg *service.Config) (storage.ConversionStore, error) {

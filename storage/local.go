@@ -21,18 +21,34 @@ func NewLocal(baseDir string) (*Local, error) {
 
 func (s *Local) Save(_ context.Context, key string, r io.Reader) error {
 	destPath := filepath.Join(s.baseDir, key)
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+	dir := filepath.Dir(destPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 
-	out, err := os.Create(destPath)
+	out, err := os.CreateTemp(dir, ".upload-*")
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-
-	_, err = io.Copy(out, r)
-	return err
+	tmpName := out.Name()
+	if _, err := io.Copy(out, r); err != nil {
+		_ = out.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, destPath); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	return nil
 }
 
 func (s *Local) Open(_ context.Context, key string) (io.ReadCloser, error) {
