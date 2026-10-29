@@ -406,7 +406,8 @@ or proxy layer.
 
 | Variable | Purpose |
 | --- | --- |
-| `GODAM_DOMAIN` | Public hostname, e.g. `dam.example.com`. godam derives `assets.<domain>` for rendered conversions. |
+| `GODAM_DOMAIN` | Public application hostname, e.g. `dam.example.com`. |
+| `GODAM_DELIVERY_DOMAIN` | Optional public origin for `/img` and `/src`, e.g. `assets.example.com` or `cdn.example.com`. Defaults to `GODAM_DOMAIN`. |
 | `GODAM_JWT_SECRET` | HS256 signing secret. Leave empty to disable JWT auth; requests are then treated as trusted direct access. Use at least 32 random bytes, e.g. `openssl rand -hex 32`. |
 | `IMGPROXY_KEY` / `IMGPROXY_SALT` | Image conversion signing pair for Docker Compose. The godam container receives them as `GODAM_IMGPROXY_KEY` / `GODAM_IMGPROXY_SALT`. |
 
@@ -466,7 +467,7 @@ GET /api/assets/{id}/content?token=<jwt>
 GET /api/assets/zip?ids=ID1,ID2&token=<jwt>
 ```
 
-`/img`, `/src`, and `/convert` are currently public and protected only by the
+`/img` and `/src` are currently public and protected only by the
 asset UUID. Do not embed a private library until delivery-side authorization is
 available.
 
@@ -634,7 +635,7 @@ Then open the embed URL directly in a browser and confirm:
 - If the host application uses a Content-Security-Policy, allow the godam origin
   in `frame-src`.
 - Locked and hidden attributes are enforced for API listing, counts, and
-  asset-by-ID operations. `/img`, `/src`, and `/convert` are still public
+  asset-by-ID operations. `/img` and `/src` are still public
   UUID routes, so private delivery requires signed or authenticated URLs before
   relying on hidden attributes for tenant isolation.
 - Management and configuration routes require explicit capabilities. Grant only

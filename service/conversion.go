@@ -189,7 +189,7 @@ func (s *ConversionService) PreviewDefault(ctx context.Context, cacheAssetID, so
 		return nil, err
 	}
 	// Underscore-prefixed cache names are not valid preset names, so this
-	// library-only preview cannot be addressed through /convert or /img.
+	// library-only preview cannot be addressed through /img.
 	return s.convert(ctx, cacheAssetID, sourceAssetID, processing, "webp", "_library-preview", false)
 }
 

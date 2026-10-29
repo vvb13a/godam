@@ -13,9 +13,10 @@ type Config struct {
 	StoragePath      string
 
 	// Domain is the public application domain (for example example.com).
-	// AssetsDomain is the conversion subdomain (assets.example.com).
-	Domain       string
-	AssetsDomain string
+	// DeliveryDomain is the optional public origin for /img and /src. It may
+	// equal Domain or be a separate hostname (for example assets.example.com).
+	Domain         string
+	DeliveryDomain string
 
 	// ConversionDir is the local conversion cache root shared with Caddy.
 	// ConversionDriver selects the storage implementation ("local" for now).
@@ -35,25 +36,29 @@ type Config struct {
 	DeliveryCacheTTL time.Duration
 }
 
-// DeriveAssetsDomain returns the assets subdomain for an application domain.
-func DeriveAssetsDomain(domain string) string {
-	domain = strings.TrimSpace(domain)
+// DeliveryBaseURL returns the public delivery origin, or an empty string when
+// no delivery domain is configured.
+func (c *Config) DeliveryBaseURL() string {
+	domain := strings.TrimSpace(c.DeliveryDomain)
+	if domain == "" {
+		domain = strings.TrimSpace(c.Domain)
+	}
 	if domain == "" {
 		return ""
 	}
-	if strings.HasPrefix(domain, "assets.") {
-		return domain
-	}
-	return "assets." + domain
+	return "https://" + domain
 }
 
-// AssetsBaseURL returns the public origin for conversions, or an empty string
-// when the domain is not configured.
-func (c *Config) AssetsBaseURL() string {
-	if c.AssetsDomain == "" {
+// DeliveryURL joins a path to the public delivery origin.
+func (c *Config) DeliveryURL(path string) string {
+	base := c.DeliveryBaseURL()
+	if base == "" {
 		return ""
 	}
-	return "https://" + c.AssetsDomain
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return base + path
 }
 
 func DefaultConfig() *Config {

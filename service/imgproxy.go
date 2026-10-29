@@ -90,8 +90,8 @@ func (p *ImgProxy) sign(path string) string {
 }
 
 // SignRequest creates an opaque, signed path segment for an ad-hoc processing
-// pipeline. The segment is shaped "~<payload>~<signature>.<format>" and can be
-// used on the public assets domain or through /convert.
+// pipeline. The segment is shaped "~<payload>~<signature>.<format>" and is used
+// as the /img spec segment.
 func (p *ImgProxy) SignRequest(assetID, format, processing string) (string, error) {
 	if !p.Signed() {
 		return "", fmt.Errorf("imgproxy signing is not configured")

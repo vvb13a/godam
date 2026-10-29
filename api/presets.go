@@ -117,15 +117,15 @@ func (s *Server) handleSignImgproxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	assetID := url.PathEscape(req.AssetID)
-	if base := strings.TrimRight(s.deps.AssetsBaseURL, "/"); base != "" {
+	if base := strings.TrimRight(s.deps.DeliveryBaseURL, "/"); base != "" {
 		writeJSON(w, http.StatusOK, map[string]string{
 			"segment": segment,
-			"url":     base + "/" + assetID + "/" + segment,
+			"url":     base + "/img/" + assetID + "/" + segment,
 		})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{
 		"segment": segment,
-		"url":     "/convert/" + assetID + "/" + segment,
+		"url":     "/img/" + assetID + "/" + segment,
 	})
 }

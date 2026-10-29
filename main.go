@@ -46,7 +46,7 @@ func main() {
 		Assets:           assetService,
 		Conversions:      conversionService,
 		Presets:          presetService,
-		AssetsBaseURL:    appConfig.AssetsBaseURL(),
+		DeliveryBaseURL:  appConfig.DeliveryBaseURL(),
 		DeliveryCacheTTL: appConfig.DeliveryCacheTTL,
 		Instance:         instanceService,
 		Stats:            statsService,
@@ -74,9 +74,8 @@ func runServer(addr string, deps api.Deps) {
 	// otherwise the SPA fallback would swallow them.
 	mux.Handle("/img/", apiServer)
 	mux.Handle("/src/", apiServer)
-	// Conversion routes are unauthenticated for now. Caddy calls /convert on a
-	// cache miss from the assets subdomain, and imgproxy calls /internal.
-	mux.Handle("/convert/", apiServer)
+	// Internal delivery-cache misses and imgproxy source fetches. Caddy blocks
+	// /internal/* from public requests.
 	mux.Handle("/internal/", apiServer)
 	mux.Handle("/", frontend)
 
@@ -168,16 +167,16 @@ func initDependencies() {
 	log.Printf("godam database: %s", dbPath)
 	log.Printf("godam storage:  %s", storagePath)
 	log.Printf("godam convert:  %s (driver=%s)", cfg.ConversionDir, cfg.ConversionDriver)
-	if cfg.AssetsDomain != "" {
-		log.Printf("godam assets:   %s", cfg.AssetsBaseURL())
+	if base := cfg.DeliveryBaseURL(); base != "" {
+		log.Printf("godam delivery: %s", base)
 	}
 }
 
-// applyEnvConfig reads deployment settings. Only GODAM_DOMAIN is required to
-// make the assets subdomain explicit; the rest have workable local defaults.
+// applyEnvConfig reads deployment settings. Only GODAM_DOMAIN is required; the
+// delivery domain and the rest have workable defaults.
 func applyEnvConfig(cfg *service.Config) {
 	cfg.Domain = normalizeDomain(envOrDefault("GODAM_DOMAIN", cfg.Domain))
-	cfg.AssetsDomain = service.DeriveAssetsDomain(cfg.Domain)
+	cfg.DeliveryDomain = normalizeDomain(envOrDefault("GODAM_DELIVERY_DOMAIN", cfg.Domain))
 	cfg.ConversionDir = envOrDefault("GODAM_CONVERSION_DIR", cfg.ConversionDir)
 	cfg.ConversionDriver = envOrDefault("GODAM_CONVERSIONS_DRIVER", "local")
 	cfg.ImgProxyURL = envOrDefault("GODAM_IMGPROXY_URL", "http://127.0.0.1:8080")
@@ -218,7 +217,7 @@ func deliveryCacheTTL() time.Duration {
 func newConversionStore(cfg *service.Config) (storage.ConversionStore, error) {
 	switch cfg.ConversionDriver {
 	case "", "local":
-		return storage.NewLocalConversions(cfg.ConversionDir, cfg.AssetsBaseURL())
+		return storage.NewLocalConversions(cfg.ConversionDir, cfg.DeliveryURL("/img"))
 	default:
 		return nil, fmt.Errorf("unsupported conversion driver %q", cfg.ConversionDriver)
 	}

@@ -5,13 +5,9 @@
 	{$CADDY_GLOBAL_OPTIONS}
 }
 
-# Consuming application: API, embedded frontend, and authenticated asset routes.
-# In hybrid development this points at Vite instead of the godam container.
-{$GODAM_DOMAIN} {
-	handle /internal/* {
-		respond 404
-	}
-
+# Public delivery routes. The same block is served from the app origin and,
+# when configured, a dedicated delivery origin.
+(delivery_routes) {
 	# Public image delivery is served from the conversion filesystem cache.
 	# A miss is proxied to godam, which writes the conversion atomically.
 	handle_path /img/* {
@@ -24,7 +20,7 @@
 		handle {
 			header Cache-Control "public, max-age={$GODAM_DELIVERY_CACHE_TTL:86400}"
 			rewrite * /internal/img-cache{uri}
-			reverse_proxy {$GODAM_ASSET_UPSTREAM:godam:8080}
+			reverse_proxy {$GODAM_DELIVERY_UPSTREAM:godam:8080}
 		}
 	}
 
@@ -43,9 +39,19 @@
 		handle {
 			header Cache-Control "public, max-age={$GODAM_DELIVERY_CACHE_TTL:86400}"
 			rewrite * /internal/src-cache{uri}
-			reverse_proxy {$GODAM_ASSET_UPSTREAM:godam:8080}
+			reverse_proxy {$GODAM_DELIVERY_UPSTREAM:godam:8080}
 		}
 	}
+}
+
+# Consuming application: API, embedded frontend, and authenticated asset routes.
+# In hybrid development this points at Vite instead of the godam container.
+{$GODAM_DOMAIN} {
+	handle /internal/* {
+		respond 404
+	}
+
+	import delivery_routes
 
 	reverse_proxy {$GODAM_APP_UPSTREAM:godam:8080} {
 		# Preset warm-up streams progress over SSE; don't buffer it.
@@ -53,21 +59,6 @@
 	}
 }
 
-# Public conversion origin. Caddy serves cached conversions from the shared
-# volume and falls back to godam (which calls imgproxy) on a cache miss.
-assets.{$GODAM_DOMAIN} {
-	root * {$GODAM_CONVERSION_ROOT:/srv/conversions}
-	header Cache-Control "public, max-age={$GODAM_DELIVERY_CACHE_TTL:86400}"
-
-	@miss {
-		not file {path}
-		path_regexp conversion ^/[^/]+/[^/]+\.(jpe?g|png|webp|gif|avif)$
-	}
-	handle @miss {
-		rewrite * /convert{uri}
-		reverse_proxy {$GODAM_ASSET_UPSTREAM:godam:8080}
-	}
-	handle {
-		file_server
-	}
-}
+# The entrypoint writes an empty file when the delivery origin equals the app
+# origin, or a site block importing delivery_routes when it differs.
+import /tmp/godam-delivery.caddyfile

@@ -8,14 +8,6 @@ import (
 	"github.com/vvb13a/godam/service"
 )
 
-// handleConversion renders or serves a cached conversion. The route is
-// intentionally unauthenticated for now; presets and authorization will be
-// layered on before it is exposed as a public API.
-func (s *Server) handleConversion(w http.ResponseWriter, r *http.Request) {
-	assetID := r.PathValue("id")
-	s.serveConversion(w, r, assetID, assetID, r.PathValue("spec"))
-}
-
 // serveConversion renders segment for sourceAssetID. scopeAssetID is the asset
 // the caller references: it verifies signed segments and scopes presets, while
 // the actual pixels may come from a derived visual asset.

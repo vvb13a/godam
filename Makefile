@@ -24,6 +24,7 @@ else
 DEV_STORAGE_DIR ?= $(HOME)/.local/share/godam/storage
 endif
 GODAM_DOMAIN ?= localhost
+GODAM_DELIVERY_DOMAIN ?= $(GODAM_DOMAIN)
 GODAM_DELIVERY_CACHE_TTL ?= 86400
 GOARCH ?= amd64
 VERSION ?= dev
@@ -47,6 +48,7 @@ web: ## Run the Vite dev server (override with DEV_PORT=...)
 dev-stack: ## Start Caddy + imgproxy for hybrid host development
 	@mkdir -p $(DEV_CONVERSION_DIR) "$(DEV_STORAGE_DIR)"
 	GODAM_HOST_STORAGE_DIR="$(DEV_STORAGE_DIR)" \
+	GODAM_DELIVERY_DOMAIN="$(GODAM_DELIVERY_DOMAIN)" \
 	GODAM_DELIVERY_CACHE_TTL="$(GODAM_DELIVERY_CACHE_TTL)" \
 	$(COMPOSE_DEV) up -d --no-deps caddy imgproxy
 
@@ -62,6 +64,7 @@ dev: ## Run the API + Vite on the host against the Caddy/imgproxy stack
 	@echo "GoDam API :8080, Vite :$(DEV_PORT), Caddy https://$(GODAM_DOMAIN)"
 	@trap 'kill 0' INT TERM; \
 		GODAM_DOMAIN="$(GODAM_DOMAIN)" \
+		GODAM_DELIVERY_DOMAIN="$(GODAM_DELIVERY_DOMAIN)" \
 		GODAM_CONVERSION_DIR="$(DEV_CONVERSION_DIR)" \
 		GODAM_INTERNAL_URL="$(DEV_INTERNAL_URL)" \
 		GODAM_IMGPROXY_URL="$(DEV_IMGPROXY_URL)" \

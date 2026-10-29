@@ -17,10 +17,8 @@ var publicPaths = map[string]bool{
 }
 
 // publicPrefixes are unauthenticated route families. /internal is only reachable
-// from the Docker network (Caddy blocks it publicly); /convert is the early,
-// not-yet-authorized conversion handoff.
+// from the Docker network (Caddy blocks it publicly).
 var publicPrefixes = []string{
-	"/convert/",
 	"/img/",
 	"/src/",
 	"/internal/source/",

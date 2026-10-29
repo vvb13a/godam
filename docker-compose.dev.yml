@@ -13,8 +13,9 @@ services:
       # .test/.internal domains work in development.
       CADDY_GLOBAL_OPTIONS: local_certs
       GODAM_APP_UPSTREAM: host.docker.internal:5174
-      GODAM_ASSET_UPSTREAM: host.docker.internal:8080
+      GODAM_DELIVERY_UPSTREAM: host.docker.internal:8080
       GODAM_CONVERSION_ROOT: /srv/dev-conversions
+      GODAM_DELIVERY_DOMAIN: ${GODAM_DELIVERY_DOMAIN:-}
       GODAM_DELIVERY_CACHE_TTL: ${GODAM_DELIVERY_CACHE_TTL:-86400}
       GODAM_SOURCE_ROOT: /srv/host-assets/uploads
     volumes:

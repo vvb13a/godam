@@ -35,6 +35,16 @@ imgproxy is the conversion source of truth. Extraction of audio/video/pdf is
 still done by ffmpeg/pdftoppm because community imgproxy cannot decode those
 formats (PDF and MP4 are Pro features; audio is unsupported).
 
+## Delivery origins
+
+`GODAM_DOMAIN` is the application origin. `GODAM_DELIVERY_DOMAIN` optionally
+sets a separate public origin for `/img` and `/src`; it defaults to
+`GODAM_DOMAIN`.
+
+When they are the same, Caddy has one site block. When they differ, Caddy
+serves the same `/img` and `/src` routes on both origins. The delivery origin
+does not serve the application or API.
+
 ## Routes
 
 ### `GET /img/{assetId}/{spec}` — public visual delivery
@@ -93,8 +103,8 @@ const { segment, url } = await fetch('/api/imgproxy/sign', {
   }),
 }).then((r) => r.json())
 
-// Either the returned URL (assets subdomain) or the /img form:
-// /img/ASSET_ID/${segment}
+// The returned URL is the canonical /img form on the delivery origin:
+// https://DELIVERY_DOMAIN/img/ASSET_ID/${segment}
 ```
 
 Current limitation: `/api/imgproxy/sign` validates the requested asset as an
@@ -137,23 +147,12 @@ The library's own visual preview, not part of the public delivery contract.
 - `Cache-Control: private, max-age=<GODAM_DELIVERY_CACHE_TTL>`.
 
 `_library-preview` is not a valid preset name, so it cannot be requested through
-`/img` or `/convert`; it is only reachable through this authenticated alias.
+`/img`; it is only reachable through this authenticated alias.
 
 ### `POST /api/assets/{id}/preview` — regenerate visual asset
 
 Re-renders the derived visual asset for audio/video/pdf. For images it refreshes
 metadata/updated_at; there is no derived visual asset.
-
-### `GET /convert/{assetId}/{spec}` — conversion cache route
-
-Existing public conversion route used by Caddy on the `assets.` subdomain.
-Supports presets and signed specs. The old `{width}x{height}.{ext}` size syntax
-has been removed in favor of presets; legacy size cache entries are no longer
-generated or served. It does **not** resolve `image_of`, so non-image asset IDs
-fail here; use `/img` for those.
-
-Caddy serves cached conversions from the shared conversion volume and rewrites
-cache misses to `/convert`.
 
 ### `GET /internal/source/{id}` — imgproxy source
 
@@ -175,13 +174,10 @@ filesystem cache even when the pixels come from `image_of`.
 - `/img/{id}/{preset}.{ext}` uses the preset name as `cacheName`.
 - `/img/{id}/~{signed}.{ext}` uses the signed token as `cacheName`.
 - `/api/assets/{id}/preview` uses `_library-preview`.
-- `/convert/{id}/{spec}` uses the same cache entries as `/img`, but only for
-  image asset IDs.
 
 `/img` is served by Caddy directly from the conversion cache. A miss is
 proxied to godam, which renders through imgproxy and writes the conversion
-atomically (temporary file plus rename). The `assets.` subdomain uses the same
-filesystem cache.
+atomically (temporary file plus rename).
 
 `/src` is served by Caddy directly from local asset storage where the volume is
 mounted. A miss falls back to godam for non-local storage drivers.
@@ -258,7 +254,6 @@ They are no longer read or written and can be deleted.
 ## Security and visibility — current state
 
 - `/img` and `/src` are unauthenticated.
-- `/convert` is also unauthenticated (pre-existing).
 - Asset UUIDs are the only thing protecting public routes; they are not an
   access-control boundary.
 - There is no per-asset visibility/publish flag.

@@ -19,7 +19,7 @@ type Deps struct {
 	Assets           *service.AssetService
 	Conversions      *service.ConversionService
 	Presets          *service.PresetService
-	AssetsBaseURL    string
+	DeliveryBaseURL  string
 	DeliveryCacheTTL time.Duration
 	Instance         *service.InstanceService
 	Stats            *service.StatsService
@@ -71,10 +71,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /internal/img-cache/{id}/{spec}", s.handleImageDelivery)
 	s.mux.HandleFunc("GET /internal/src-cache/{id}", s.handleSourceDelivery)
 
-	// Conversion routes live outside /api so Caddy can fall back to them from
-	// the assets subdomain cache. The internal source route is fetched by
-	// imgproxy and is never proxied to the public site.
-	s.mux.HandleFunc("GET /convert/{id}/{spec}", s.handleConversion)
+	// Internal routes are fetched by Caddy on delivery-cache misses and by
+	// imgproxy for source bytes. Caddy blocks /internal/* from public requests.
 	s.mux.HandleFunc("GET /internal/source/{id}", s.handleConversionSource)
 	s.mux.HandleFunc("POST /api/conversions/purge", s.withCapability(domain.CapabilityConversionsPurge, s.handlePurgeConversions))
 

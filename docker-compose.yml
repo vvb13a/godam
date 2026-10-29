@@ -4,6 +4,7 @@ services:
     restart: unless-stopped
     environment:
       GODAM_DOMAIN: ${GODAM_DOMAIN:?GODAM_DOMAIN is required}
+      GODAM_DELIVERY_DOMAIN: ${GODAM_DELIVERY_DOMAIN:-}
       GODAM_CONVERSION_DIR: /conversions
       GODAM_IMGPROXY_URL: http://imgproxy:8080
       GODAM_INTERNAL_URL: http://godam:8080
@@ -48,8 +49,9 @@ services:
       - "443:443/udp"
     environment:
       GODAM_DOMAIN: ${GODAM_DOMAIN:?GODAM_DOMAIN is required}
+      GODAM_DELIVERY_DOMAIN: ${GODAM_DELIVERY_DOMAIN:-}
       GODAM_DELIVERY_CACHE_TTL: ${GODAM_DELIVERY_CACHE_TTL:-86400}
-      GODAM_ASSET_UPSTREAM: godam:8080
+      GODAM_DELIVERY_UPSTREAM: godam:8080
       GODAM_CONVERSION_ROOT: /srv/conversions
       GODAM_SOURCE_ROOT: /srv/assets/godam/storage/uploads
     volumes:
