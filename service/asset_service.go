@@ -2211,7 +2211,7 @@ func (s *AssetService) storeUploadFile(ctx context.Context, driverName, filename
 	// 2. Store a derived visual asset for non-image types. Images are their
 	// own visual source and are rendered on demand by imgproxy.
 	if _, err := file.Seek(0, io.SeekStart); err == nil {
-		_ = s.refreshVisualAsset(ctx, asset, file)
+		_ = s.refreshVisualAsset(ctx, asset, file, PreviewOptions{})
 	}
 
 	if s.backup != nil {
@@ -2335,7 +2335,7 @@ func (s *AssetService) ReplaceContent(ctx context.Context, id, mimeType string, 
 		return nil, err
 	}
 	if _, err := file.Seek(0, io.SeekStart); err == nil {
-		_ = s.refreshVisualAsset(ctx, updated, file)
+		_ = s.refreshVisualAsset(ctx, updated, file, PreviewOptions{})
 	}
 	if s.backup != nil {
 		_ = s.backup.EnqueueAsset(ctx, id, asset.StorageDriver, asset.StorageKey, size)
@@ -2346,10 +2346,19 @@ func (s *AssetService) ReplaceContent(ctx context.Context, id, mimeType string, 
 // RegeneratePreview re-renders the derived visual asset for an asset, e.g.
 // after preview settings change. The original file is untouched; updated_at is
 // bumped so clients re-fetch the library preview.
-func (s *AssetService) RegeneratePreview(ctx context.Context, id string) (*domain.Asset, error) {
+func (s *AssetService) RegeneratePreview(ctx context.Context, id string, opts PreviewOptions) (*domain.Asset, error) {
 	asset, err := s.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	if opts.Page < 0 || (opts.Timestamp != nil && *opts.Timestamp < 0) {
+		return nil, ErrInvalidInput
+	}
+	if opts.Page > 0 && asset.MimeType != "application/pdf" {
+		return nil, fmt.Errorf("%w: page only applies to PDFs", ErrInvalidInput)
+	}
+	if opts.Timestamp != nil && !strings.HasPrefix(asset.MimeType, "video/") {
+		return nil, fmt.Errorf("%w: timestamp only applies to videos", ErrInvalidInput)
 	}
 	driver, err := s.registry.Get(asset.StorageDriver)
 	if err != nil {
@@ -2392,7 +2401,7 @@ func (s *AssetService) RegeneratePreview(ctx context.Context, id string) (*domai
 	if err != nil {
 		return nil, err
 	}
-	_ = s.refreshVisualAsset(ctx, updated, bytes.NewReader(data))
+	_ = s.refreshVisualAsset(ctx, updated, bytes.NewReader(data), opts)
 	return updated, nil
 }
 

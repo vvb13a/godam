@@ -824,12 +824,26 @@ export function assetsZipUrl(ids: string[]): string {
   )
 }
 
+export interface PreviewOptions {
+  page?: number
+  timestamp?: number
+}
+
 // regeneratePreview re-renders the stored preview for an asset and returns the
-// refreshed asset (its updated_at changes so caches are bust).
-export function regeneratePreview(id: string): Promise<Asset> {
+// refreshed asset (its updated_at changes so caches are bust). Pass a page for
+// PDFs or a timestamp for videos to choose which frame becomes the preview.
+export function regeneratePreview(
+  id: string,
+  options?: PreviewOptions,
+): Promise<Asset> {
+  const init: RequestInit = { method: 'POST' }
+  if (options) {
+    init.headers = { 'Content-Type': 'application/json' }
+    init.body = JSON.stringify(options)
+  }
   return requestJSON<Asset>(
     `/api/assets/${encodeURIComponent(id)}/preview`,
-    { method: 'POST' },
+    init,
   )
 }
 

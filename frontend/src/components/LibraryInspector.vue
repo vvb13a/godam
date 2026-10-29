@@ -51,7 +51,7 @@ async function removeCover(): Promise<void> {
       >
         <img
           v-if="coverAssetId && !previewFailed"
-          :src="api.assetPreviewUrl(coverAssetId)"
+          :src="api.assetPreviewUrl(coverAssetId, String(library.version))"
           alt="Library cover"
           class="h-full w-full object-cover"
           @error="previewFailed = true"

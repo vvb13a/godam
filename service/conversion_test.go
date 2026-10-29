@@ -202,3 +202,40 @@ func TestConversionServiceCachesImgproxyOutput(t *testing.T) {
 		t.Fatalf("preset conversion missing from list: %+v", list)
 	}
 }
+
+func TestConversionServiceInvalidateAsset(t *testing.T) {
+	ctx := context.Background()
+	conversions, err := storage.NewLocalConversions(t.TempDir(), "")
+	if err != nil {
+		t.Fatalf("conversion store: %v", err)
+	}
+	for _, key := range []string{
+		"asset-one/_library-preview.webp",
+		"asset-one/thumb.webp",
+		"asset-two/_library-preview.webp",
+	} {
+		if err := conversions.Save(ctx, key, strings.NewReader("x")); err != nil {
+			t.Fatalf("save %s: %v", key, err)
+		}
+	}
+
+	svc := &ConversionService{store: conversions}
+	if err := svc.InvalidateAsset(ctx, "asset-one"); err != nil {
+		t.Fatalf("invalidate: %v", err)
+	}
+
+	entries, err := conversions.List(ctx, "asset-one")
+	if err != nil {
+		t.Fatalf("list invalidated asset: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("asset-one conversions = %+v, want none", entries)
+	}
+	entries, err = conversions.List(ctx, "asset-two")
+	if err != nil {
+		t.Fatalf("list other asset: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("asset-two conversions = %+v, want 1", entries)
+	}
+}

@@ -18,11 +18,11 @@ import (
 
 // refreshVisualAsset keeps the derived visual asset in sync with its parent.
 // Images are their own visual source, so any stale derived visual is removed.
-func (s *AssetService) refreshVisualAsset(ctx context.Context, parent *domain.Asset, source io.Reader) error {
+func (s *AssetService) refreshVisualAsset(ctx context.Context, parent *domain.Asset, source io.Reader, opts PreviewOptions) error {
 	if strings.HasPrefix(parent.MimeType, "image/") {
 		return s.deleteVisualAsset(ctx, parent.ID)
 	}
-	data, contentType, err := s.generateVisualAsset(ctx, parent.MimeType, source)
+	data, contentType, err := s.generateVisualAsset(ctx, parent.MimeType, source, opts)
 	if err != nil {
 		return err
 	}
@@ -30,9 +30,9 @@ func (s *AssetService) refreshVisualAsset(ctx context.Context, parent *domain.As
 	return s.upsertVisualAsset(ctx, parent, data, contentType, meta)
 }
 
-func (s *AssetService) generateVisualAsset(ctx context.Context, mimeType string, source io.Reader) ([]byte, string, error) {
+func (s *AssetService) generateVisualAsset(ctx context.Context, mimeType string, source io.Reader, opts PreviewOptions) ([]byte, string, error) {
 	var reader io.Reader
-	if out, err := s.previewGen.Generate(ctx, mimeType, source); err == nil && out != nil {
+	if out, err := s.previewGen.Generate(ctx, mimeType, source, opts); err == nil && out != nil {
 		reader = out
 	} else if strings.HasPrefix(mimeType, "audio/") {
 		reader = s.previewGen.pngFallback()
@@ -157,7 +157,7 @@ func (s *AssetService) ensureVisualAsset(ctx context.Context, parent *domain.Ass
 		return err
 	}
 	defer rc.Close()
-	return s.refreshVisualAsset(ctx, parent, rc)
+	return s.refreshVisualAsset(ctx, parent, rc, PreviewOptions{})
 }
 
 func visualFilename(name, ext string) string {

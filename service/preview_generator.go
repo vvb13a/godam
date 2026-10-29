@@ -12,17 +12,25 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
 )
 
+// PreviewOptions selects which page of a PDF or which frame of a video becomes
+// the preview. Zero values keep the default (first page / first usable frame).
+type PreviewOptions struct {
+	Page      int      `json:"page,omitempty"`
+	Timestamp *float64 `json:"timestamp,omitempty"`
+}
+
 // PreviewGenerator renders a flattened, scaled JPEG preview for an asset,
 // shelling out to pdftoppm/ffmpeg for documents and video when available and
 // falling back to a neutral placeholder otherwise.
 type PreviewGenerator interface {
-	Generate(ctx context.Context, mimeType string, r io.Reader) (io.Reader, error)
+	Generate(ctx context.Context, mimeType string, r io.Reader, opts PreviewOptions) (io.Reader, error)
 	GetFallback(mimeType string) io.Reader
 }
 
@@ -45,7 +53,7 @@ func NewPreviewGenerator(maxDim, quality int) *DefaultPreviewGenerator {
 }
 
 // Generate creates a flattened, scaled JPEG preview
-func (g *DefaultPreviewGenerator) Generate(ctx context.Context, mimeType string, r io.Reader) (io.Reader, error) {
+func (g *DefaultPreviewGenerator) Generate(ctx context.Context, mimeType string, r io.Reader, opts PreviewOptions) (io.Reader, error) {
 	// 1. Standard Images (JPEG, PNG, WebP, GIF)
 	if strings.HasPrefix(mimeType, "image/") {
 		src, _, err := image.Decode(r)
@@ -55,9 +63,13 @@ func (g *DefaultPreviewGenerator) Generate(ctx context.Context, mimeType string,
 		return g.processAndEncodeJPEG(src)
 	}
 
-	// 2. PDF First Page (via pdftoppm if available)
+	// 2. PDF page (the first page by default) via pdftoppm if available.
 	if mimeType == "application/pdf" {
-		ppmReader, err := g.extractPDFPage(ctx, r)
+		page := opts.Page
+		if page < 1 {
+			page = 1
+		}
+		ppmReader, err := g.extractPDFPage(ctx, r, page)
 		if err == nil {
 			src, _, err := image.Decode(ppmReader)
 			if err == nil {
@@ -68,9 +80,9 @@ func (g *DefaultPreviewGenerator) Generate(ctx context.Context, mimeType string,
 		return g.GetFallback(mimeType), nil
 	}
 
-	// 3. Video First Frame (via ffmpeg if available)
+	// 3. Video frame (the first usable frame by default) via ffmpeg if available.
 	if strings.HasPrefix(mimeType, "video/") {
-		frameReader, err := g.extractVideoFrame(ctx, r)
+		frameReader, err := g.extractVideoFrame(ctx, r, opts.Timestamp)
 		if err == nil {
 			src, _, err := image.Decode(frameReader)
 			if err == nil {
@@ -135,8 +147,9 @@ func (g *DefaultPreviewGenerator) processAndEncodeJPEG(src image.Image) (io.Read
 	return buf, nil
 }
 
-func (g *DefaultPreviewGenerator) extractPDFPage(ctx context.Context, r io.Reader) (io.Reader, error) {
-	cmd := exec.CommandContext(ctx, "pdftoppm", "-png", "-f", "1", "-l", "1", "-scale-to", fmt.Sprintf("%d", g.maxDimension), "-")
+func (g *DefaultPreviewGenerator) extractPDFPage(ctx context.Context, r io.Reader, page int) (io.Reader, error) {
+	pageArg := strconv.Itoa(page)
+	cmd := exec.CommandContext(ctx, "pdftoppm", "-png", "-f", pageArg, "-l", pageArg, "-scale-to", fmt.Sprintf("%d", g.maxDimension), "-")
 	cmd.Stdin = r
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -166,14 +179,20 @@ func tempInput(r io.Reader) (string, func(), error) {
 	return f.Name(), func() { _ = os.Remove(f.Name()) }, nil
 }
 
-func (g *DefaultPreviewGenerator) extractVideoFrame(ctx context.Context, r io.Reader) (io.Reader, error) {
+func (g *DefaultPreviewGenerator) extractVideoFrame(ctx context.Context, r io.Reader, requested *float64) (io.Reader, error) {
 	path, cleanup, err := tempInput(r)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
 
-	for _, timestamp := range []string{"1", "0"} {
+	timestamps := []string{"1", "0"}
+	if requested != nil {
+		// Use the explicitly requested frame first, falling back to the start
+		// when the timestamp is past the end of the media.
+		timestamps = []string{strconv.FormatFloat(*requested, 'f', 3, 64), "0"}
+	}
+	for _, timestamp := range timestamps {
 		cmd := exec.CommandContext(ctx, "ffmpeg",
 			"-ss", timestamp,
 			"-i", path,

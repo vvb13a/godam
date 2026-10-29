@@ -2,9 +2,20 @@ import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vite'
 
+const videoJsElements = new Set(['video-player', 'video-skin'])
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [vue(), tailwindcss()],
+  plugins: [
+    vue({
+      template: {
+        compilerOptions: {
+          isCustomElement: (tag) => videoJsElements.has(tag),
+        },
+      },
+    }),
+    tailwindcss(),
+  ],
   // Filerobot's VanillaJS wrapper renders with React internally; a single copy
   // of React (and its Konva renderer) must be shared or its elements fail to
   // render ("Objects are not valid as a React child").

@@ -218,6 +218,21 @@ func (s *ConversionService) Preview(ctx context.Context, assetID string, params 
 	return resp.Body, conversionContentTypes[normalized.Format], nil
 }
 
+// InvalidateAsset removes every cached conversion for an asset. Call it after
+// the asset's bytes change so stale previews and presets are not served.
+func (s *ConversionService) InvalidateAsset(ctx context.Context, assetID string) error {
+	entries, err := s.store.List(ctx, assetID)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := s.store.Delete(ctx, entry.Key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Purge removes every generated conversion from the conversion store.
 func (s *ConversionService) Purge(ctx context.Context) (int, error) {
 	return s.store.Purge(ctx)

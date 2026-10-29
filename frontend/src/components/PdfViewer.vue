@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
+  Camera,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -16,6 +17,7 @@ import {
   Undo,
   WindowMaximize,
 } from '@primeicons/vue'
+import { useToast } from 'primevue/usetoast'
 import type {
   EventBus as EventBusInstance,
   PDFFindController as PDFFindControllerInstance,
@@ -26,7 +28,9 @@ import * as api from '../api/client'
 import type { Asset } from '../types'
 
 const props = defineProps<{ asset: Asset }>()
+const emit = defineEmits<{ saved: [asset: Asset] }>()
 
+const toast = useToast()
 const container = ref<HTMLDivElement | null>(null)
 const viewerEl = ref<HTMLDivElement | null>(null)
 const page = ref(1)
@@ -38,6 +42,7 @@ const findQuery = ref('')
 const matchCurrent = ref(0)
 const matchTotal = ref(0)
 const findNotFound = ref(false)
+const posterBusy = ref(false)
 
 const zoomPercent = computed(() => Math.round(scale.value * 100))
 
@@ -232,6 +237,31 @@ function onFindKeydown(event: KeyboardEvent): void {
   }
 }
 
+async function useCurrentPageAsPoster(): Promise<void> {
+  if (posterBusy.value || !pages.value) return
+  posterBusy.value = true
+  try {
+    const updated = await api.regeneratePreview(props.asset.id, {
+      page: page.value,
+    })
+    emit('saved', updated)
+    toast.add({
+      severity: 'success',
+      summary: `Poster set to page ${page.value}`,
+      life: 2500,
+    })
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: 'Could not update poster',
+      detail: e instanceof Error ? e.message : String(e),
+      life: 4000,
+    })
+  } finally {
+    posterBusy.value = false
+  }
+}
+
 function download(): void {
   const anchor = document.createElement('a')
   anchor.href = api.assetContentUrl(props.asset.id)
@@ -409,6 +439,14 @@ onBeforeUnmount(dispose)
       </div>
 
       <div class="ml-auto flex items-center gap-1">
+        <button
+          class="pdf-btn"
+          :disabled="posterBusy || !pages"
+          :title="`Use page ${page} as poster`"
+          @click="useCurrentPageAsPoster"
+        >
+          <Camera :size="16" />
+        </button>
         <button class="pdf-btn" title="Download" @click="download">
           <Download :size="16" />
         </button>

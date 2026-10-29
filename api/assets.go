@@ -2,10 +2,12 @@ package api
 
 import (
 	"archive/zip"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -879,6 +881,7 @@ func (s *Server) handleReplaceAssetContent(w http.ResponseWriter, r *http.Reques
 		writeError(w, err)
 		return
 	}
+	s.invalidateAssetConversions(r.Context(), id)
 	writeJSON(w, http.StatusOK, asset)
 }
 
@@ -976,6 +979,21 @@ func uniqueArchiveName(name string, used map[string]int) string {
 	return fmt.Sprintf("%s (%d)%s", base, count+1, ext)
 }
 
+// invalidateAssetConversions purges cached conversions for an asset and, for
+// PDFs/video/audio, its derived visual asset. Without this, changed bytes keep
+// serving the old cached preview from the conversion store.
+func (s *Server) invalidateAssetConversions(ctx context.Context, id string) {
+	ids := []string{id}
+	if source, err := s.deps.Assets.ResolveDeliveryImage(ctx, id); err == nil && source.ID != id {
+		ids = append(ids, source.ID)
+	}
+	for _, assetID := range ids {
+		if err := s.deps.Conversions.InvalidateAsset(ctx, assetID); err != nil {
+			log.Printf("invalidate conversions for %s: %v", assetID, err)
+		}
+	}
+}
+
 // handleAssetPreview is the authenticated preview alias. It resolves the same
 // source as /img and renders the default 400px preview through imgproxy.
 func (s *Server) handleAssetPreview(w http.ResponseWriter, r *http.Request) {
@@ -1000,16 +1018,23 @@ func (s *Server) handleAssetPreview(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, result.Reader)
 }
 
-// handleRegeneratePreview re-renders and stores the preview for an asset.
+// handleRegeneratePreview re-renders and stores the preview for an asset. The
+// optional JSON body selects a PDF page or a video frame for the preview.
 func (s *Server) handleRegeneratePreview(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if _, ok := s.ownedAsset(w, r, id); !ok {
 		return
 	}
-	asset, err := s.deps.Assets.RegeneratePreview(r.Context(), id)
+	var opts service.PreviewOptions
+	if err := json.NewDecoder(r.Body).Decode(&opts); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	asset, err := s.deps.Assets.RegeneratePreview(r.Context(), id, opts)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
+	s.invalidateAssetConversions(r.Context(), id)
 	writeJSON(w, http.StatusOK, asset)
 }

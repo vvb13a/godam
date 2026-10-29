@@ -334,7 +334,12 @@ onBeforeUnmount(dispose)
 <template>
   <div class="min-h-0 flex-1 overflow-hidden">
     <div v-if="mode === 'image'" ref="imageHost" class="h-full w-full" />
-    <PdfViewer v-else-if="mode === 'pdf'" :key="asset.id" :asset="asset" />
+    <PdfViewer
+      v-else-if="mode === 'pdf'"
+      :key="asset.id"
+      :asset="asset"
+      @saved="emit('saved', $event)"
+    />
 
     <AudioPlayer v-else-if="mode === 'audio'" :asset="asset" />
 
@@ -342,6 +347,7 @@ onBeforeUnmount(dispose)
       v-else-if="mode === 'video'"
       :key="asset.id"
       :asset="asset"
+      @saved="emit('saved', $event)"
     />
 
     <div
